@@ -306,6 +306,8 @@ const VulkanInstance = struct {
         DestroyInstance: std.meta.Child(c.vk.PFN_vkDestroyInstance) = undefined,
         EnumeratePhysicalDevices: std.meta.Child(c.vk.PFN_vkEnumeratePhysicalDevices) = undefined,
         GetPhysicalDeviceProperties: std.meta.Child(c.vk.PFN_vkGetPhysicalDeviceProperties) = undefined,
+        GetPhysicalDeviceFeatures: std.meta.Child(c.vk.PFN_vkGetPhysicalDeviceFeatures) = undefined,
+        GetPhysicalDeviceMemoryProperties: std.meta.Child(c.vk.PFN_vkGetPhysicalDeviceMemoryProperties) = undefined,
         CreateDebugUtilsMessengerEXT: std.meta.Child(c.vk.PFN_vkCreateDebugUtilsMessengerEXT) = undefined,
         DestroyDebugUtilsMessengerEXT: std.meta.Child(c.vk.PFN_vkDestroyDebugUtilsMessengerEXT) = undefined,
     };
@@ -545,6 +547,22 @@ const VulkanInstance = struct {
         self.dispatch.GetPhysicalDeviceProperties(physical_device, properties);
     }
 
+    fn getPhysicalDeviceFeatures(
+        self: *Self,
+        physical_device: c.vk.VkPhysicalDevice,
+        features: *c.vk.VkPhysicalDeviceFeatures,
+    ) void {
+        self.dispatch.GetPhysicalDeviceFeatures(physical_device, features);
+    }
+
+    fn getPhysicalDeviceMemoryProperties(
+        self: *Self,
+        physical_device: c.vk.VkPhysicalDevice,
+        memory_properties: *c.vk.VkPhysicalDeviceMemoryProperties,
+    ) void {
+        self.dispatch.GetPhysicalDeviceMemoryProperties(physical_device, memory_properties);
+    }
+
     fn createDebugUtilsMessengerEXT(
         self: *Self,
         create_info: *const c.vk.VkDebugUtilsMessengerCreateInfoEXT,
@@ -573,6 +591,122 @@ const VulkanInstance = struct {
     }
 };
 
+const VulkanDevice = struct {
+    const Self = @This();
+
+    physical_device: c.vk.VkPhysicalDevice,
+
+    fn init(allocator: std.mem.Allocator, instance: *VulkanInstance) !Self {
+        const physical_devices = try instance.enumeratePhysicalDevicesAlloc(allocator);
+        defer allocator.free(physical_devices);
+
+        if (physical_devices.len == 0) {
+            std.log.err("[z3dfx][vk] No Vulkan physical devices found", .{});
+            return error.NoPhysicalDevicesFound;
+        }
+
+        var selected_physical_device: c.vk.VkPhysicalDevice = null;
+        var selected_physical_device_score: u32 = 0;
+        var selected_physical_device_index: usize = 0;
+        var selected_physical_device_properties = std.mem.zeroes(c.vk.VkPhysicalDeviceProperties);
+        for (physical_devices, 0..) |physical_device, index| {
+            const score = rateDeviceSuitability(allocator, instance, physical_device);
+
+            var properties = std.mem.zeroes(c.vk.VkPhysicalDeviceProperties);
+            instance.getPhysicalDeviceProperties(physical_device, &properties);
+
+            std.log.debug("[z3dfx][vk]   Physical device: {d}", .{index});
+            std.log.debug("[z3dfx][vk]              Name: {s}", .{properties.deviceName});
+            std.log.debug("[z3dfx][vk]       API version: {d}.{d}.{d}", .{
+                c.vk.VK_API_VERSION_MAJOR(properties.apiVersion),
+                c.vk.VK_API_VERSION_MINOR(properties.apiVersion),
+                c.vk.VK_API_VERSION_PATCH(properties.apiVersion),
+            });
+            std.log.debug("[z3dfx][vk]       API variant: {d}", .{
+                c.vk.VK_API_VERSION_VARIANT(properties.apiVersion),
+            });
+            std.log.debug("[z3dfx][vk]    Driver version: {x}", .{properties.driverVersion});
+            std.log.debug("[z3dfx][vk]         Vendor ID: {x}", .{properties.vendorID});
+            std.log.debug("[z3dfx][vk]         Device ID: {x}", .{properties.deviceID});
+            std.log.debug("[z3dfx][vk]              Type: {s}", .{getPhysicalDeviceTypeLabel(properties.deviceType)});
+            std.log.debug("[z3dfx][vk]             Score: {d}", .{score});
+
+            var memory_properties = std.mem.zeroes(c.vk.VkPhysicalDeviceMemoryProperties);
+            instance.getPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+
+            std.log.debug("[z3dfx][vk] Memory type count: {d}", .{memory_properties.memoryTypeCount});
+            for (0..memory_properties.memoryTypeCount) |mp_index| {
+                const memory_type = memory_properties.memoryTypes[mp_index];
+                std.log.debug(
+                    "[z3dfx][vk]               {d:0>3}: flags 0x{x:0>8}, index {d}",
+                    .{ mp_index, memory_type.propertyFlags, memory_type.heapIndex },
+                );
+            }
+            std.log.debug("[z3dfx][vk] Memory heap count: {d}", .{memory_properties.memoryHeapCount});
+            for (0..memory_properties.memoryHeapCount) |mh_index| {
+                const memory_heap = memory_properties.memoryHeaps[mh_index];
+                std.log.debug(
+                    "[z3dfx][vk]               {d:0>3}: size {d}, flags 0x{x:0>8}",
+                    .{ mh_index, std.fmt.fmtIntSizeBin(memory_heap.size), memory_heap.flags },
+                );
+            }
+
+            if (selected_physical_device == null or score > selected_physical_device_score) {
+                selected_physical_device = physical_device;
+                selected_physical_device_score = score;
+                selected_physical_device_index = index;
+                selected_physical_device_properties = properties;
+            }
+        }
+
+        if (selected_physical_device == null) {
+            std.log.err("[z3dfx][vk] No suitable Vulkan physical devices found", .{});
+            return error.NoSuitablePhysicalDevicesFound;
+        }
+
+        std.log.debug(
+            "[z3dfx][vk] Using physical device {d}: {s}",
+            .{ selected_physical_device_index, selected_physical_device_properties.deviceName },
+        );
+
+        return .{
+            .physical_device = physical_devices[0],
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        _ = self;
+    }
+
+    fn rateDeviceSuitability(
+        allocator: std.mem.Allocator,
+        instance: *VulkanInstance,
+        physical_device: c.vk.VkPhysicalDevice,
+    ) u32 {
+        var properties = std.mem.zeroes(c.vk.VkPhysicalDeviceProperties);
+        var features = std.mem.zeroes(c.vk.VkPhysicalDeviceFeatures);
+        var queue_family_properties = std.ArrayList(c.vk.VkQueueFamilyProperties).init(allocator);
+        defer queue_family_properties.deinit();
+
+        var score: u32 = 0;
+
+        // Device properties
+        instance.getPhysicalDeviceProperties(physical_device, &properties);
+        if (properties.deviceType == c.vk.VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+            score += 1000;
+        }
+        score += properties.limits.maxImageDimension2D;
+
+        // Device features
+        instance.getPhysicalDeviceFeatures(physical_device, &features);
+        if (features.geometryShader == 0) {
+            return 0;
+        }
+
+        return score;
+    }
+};
+
 const VulkanContext = struct {
     const Self = @This();
 
@@ -591,30 +725,10 @@ const VulkanContext = struct {
         );
         errdefer instance.deinit();
 
-        const physical_devices = try instance.enumeratePhysicalDevicesAlloc(allocator);
-        defer allocator.free(physical_devices);
-
         const debug_messenger = try setupDebugMessenger(&instance);
 
-        for (physical_devices, 0..) |physical_device, index| {
-            var properties = std.mem.zeroes(c.vk.VkPhysicalDeviceProperties);
-            instance.getPhysicalDeviceProperties(physical_device, &properties);
-
-            std.log.debug("[z3dfx][vk] Physical device: {d}", .{index});
-            std.log.debug("[z3dfx][vk]            Name: {s}", .{properties.deviceName});
-            std.log.debug("[z3dfx][vk]     API version: {d}.{d}.{d}", .{
-                c.vk.VK_API_VERSION_MAJOR(properties.apiVersion),
-                c.vk.VK_API_VERSION_MINOR(properties.apiVersion),
-                c.vk.VK_API_VERSION_PATCH(properties.apiVersion),
-            });
-            std.log.debug("[z3dfx][vk]     API variant: {d}", .{
-                c.vk.VK_API_VERSION_VARIANT(properties.apiVersion),
-            });
-            std.log.debug("[z3dfx][vk]  Driver version: {x}", .{properties.driverVersion});
-            std.log.debug("[z3dfx][vk]       Vendor ID: {x}", .{properties.vendorID});
-            std.log.debug("[z3dfx][vk]       Device ID: {x}", .{properties.deviceID});
-            std.log.debug("[z3dfx][vk]            Type: {s}", .{getPhysicalDeviceTypeLabel(properties.deviceType)});
-        }
+        const device = try VulkanDevice.init(allocator, &instance);
+        errdefer device.deinit();
 
         return .{
             .entry = entry,
