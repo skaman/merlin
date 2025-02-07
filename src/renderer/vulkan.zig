@@ -4,22 +4,55 @@ const builtin = @import("builtin");
 const c = @import("../c.zig");
 const z3dfx = @import("z3dfx.zig");
 
+fn log_err(
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    std.log.err("[z3dfx][vk] " ++ format, args);
+}
+
+fn log_warn(
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    std.log.warn("[z3dfx][vk] " ++ format, args);
+}
+
+fn log_info(
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    std.log.info("[z3dfx][vk] " ++ format, args);
+}
+
+fn log_debug(
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    std.log.debug("[z3dfx][vk] " ++ format, args);
+}
+
 fn debugCallback(
     message_severity: c.vk.VkDebugUtilsMessageSeverityFlagBitsEXT,
     message_type: c.vk.VkDebugUtilsMessageTypeFlagsEXT,
     p_callback_data: [*c]const c.vk.VkDebugUtilsMessengerCallbackDataEXT,
     p_user_data: ?*anyopaque,
 ) callconv(.c) c.vk.VkBool32 {
-    _ = message_type;
     _ = p_user_data;
+
+    const allowed_flags = c.vk.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | c.vk.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    if (message_type & allowed_flags == 0) {
+        return c.vk.VK_FALSE;
+    }
+
     if (message_severity & c.vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT == c.vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-        std.log.err("[z3dfx][vk] {s}", .{p_callback_data.*.pMessage});
+        log_err("{s}", .{p_callback_data.*.pMessage});
     } else if (message_severity & c.vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT == c.vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        std.log.warn("[z3dfx][vk] {s}", .{p_callback_data.*.pMessage});
+        log_warn("{s}", .{p_callback_data.*.pMessage});
     } else if (message_severity & c.vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT == c.vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
-        std.log.info("[z3dfx][vk] {s}", .{p_callback_data.*.pMessage});
+        log_info("{s}", .{p_callback_data.*.pMessage});
     } else if (message_severity & c.vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT == c.vk.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
-        std.log.debug("[z3dfx][vk] {s}", .{p_callback_data.*.pMessage});
+        log_debug("{s}", .{p_callback_data.*.pMessage});
     }
 
     return c.vk.VK_FALSE;
@@ -61,7 +94,7 @@ const VulkanLibrary = struct {
             std.meta.Child(c.vk.PFN_vkGetInstanceProcAddr),
             "vkGetInstanceProcAddr",
         ) orelse {
-            std.log.err("[z3dfx][vk] Failed to load vkGetInstanceProcAddr", .{});
+            log_err("Failed to load vkGetInstanceProcAddr", .{});
             return error.GetInstanceProcAddrNotFound;
         };
 
@@ -82,7 +115,7 @@ const VulkanLibrary = struct {
         for (LibraryNames) |library_name| {
             return std.DynLib.open(library_name) catch continue;
         }
-        std.log.err("[z3dfx][vk] Failed to load Vulkan library", .{});
+        log_err("Failed to load Vulkan library", .{});
         return error.LoadLibraryFailed;
     }
 
@@ -95,7 +128,7 @@ const VulkanLibrary = struct {
         if (self.get_instance_proc_addr(instance, name)) |proc| {
             return @ptrCast(proc);
         } else {
-            std.log.err("[z3dfx][vk] Failed to load Vulkan proc: {s}", .{name});
+            log_err("Failed to load Vulkan proc: {s}", .{name});
             return error.GetInstanceProcAddrFailed;
         }
     }
@@ -126,45 +159,27 @@ const VulkanLibrary = struct {
         switch (self.dispatch.CreateInstance(create_info, allocation_callbacks, instance)) {
             c.vk.VK_SUCCESS => {},
             c.vk.VK_ERROR_OUT_OF_HOST_MEMORY => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to create Vulkan instance: out of host memory",
-                    .{},
-                );
+                log_err("Failed to create Vulkan instance: out of host memory", .{});
                 return error.OutOfHostMemory;
             },
             c.vk.VK_ERROR_OUT_OF_DEVICE_MEMORY => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to create Vulkan instance: out of device memory",
-                    .{},
-                );
+                log_err("Failed to create Vulkan instance: out of device memory", .{});
                 return error.OutOfDeviceMemory;
             },
             c.vk.VK_ERROR_INITIALIZATION_FAILED => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to create Vulkan instance: initialization failed",
-                    .{},
-                );
+                log_err("Failed to create Vulkan instance: initialization failed", .{});
                 return error.InitializationFailed;
             },
             c.vk.VK_ERROR_LAYER_NOT_PRESENT => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to create Vulkan instance: layer not present",
-                    .{},
-                );
+                log_err("Failed to create Vulkan instance: layer not present", .{});
                 return error.LayerNotPresent;
             },
             c.vk.VK_ERROR_EXTENSION_NOT_PRESENT => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to create Vulkan instance: extension not present",
-                    .{},
-                );
+                log_err("Failed to create Vulkan instance: extension not present", .{});
                 return error.ExtensionNotPresent;
             },
             c.vk.VK_ERROR_INCOMPATIBLE_DRIVER => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to create Vulkan instance: incompatible driver",
-                    .{},
-                );
+                log_err("Failed to create Vulkan instance: incompatible driver", .{});
                 return error.IncompatibleDriver;
             },
             else => unreachable,
@@ -185,30 +200,18 @@ const VulkanLibrary = struct {
             c.vk.VK_SUCCESS => {},
             c.vk.VK_INCOMPLETE => {
                 // For vulkan documentation this is not an error. But in our case should never happen.
-                std.log.warn(
-                    "[z3dfx][vk] Failed to enumerate Vulkan instance extension properties: incomplete",
-                    .{},
-                );
+                log_warn("Failed to enumerate Vulkan instance extension properties: incomplete", .{});
             },
             c.vk.VK_ERROR_OUT_OF_HOST_MEMORY => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to enumerate Vulkan instance extension properties: out of host memory",
-                    .{},
-                );
+                log_err("Failed to enumerate Vulkan instance extension properties: out of host memory", .{});
                 return error.OutOfHostMemory;
             },
             c.vk.VK_ERROR_OUT_OF_DEVICE_MEMORY => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to enumerate Vulkan instance extension properties: out of device memory",
-                    .{},
-                );
+                log_err("Failed to enumerate Vulkan instance extension properties: out of device memory", .{});
                 return error.OutOfDeviceMemory;
             },
             c.vk.VK_ERROR_LAYER_NOT_PRESENT => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to enumerate Vulkan instance extension properties: layer not present",
-                    .{},
-                );
+                log_err("Failed to enumerate Vulkan instance extension properties: layer not present", .{});
                 return error.LayerNotPresent;
             },
             else => unreachable,
@@ -253,21 +256,18 @@ const VulkanLibrary = struct {
             c.vk.VK_SUCCESS => {},
             c.vk.VK_INCOMPLETE => {
                 // For vulkan documentation this is not an error. But in our case should never happen.
-                std.log.warn(
-                    "[z3dfx][vk] Failed to enumerate Vulkan instance layer properties: incomplete",
-                    .{},
-                );
+                log_warn("Failed to enumerate Vulkan instance layer properties: incomplete", .{});
             },
             c.vk.VK_ERROR_OUT_OF_HOST_MEMORY => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to enumerate Vulkan instance layer properties: out of host memory",
+                log_err(
+                    "Failed to enumerate Vulkan instance layer properties: out of host memory",
                     .{},
                 );
                 return error.OutOfHostMemory;
             },
             c.vk.VK_ERROR_OUT_OF_DEVICE_MEMORY => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to enumerate Vulkan instance layer properties: out of device memory",
+                log_err(
+                    "Failed to enumerate Vulkan instance layer properties: out of device memory",
                     .{},
                 );
                 return error.OutOfDeviceMemory;
@@ -435,8 +435,8 @@ const VulkanInstance = struct {
                 }
             }
             if (!found) {
-                std.log.err(
-                    "[z3dfx][vk] Required instance extension not found: {s}",
+                log_err(
+                    "Required instance extension not found: {s}",
                     .{required_extension},
                 );
                 return error.RequiredInstanceExtensionNotFound;
@@ -467,8 +467,8 @@ const VulkanInstance = struct {
                 }
             }
             if (!found) {
-                std.log.err(
-                    "[z3dfx][vk] Required instance layer not found: {s}",
+                log_err(
+                    "Required instance layer not found: {s}",
                     .{required_layer},
                 );
                 return error.RequiredInstanceLayerNotFound;
@@ -489,28 +489,28 @@ const VulkanInstance = struct {
             c.vk.VK_SUCCESS => {},
             c.vk.VK_INCOMPLETE => {
                 // For vulkan documentation this is not an error. But in our case should never happen.
-                std.log.warn(
-                    "[z3dfx][vk] Failed to enumerate Vulkan physical devices: incomplete",
+                log_warn(
+                    "Failed to enumerate Vulkan physical devices: incomplete",
                     .{},
                 );
             },
             c.vk.VK_ERROR_OUT_OF_HOST_MEMORY => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to enumerate Vulkan physical devices: out of host memory",
+                log_err(
+                    "Failed to enumerate Vulkan physical devices: out of host memory",
                     .{},
                 );
                 return error.OutOfHostMemory;
             },
             c.vk.VK_ERROR_OUT_OF_DEVICE_MEMORY => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to enumerate Vulkan physical devices: out of device memory",
+                log_err(
+                    "Failed to enumerate Vulkan physical devices: out of device memory",
                     .{},
                 );
                 return error.OutOfDeviceMemory;
             },
             c.vk.VK_ERROR_LAYER_NOT_PRESENT => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to enumerate Vulkan physical devices: layer not present",
+                log_err(
+                    "Failed to enumerate Vulkan physical devices: layer not present",
                     .{},
                 );
                 return error.LayerNotPresent;
@@ -572,8 +572,8 @@ const VulkanInstance = struct {
         switch (self.dispatch.CreateDebugUtilsMessengerEXT(self.handle, create_info, allocation_callbacks, messenger)) {
             c.vk.VK_SUCCESS => {},
             c.vk.VK_ERROR_OUT_OF_HOST_MEMORY => {
-                std.log.err(
-                    "[z3dfx][vk] Failed to create Vulkan debug messenger: out of host memory",
+                log_err(
+                    "Failed to create Vulkan debug messenger: out of host memory",
                     .{},
                 );
                 return error.OutOfHostMemory;
@@ -601,7 +601,7 @@ const VulkanDevice = struct {
         defer allocator.free(physical_devices);
 
         if (physical_devices.len == 0) {
-            std.log.err("[z3dfx][vk] No Vulkan physical devices found", .{});
+            log_err("No Vulkan physical devices found", .{});
             return error.NoPhysicalDevicesFound;
         }
 
@@ -615,38 +615,38 @@ const VulkanDevice = struct {
             var properties = std.mem.zeroes(c.vk.VkPhysicalDeviceProperties);
             instance.getPhysicalDeviceProperties(physical_device, &properties);
 
-            std.log.debug("[z3dfx][vk]   Physical device: {d}", .{index});
-            std.log.debug("[z3dfx][vk]              Name: {s}", .{properties.deviceName});
-            std.log.debug("[z3dfx][vk]       API version: {d}.{d}.{d}", .{
+            log_debug("  Physical device: {d}", .{index});
+            log_debug("             Name: {s}", .{properties.deviceName});
+            log_debug("      API version: {d}.{d}.{d}", .{
                 c.vk.VK_API_VERSION_MAJOR(properties.apiVersion),
                 c.vk.VK_API_VERSION_MINOR(properties.apiVersion),
                 c.vk.VK_API_VERSION_PATCH(properties.apiVersion),
             });
-            std.log.debug("[z3dfx][vk]       API variant: {d}", .{
+            log_debug("      API variant: {d}", .{
                 c.vk.VK_API_VERSION_VARIANT(properties.apiVersion),
             });
-            std.log.debug("[z3dfx][vk]    Driver version: {x}", .{properties.driverVersion});
-            std.log.debug("[z3dfx][vk]         Vendor ID: {x}", .{properties.vendorID});
-            std.log.debug("[z3dfx][vk]         Device ID: {x}", .{properties.deviceID});
-            std.log.debug("[z3dfx][vk]              Type: {s}", .{getPhysicalDeviceTypeLabel(properties.deviceType)});
-            std.log.debug("[z3dfx][vk]             Score: {d}", .{score});
+            log_debug("   Driver version: {x}", .{properties.driverVersion});
+            log_debug("        Vendor ID: {x}", .{properties.vendorID});
+            log_debug("        Device ID: {x}", .{properties.deviceID});
+            log_debug("             Type: {s}", .{getPhysicalDeviceTypeLabel(properties.deviceType)});
+            log_debug("            Score: {d}", .{score});
 
             var memory_properties = std.mem.zeroes(c.vk.VkPhysicalDeviceMemoryProperties);
             instance.getPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
 
-            std.log.debug("[z3dfx][vk] Memory type count: {d}", .{memory_properties.memoryTypeCount});
+            log_debug("Memory type count: {d}", .{memory_properties.memoryTypeCount});
             for (0..memory_properties.memoryTypeCount) |mp_index| {
                 const memory_type = memory_properties.memoryTypes[mp_index];
-                std.log.debug(
-                    "[z3dfx][vk]               {d:0>3}: flags 0x{x:0>8}, index {d}",
+                log_debug(
+                    "              {d:0>3}: flags 0x{x:0>8}, index {d}",
                     .{ mp_index, memory_type.propertyFlags, memory_type.heapIndex },
                 );
             }
-            std.log.debug("[z3dfx][vk] Memory heap count: {d}", .{memory_properties.memoryHeapCount});
+            log_debug("Memory heap count: {d}", .{memory_properties.memoryHeapCount});
             for (0..memory_properties.memoryHeapCount) |mh_index| {
                 const memory_heap = memory_properties.memoryHeaps[mh_index];
-                std.log.debug(
-                    "[z3dfx][vk]               {d:0>3}: size {d}, flags 0x{x:0>8}",
+                log_debug(
+                    "              {d:0>3}: size {d}, flags 0x{x:0>8}",
                     .{ mh_index, std.fmt.fmtIntSizeBin(memory_heap.size), memory_heap.flags },
                 );
             }
@@ -660,12 +660,12 @@ const VulkanDevice = struct {
         }
 
         if (selected_physical_device == null) {
-            std.log.err("[z3dfx][vk] No suitable Vulkan physical devices found", .{});
+            log_err("No suitable Vulkan physical devices found", .{});
             return error.NoSuitablePhysicalDevicesFound;
         }
 
-        std.log.debug(
-            "[z3dfx][vk] Using physical device {d}: {s}",
+        log_debug(
+            "Using physical device {d}: {s}",
             .{ selected_physical_device_index, selected_physical_device_properties.deviceName },
         );
 
@@ -774,7 +774,7 @@ var context: VulkanContext = undefined;
 
 pub const VulkanRenderer = struct {
     pub fn init(allocator: std.mem.Allocator, args: *const z3dfx.InitArgs) !VulkanRenderer {
-        std.log.debug("Initializing Vulkan renderer...", .{});
+        log_debug("Initializing Vulkan renderer...", .{});
 
         _ = args;
         context = try .init(allocator);
@@ -784,7 +784,7 @@ pub const VulkanRenderer = struct {
 
     pub fn deinit(self: *const VulkanRenderer) void {
         _ = self;
-        std.log.debug("Deinitializing Vulkan renderer...", .{});
+        log_debug("Deinitializing Vulkan renderer...", .{});
 
         context.deinit();
     }
