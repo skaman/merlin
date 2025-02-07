@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -18,14 +19,16 @@ pub fn build(b: *std.Build) !void {
     exe.linkLibC();
 
     // VULKAN
-    const env_map = try std.process.getEnvMap(b.allocator);
-    const vulkan_path = env_map.get("VULKAN_SDK");
-    if (vulkan_path == null) {
-        std.debug.print("VULKAN_SDK not found in environment\n", .{});
-        return error.MissingVulkanSDK;
+    if (builtin.os.tag == .windows) {
+        const env_map = try std.process.getEnvMap(b.allocator);
+        const vulkan_path = env_map.get("VULKAN_SDK");
+        if (vulkan_path == null) {
+            std.debug.print("VULKAN_SDK not found in environment\n", .{});
+            return error.MissingVulkanSDK;
+        }
+        const vulkan_include_path = b.pathJoin(&.{ vulkan_path.?, "include" });
+        exe.addIncludePath(.{ .cwd_relative = vulkan_include_path });
     }
-    const vulkan_include_path = b.pathJoin(&.{ vulkan_path.?, "include" });
-    exe.addIncludePath(.{ .cwd_relative = vulkan_include_path });
 
     // GLFW
     const glfw = b.addStaticLibrary(.{
