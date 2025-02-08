@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const c = @import("../c.zig");
+const c = @import("../c.zig").c;
 const noop = @import("noop.zig");
 const vulkan = @import("vulkan.zig");
 
@@ -18,7 +18,7 @@ pub const GraphicsContext = struct {
 pub const GraphicsOptions = struct {
     renderer_type: RendererType,
     app_name: [:0]const u8,
-    window: *c.glfw.GLFWwindow,
+    window: *c.GLFWwindow,
 
     enable_vulkan_debug: bool = false,
 };

@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const c = @import("c.zig");
+const c = @import("c.zig").c;
 const z3dfx = @import("renderer/z3dfx.zig");
 
 pub fn glfwErrorCallback(_: c_int, description: [*c]const u8) callconv(.c) void {
@@ -8,25 +8,25 @@ pub fn glfwErrorCallback(_: c_int, description: [*c]const u8) callconv(.c) void 
 }
 
 pub fn main() !void {
-    _ = c.glfw.glfwSetErrorCallback(&glfwErrorCallback);
+    _ = c.glfwSetErrorCallback(&glfwErrorCallback);
 
-    if (c.glfw.glfwInit() != c.glfw.GLFW_TRUE) return error.GlfwInitFailed;
-    defer c.glfw.glfwTerminate();
+    if (c.glfwInit() != c.GLFW_TRUE) return error.GlfwInitFailed;
+    defer c.glfwTerminate();
 
-    if (c.glfw.glfwVulkanSupported() != c.glfw.GLFW_TRUE) {
+    if (c.glfwVulkanSupported() != c.GLFW_TRUE) {
         std.log.err("GLFW could not find libvulkan", .{});
         return error.NoVulkan;
     }
 
-    c.glfw.glfwWindowHint(c.glfw.GLFW_CLIENT_API, c.glfw.GLFW_NO_API);
-    const window = c.glfw.glfwCreateWindow(
+    c.glfwWindowHint(c.GLFW_CLIENT_API, c.GLFW_NO_API);
+    const window = c.glfwCreateWindow(
         600,
         600,
         "z3dfx",
         null,
         null,
     ) orelse return error.WindowInitFailed;
-    defer c.glfw.glfwDestroyWindow(window);
+    defer c.glfwDestroyWindow(window);
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -40,11 +40,11 @@ pub fn main() !void {
     });
     defer z3dfx.deinit();
 
-    while (c.glfw.glfwWindowShouldClose(window) == c.glfw.GLFW_FALSE) {
-        c.glfw.glfwPollEvents();
+    while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
+        c.glfwPollEvents();
 
         // render your things here
 
-        c.glfw.glfwPollEvents();
+        c.glfwPollEvents();
     }
 }
