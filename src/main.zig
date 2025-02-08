@@ -3,7 +3,13 @@ const std = @import("std");
 const c = @import("c.zig");
 const z3dfx = @import("renderer/z3dfx.zig");
 
+pub fn glfwErrorCallback(_: c_int, description: [*c]const u8) callconv(.c) void {
+    std.log.err("{s}", .{description});
+}
+
 pub fn main() !void {
+    _ = c.glfw.glfwSetErrorCallback(&glfwErrorCallback);
+
     if (c.glfw.glfwInit() != c.glfw.GLFW_TRUE) return error.GlfwInitFailed;
     defer c.glfw.glfwTerminate();
 
