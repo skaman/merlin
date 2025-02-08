@@ -124,6 +124,10 @@ fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void {
             logErr("{s}: device lost", .{message});
             return error.VulkanDeviceLost;
         },
+        c.VK_ERROR_SURFACE_LOST_KHR => {
+            logErr("{s}: surface lost", .{message});
+            return error.VulkanSurfaceLost;
+        },
         else => {
             logErr("{s}: {d}", .{ message, result });
             return error.VulkanUnknownError;
@@ -323,6 +327,7 @@ const VulkanInstance = struct {
         GetPhysicalDeviceFeatures: std.meta.Child(c.PFN_vkGetPhysicalDeviceFeatures) = undefined,
         GetPhysicalDeviceMemoryProperties: std.meta.Child(c.PFN_vkGetPhysicalDeviceMemoryProperties) = undefined,
         GetPhysicalDeviceQueueFamilyProperties: std.meta.Child(c.PFN_vkGetPhysicalDeviceQueueFamilyProperties) = undefined,
+        GetPhysicalDeviceSurfaceSupportKHR: std.meta.Child(c.PFN_vkGetPhysicalDeviceSurfaceSupportKHR) = undefined,
         CreateDebugUtilsMessengerEXT: std.meta.Child(c.PFN_vkCreateDebugUtilsMessengerEXT) = undefined,
         DestroyDebugUtilsMessengerEXT: std.meta.Child(c.PFN_vkDestroyDebugUtilsMessengerEXT) = undefined,
         CreateDevice: std.meta.Child(c.PFN_vkCreateDevice) = undefined,
@@ -591,8 +596,30 @@ const VulkanInstance = struct {
         );
         errdefer allocator.free(result);
 
-        self.getPhysicalDeviceQueueFamilyProperties(physical_device, &count, result.ptr);
+        self.getPhysicalDeviceQueueFamilyProperties(
+            physical_device,
+            &count,
+            result.ptr,
+        );
         return result;
+    }
+
+    fn getPhysicalDeviceSurfaceSupportKHR(
+        self: *Self,
+        physical_device: c.VkPhysicalDevice,
+        queue_family_index: u32,
+        surface: c.VkSurfaceKHR,
+        supported: *c.VkBool32,
+    ) !void {
+        try checkVulkanError(
+            "Failed to get physical device surface support",
+            self.dispatch.GetPhysicalDeviceSurfaceSupportKHR(
+                physical_device,
+                queue_family_index,
+                surface,
+                supported,
+            ),
+        );
     }
 
     fn createDebugUtilsMessengerEXT(
@@ -603,7 +630,12 @@ const VulkanInstance = struct {
     ) !void {
         try checkVulkanError(
             "Failed to create Vulkan debug messenger",
-            self.dispatch.CreateDebugUtilsMessengerEXT(self.handle, create_info, allocation_callbacks, messenger),
+            self.dispatch.CreateDebugUtilsMessengerEXT(
+                self.handle,
+                create_info,
+                allocation_callbacks,
+                messenger,
+            ),
         );
     }
 
@@ -612,7 +644,11 @@ const VulkanInstance = struct {
         messenger: c.VkDebugUtilsMessengerEXT,
         allocation_callbacks: ?*const c.VkAllocationCallbacks,
     ) void {
-        self.dispatch.DestroyDebugUtilsMessengerEXT(self.handle, messenger, allocation_callbacks);
+        self.dispatch.DestroyDebugUtilsMessengerEXT(
+            self.handle,
+            messenger,
+            allocation_callbacks,
+        );
     }
 
     fn createDevice(
@@ -624,7 +660,12 @@ const VulkanInstance = struct {
     ) !void {
         try checkVulkanError(
             "Failed to create Vulkan device",
-            self.dispatch.CreateDevice(physical_device, create_info, allocation_callbacks, device),
+            self.dispatch.CreateDevice(
+                physical_device,
+                create_info,
+                allocation_callbacks,
+                device,
+            ),
         );
     }
 };
@@ -637,9 +678,10 @@ const VulkanDevice = struct {
     };
     const QueueFamilyIndices = struct {
         graphics_family: ?u32 = null,
+        present_family: ?u32 = null,
 
         fn isComplete(self: QueueFamilyIndices) bool {
-            return self.graphics_family != null;
+            return self.graphics_family != null and self.present_family != null;
         }
     };
 
@@ -652,6 +694,7 @@ const VulkanDevice = struct {
         graphics_ctx: *const z3dfx.GraphicsContext,
         vulkan_library: *VulkanLibrary,
         instance: *VulkanInstance,
+        surface: *const VulkanSurface,
     ) !Self {
         const physical_devices = try instance.enumeratePhysicalDevicesAlloc(
             graphics_ctx.allocator,
@@ -671,6 +714,7 @@ const VulkanDevice = struct {
             const score = try rateDeviceSuitability(
                 graphics_ctx.allocator,
                 instance,
+                surface,
                 physical_device,
             );
 
@@ -693,8 +737,13 @@ const VulkanDevice = struct {
             logDebug("             Type: {s}", .{getPhysicalDeviceTypeLabel(properties.deviceType)});
             logDebug("            Score: {d}", .{score});
 
-            var memory_properties = std.mem.zeroes(c.VkPhysicalDeviceMemoryProperties);
-            instance.getPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+            var memory_properties = std.mem.zeroes(
+                c.VkPhysicalDeviceMemoryProperties,
+            );
+            instance.getPhysicalDeviceMemoryProperties(
+                physical_device,
+                &memory_properties,
+            );
 
             logDebug("Memory type count: {d}", .{memory_properties.memoryTypeCount});
             for (0..memory_properties.memoryTypeCount) |mp_index| {
@@ -734,18 +783,37 @@ const VulkanDevice = struct {
         const queue_family_indices = try findQueueFamilies(
             graphics_ctx.allocator,
             instance,
+            surface,
             selected_physical_device,
         );
-        const queue_priorities = [_]f32{1.0};
-        const device_queue_create_info = std.mem.zeroInit(
-            c.VkDeviceQueueCreateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                .queueFamilyIndex = queue_family_indices.graphics_family.?,
-                .queueCount = 1,
-                .pQueuePriorities = &queue_priorities,
-            },
+
+        var unique_queue_families = std.ArrayList(u32).init(
+            graphics_ctx.allocator,
         );
+        defer unique_queue_families.deinit();
+        try unique_queue_families.append(queue_family_indices.graphics_family.?);
+        if (queue_family_indices.present_family != queue_family_indices.graphics_family) {
+            try unique_queue_families.append(queue_family_indices.present_family.?);
+        }
+
+        var device_queue_create_infos = std.ArrayList(c.VkDeviceQueueCreateInfo).init(
+            graphics_ctx.allocator,
+        );
+        defer device_queue_create_infos.deinit();
+
+        const queue_priorities = [_]f32{1.0};
+        for (unique_queue_families.items) |queue_family| {
+            const device_queue_create_info = std.mem.zeroInit(
+                c.VkDeviceQueueCreateInfo,
+                .{
+                    .sType = c.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
+                    .queueFamilyIndex = queue_family,
+                    .queueCount = queue_priorities.len,
+                    .pQueuePriorities = &queue_priorities,
+                },
+            );
+            try device_queue_create_infos.append(device_queue_create_info);
+        }
         const physical_device_features = std.mem.zeroInit(
             c.VkPhysicalDeviceFeatures,
             .{},
@@ -761,8 +829,8 @@ const VulkanDevice = struct {
             c.VkDeviceCreateInfo,
             .{
                 .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
-                .queueCreateInfoCount = 1,
-                .pQueueCreateInfos = &device_queue_create_info,
+                .queueCreateInfoCount = @as(u32, @intCast(device_queue_create_infos.items.len)),
+                .pQueueCreateInfos = device_queue_create_infos.items.ptr,
                 .enabledLayerCount = @as(u32, @intCast(validation_layers.items.len)),
                 .ppEnabledLayerNames = validation_layers.items.ptr,
                 .enabledExtensionCount = 0,
@@ -782,7 +850,11 @@ const VulkanDevice = struct {
         return .{
             .physical_device = selected_physical_device,
             .device = device,
-            .dispatch = try vulkan_library.load(Dispatch, "", instance.handle),
+            .dispatch = try vulkan_library.load(
+                Dispatch,
+                "",
+                instance.handle,
+            ),
             .queue_family_indices = queue_family_indices,
         };
     }
@@ -794,27 +866,41 @@ const VulkanDevice = struct {
     fn rateDeviceSuitability(
         allocator: std.mem.Allocator,
         instance: *VulkanInstance,
+        surface: *const VulkanSurface,
         physical_device: c.VkPhysicalDevice,
     ) !u32 {
         var properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
         var features = std.mem.zeroes(c.VkPhysicalDeviceFeatures);
-        var queue_family_properties = std.ArrayList(c.VkQueueFamilyProperties).init(allocator);
+        var queue_family_properties = std.ArrayList(c.VkQueueFamilyProperties).init(
+            allocator,
+        );
         defer queue_family_properties.deinit();
 
         var score: u32 = 0;
 
         // Device properties
-        instance.getPhysicalDeviceProperties(physical_device, &properties);
+        instance.getPhysicalDeviceProperties(
+            physical_device,
+            &properties,
+        );
         if (properties.deviceType == c.VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
             score += 1000;
         }
         score += properties.limits.maxImageDimension2D;
 
         // Queue families
-        const queue_family_indices = try findQueueFamilies(allocator, instance, physical_device);
+        const queue_family_indices = try findQueueFamilies(
+            allocator,
+            instance,
+            surface,
+            physical_device,
+        );
 
         // Device features
-        instance.getPhysicalDeviceFeatures(physical_device, &features);
+        instance.getPhysicalDeviceFeatures(
+            physical_device,
+            &features,
+        );
         if (features.geometryShader == 0 or !queue_family_indices.isComplete()) {
             return 0;
         }
@@ -825,6 +911,7 @@ const VulkanDevice = struct {
     fn findQueueFamilies(
         allocator: std.mem.Allocator,
         instance: *VulkanInstance,
+        surface: *const VulkanSurface,
         physical_device: c.VkPhysicalDevice,
     ) !QueueFamilyIndices {
         var queue_family_indices = QueueFamilyIndices{};
@@ -838,6 +925,17 @@ const VulkanDevice = struct {
         for (queue_families, 0..) |queue_family, index| {
             if (queue_family.queueFlags & c.VK_QUEUE_GRAPHICS_BIT != 0) {
                 queue_family_indices.graphics_family = @intCast(index);
+            }
+
+            var present_support: c.VkBool32 = 0;
+            try instance.getPhysicalDeviceSurfaceSupportKHR(
+                physical_device,
+                @intCast(index),
+                surface.handle,
+                &present_support,
+            );
+            if (present_support != 0) {
+                queue_family_indices.present_family = @intCast(index);
             }
 
             if (queue_family_indices.isComplete()) {
@@ -854,7 +952,12 @@ const VulkanDevice = struct {
         queue_index: u32,
         queue: *c.VkQueue,
     ) void {
-        self.dispatch.GetDeviceQueue(self.device, queue_family_index, queue_index, queue);
+        self.dispatch.GetDeviceQueue(
+            self.device,
+            queue_family_index,
+            queue_index,
+            queue,
+        );
     }
 };
 
@@ -864,7 +967,7 @@ const VulkanSurface = struct {
         DestroySurfaceKHR: std.meta.Child(c.PFN_vkDestroySurfaceKHR) = undefined,
     };
 
-    surface: c.VkSurfaceKHR,
+    handle: c.VkSurfaceKHR,
     dispatch: Dispatch,
     instance_handle: c.VkInstance,
 
@@ -885,14 +988,18 @@ const VulkanSurface = struct {
         );
 
         return .{
-            .surface = surface,
-            .dispatch = try vulkan_library.load(Dispatch, "", instance.handle),
+            .handle = surface,
+            .dispatch = try vulkan_library.load(
+                Dispatch,
+                "",
+                instance.handle,
+            ),
             .instance_handle = instance.handle,
         };
     }
 
     fn deinit(self: *Self) void {
-        self.dispatch.DestroySurfaceKHR(self.instance_handle, self.surface, null);
+        self.dispatch.DestroySurfaceKHR(self.instance_handle, self.handle, null);
     }
 };
 
@@ -921,25 +1028,33 @@ const VulkanContext = struct {
             &instance,
         );
 
-        var device = try VulkanDevice.init(
-            graphics_ctx,
-            &vulkan_library,
-            &instance,
-        );
-        errdefer device.deinit();
-
-        const surface = try VulkanSurface.init(
+        var surface = try VulkanSurface.init(
             graphics_ctx,
             &vulkan_library,
             &instance,
         );
         errdefer surface.deinit();
 
+        var device = try VulkanDevice.init(
+            graphics_ctx,
+            &vulkan_library,
+            &instance,
+            &surface,
+        );
+        errdefer device.deinit();
+
         var graphics_queue: c.VkQueue = undefined;
         device.getDeviceQueue(
             device.queue_family_indices.graphics_family.?,
             0,
             &graphics_queue,
+        );
+
+        var present_queue: c.VkQueue = undefined;
+        device.getDeviceQueue(
+            device.queue_family_indices.present_family.?,
+            0,
+            &present_queue,
         );
 
         return .{
