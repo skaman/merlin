@@ -69,6 +69,40 @@ fn getPhysicalDeviceTypeLabel(device_type: c.vk.VkPhysicalDeviceType) []const u8
     };
 }
 
+fn check_vulkan_error(comptime message: []const u8, result: c.vk.VkResult) !void {
+    return switch (result) {
+        c.vk.VK_SUCCESS => {},
+        c.vk.VK_ERROR_OUT_OF_HOST_MEMORY => {
+            log_err("{s}: out of host memory", .{message});
+            return error.VulkanOutOfHostMemory;
+        },
+        c.vk.VK_ERROR_OUT_OF_DEVICE_MEMORY => {
+            log_err("{s}: out of device memory", .{message});
+            return error.VulkanOutOfDeviceMemory;
+        },
+        c.vk.VK_ERROR_INITIALIZATION_FAILED => {
+            log_err("{s}: initialization failed", .{message});
+            return error.VulkanInitializationFailed;
+        },
+        c.vk.VK_ERROR_LAYER_NOT_PRESENT => {
+            log_err("{s}: layer not present", .{message});
+            return error.VulkanLayerNotPresent;
+        },
+        c.vk.VK_ERROR_EXTENSION_NOT_PRESENT => {
+            log_err("{s}: extension not present", .{message});
+            return error.VulkanExtensionNotPresent;
+        },
+        c.vk.VK_ERROR_INCOMPATIBLE_DRIVER => {
+            log_err("{s}: incompatible driver", .{message});
+            return error.VulkanIncompatibleDriver;
+        },
+        else => {
+            log_err("{s}: {d}", .{ message, result });
+            return error.VulkanUnknownError;
+        },
+    };
+}
+
 const EnableVulkanValidationLayers = true;
 
 const VulkanLibrary = struct {
@@ -156,34 +190,10 @@ const VulkanLibrary = struct {
         allocation_callbacks: ?*const c.vk.VkAllocationCallbacks,
         instance: *c.vk.VkInstance,
     ) !void {
-        switch (self.dispatch.CreateInstance(create_info, allocation_callbacks, instance)) {
-            c.vk.VK_SUCCESS => {},
-            c.vk.VK_ERROR_OUT_OF_HOST_MEMORY => {
-                log_err("Failed to create Vulkan instance: out of host memory", .{});
-                return error.OutOfHostMemory;
-            },
-            c.vk.VK_ERROR_OUT_OF_DEVICE_MEMORY => {
-                log_err("Failed to create Vulkan instance: out of device memory", .{});
-                return error.OutOfDeviceMemory;
-            },
-            c.vk.VK_ERROR_INITIALIZATION_FAILED => {
-                log_err("Failed to create Vulkan instance: initialization failed", .{});
-                return error.InitializationFailed;
-            },
-            c.vk.VK_ERROR_LAYER_NOT_PRESENT => {
-                log_err("Failed to create Vulkan instance: layer not present", .{});
-                return error.LayerNotPresent;
-            },
-            c.vk.VK_ERROR_EXTENSION_NOT_PRESENT => {
-                log_err("Failed to create Vulkan instance: extension not present", .{});
-                return error.ExtensionNotPresent;
-            },
-            c.vk.VK_ERROR_INCOMPATIBLE_DRIVER => {
-                log_err("Failed to create Vulkan instance: incompatible driver", .{});
-                return error.IncompatibleDriver;
-            },
-            else => unreachable,
-        }
+        try check_vulkan_error(
+            "Failed to create Vulkan instance",
+            self.dispatch.CreateInstance(create_info, allocation_callbacks, instance),
+        );
     }
 
     fn enumerateInstanceExtensionProperties(
@@ -192,29 +202,19 @@ const VulkanLibrary = struct {
         count: *u32,
         properties: [*c]c.vk.VkExtensionProperties,
     ) !void {
-        switch (self.dispatch.EnumerateInstanceExtensionProperties(
+        const result = self.dispatch.EnumerateInstanceExtensionProperties(
             layer_name,
             count,
             properties,
-        )) {
-            c.vk.VK_SUCCESS => {},
-            c.vk.VK_INCOMPLETE => {
-                // For vulkan documentation this is not an error. But in our case should never happen.
-                log_warn("Failed to enumerate Vulkan instance extension properties: incomplete", .{});
-            },
-            c.vk.VK_ERROR_OUT_OF_HOST_MEMORY => {
-                log_err("Failed to enumerate Vulkan instance extension properties: out of host memory", .{});
-                return error.OutOfHostMemory;
-            },
-            c.vk.VK_ERROR_OUT_OF_DEVICE_MEMORY => {
-                log_err("Failed to enumerate Vulkan instance extension properties: out of device memory", .{});
-                return error.OutOfDeviceMemory;
-            },
-            c.vk.VK_ERROR_LAYER_NOT_PRESENT => {
-                log_err("Failed to enumerate Vulkan instance extension properties: layer not present", .{});
-                return error.LayerNotPresent;
-            },
-            else => unreachable,
+        );
+        if (result == c.vk.VK_INCOMPLETE) {
+            // For vulkan documentation this is not an error. But in our case should never happen.
+            log_warn("Failed to enumerate Vulkan instance extension properties: incomplete", .{});
+        } else {
+            try check_vulkan_error(
+                "Failed to enumerate Vulkan instance extension properties",
+                result,
+            );
         }
     }
 
@@ -249,30 +249,18 @@ const VulkanLibrary = struct {
         count: *u32,
         properties: [*c]c.vk.VkLayerProperties,
     ) !void {
-        switch (self.dispatch.EnumerateInstanceLayerProperties(
+        const result = self.dispatch.EnumerateInstanceLayerProperties(
             count,
             properties,
-        )) {
-            c.vk.VK_SUCCESS => {},
-            c.vk.VK_INCOMPLETE => {
-                // For vulkan documentation this is not an error. But in our case should never happen.
-                log_warn("Failed to enumerate Vulkan instance layer properties: incomplete", .{});
-            },
-            c.vk.VK_ERROR_OUT_OF_HOST_MEMORY => {
-                log_err(
-                    "Failed to enumerate Vulkan instance layer properties: out of host memory",
-                    .{},
-                );
-                return error.OutOfHostMemory;
-            },
-            c.vk.VK_ERROR_OUT_OF_DEVICE_MEMORY => {
-                log_err(
-                    "Failed to enumerate Vulkan instance layer properties: out of device memory",
-                    .{},
-                );
-                return error.OutOfDeviceMemory;
-            },
-            else => unreachable,
+        );
+        if (result == c.vk.VK_INCOMPLETE) {
+            // For vulkan documentation this is not an error. But in our case should never happen.
+            log_warn("Failed to enumerate Vulkan instance layer properties: incomplete", .{});
+        } else {
+            try check_vulkan_error(
+                "Failed to enumerate Vulkan instance layer properties",
+                result,
+            );
         }
     }
 
@@ -481,41 +469,19 @@ const VulkanInstance = struct {
         count: *u32,
         physical_devices: [*c]c.vk.VkPhysicalDevice,
     ) !void {
-        switch (self.dispatch.EnumeratePhysicalDevices(
+        const result = self.dispatch.EnumeratePhysicalDevices(
             self.handle,
             count,
             physical_devices,
-        )) {
-            c.vk.VK_SUCCESS => {},
-            c.vk.VK_INCOMPLETE => {
-                // For vulkan documentation this is not an error. But in our case should never happen.
-                log_warn(
-                    "Failed to enumerate Vulkan physical devices: incomplete",
-                    .{},
-                );
-            },
-            c.vk.VK_ERROR_OUT_OF_HOST_MEMORY => {
-                log_err(
-                    "Failed to enumerate Vulkan physical devices: out of host memory",
-                    .{},
-                );
-                return error.OutOfHostMemory;
-            },
-            c.vk.VK_ERROR_OUT_OF_DEVICE_MEMORY => {
-                log_err(
-                    "Failed to enumerate Vulkan physical devices: out of device memory",
-                    .{},
-                );
-                return error.OutOfDeviceMemory;
-            },
-            c.vk.VK_ERROR_LAYER_NOT_PRESENT => {
-                log_err(
-                    "Failed to enumerate Vulkan physical devices: layer not present",
-                    .{},
-                );
-                return error.LayerNotPresent;
-            },
-            else => unreachable,
+        );
+        if (result == c.vk.VK_INCOMPLETE) {
+            // For vulkan documentation this is not an error. But in our case should never happen.
+            log_warn("Failed to enumerate Vulkan physical devices: incomplete", .{});
+        } else {
+            try check_vulkan_error(
+                "Failed to enumerate Vulkan physical devices",
+                result,
+            );
         }
     }
 
@@ -569,17 +535,10 @@ const VulkanInstance = struct {
         allocation_callbacks: ?*const c.vk.VkAllocationCallbacks,
         messenger: *c.vk.VkDebugUtilsMessengerEXT,
     ) !void {
-        switch (self.dispatch.CreateDebugUtilsMessengerEXT(self.handle, create_info, allocation_callbacks, messenger)) {
-            c.vk.VK_SUCCESS => {},
-            c.vk.VK_ERROR_OUT_OF_HOST_MEMORY => {
-                log_err(
-                    "Failed to create Vulkan debug messenger: out of host memory",
-                    .{},
-                );
-                return error.OutOfHostMemory;
-            },
-            else => unreachable,
-        }
+        try check_vulkan_error(
+            "Failed to create Vulkan debug messenger",
+            self.dispatch.CreateDebugUtilsMessengerEXT(self.handle, create_info, allocation_callbacks, messenger),
+        );
     }
 
     fn destroyDebugUtilsMessengerEXT(
