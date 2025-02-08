@@ -36,6 +36,7 @@ pub fn main() !void {
         .renderer_type = .vulkan,
         .app_name = "TEST APP",
         .window = window,
+        .enable_vulkan_debug = true,
     });
     defer z3dfx.deinit();
 
