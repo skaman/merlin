@@ -633,6 +633,7 @@ const VulkanDevice = struct {
     const Self = @This();
     const Dispatch = struct {
         DestroyDevice: std.meta.Child(c.vk.PFN_vkDestroyDevice) = undefined,
+        GetDeviceQueue: std.meta.Child(c.vk.PFN_vkGetDeviceQueue) = undefined,
     };
     const QueueFamilyIndices = struct {
         graphics_family: ?u32 = null,
@@ -645,6 +646,7 @@ const VulkanDevice = struct {
     physical_device: c.vk.VkPhysicalDevice,
     device: c.vk.VkDevice,
     dispatch: Dispatch,
+    queue_family_indices: QueueFamilyIndices,
 
     fn init(
         graphics_ctx: *const z3dfx.GraphicsContext,
@@ -781,11 +783,12 @@ const VulkanDevice = struct {
             .physical_device = selected_physical_device,
             .device = device,
             .dispatch = try vulkan_library.load(Dispatch, "", instance.handle),
+            .queue_family_indices = queue_family_indices,
         };
     }
 
     fn deinit(self: *Self) void {
-        _ = self;
+        self.dispatch.DestroyDevice(self.device, null);
     }
 
     fn rateDeviceSuitability(
@@ -844,6 +847,15 @@ const VulkanDevice = struct {
 
         return queue_family_indices;
     }
+
+    fn getDeviceQueue(
+        self: *const Self,
+        queue_family_index: u32,
+        queue_index: u32,
+        queue: *c.vk.VkQueue,
+    ) void {
+        self.dispatch.GetDeviceQueue(self.device, queue_family_index, queue_index, queue);
+    }
 };
 
 const VulkanContext = struct {
@@ -875,6 +887,13 @@ const VulkanContext = struct {
             &instance,
         );
         errdefer device.deinit();
+
+        var graphics_queue: c.vk.VkQueue = undefined;
+        device.getDeviceQueue(
+            device.queue_family_indices.graphics_family.?,
+            0,
+            &graphics_queue,
+        );
 
         return .{
             .vulkan_library = vulkan_library,
