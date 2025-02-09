@@ -128,6 +128,14 @@ fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void {
             logErr("{s}: surface lost", .{message});
             return error.VulkanSurfaceLost;
         },
+        c.VK_ERROR_NATIVE_WINDOW_IN_USE_KHR => {
+            logErr("{s}: native window in use", .{message});
+            return error.VulkanNativeWindowInUse;
+        },
+        c.VK_ERROR_COMPRESSION_EXHAUSTED_EXT => {
+            logErr("{s}: compression exhausted", .{message});
+            return error.VulkanCompressionExhausted;
+        },
         else => {
             logErr("{s}: {d}", .{ message, result });
             return error.VulkanUnknownError;
@@ -328,6 +336,10 @@ const VulkanInstance = struct {
         GetPhysicalDeviceMemoryProperties: std.meta.Child(c.PFN_vkGetPhysicalDeviceMemoryProperties) = undefined,
         GetPhysicalDeviceQueueFamilyProperties: std.meta.Child(c.PFN_vkGetPhysicalDeviceQueueFamilyProperties) = undefined,
         GetPhysicalDeviceSurfaceSupportKHR: std.meta.Child(c.PFN_vkGetPhysicalDeviceSurfaceSupportKHR) = undefined,
+        GetPhysicalDeviceSurfaceCapabilitiesKHR: std.meta.Child(c.PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR) = undefined,
+        GetPhysicalDeviceSurfaceFormatsKHR: std.meta.Child(c.PFN_vkGetPhysicalDeviceSurfaceFormatsKHR) = undefined,
+        GetPhysicalDeviceSurfacePresentModesKHR: std.meta.Child(c.PFN_vkGetPhysicalDeviceSurfacePresentModesKHR) = undefined,
+        EnumerateDeviceExtensionProperties: std.meta.Child(c.PFN_vkEnumerateDeviceExtensionProperties) = undefined,
         CreateDebugUtilsMessengerEXT: std.meta.Child(c.PFN_vkCreateDebugUtilsMessengerEXT) = undefined,
         DestroyDebugUtilsMessengerEXT: std.meta.Child(c.PFN_vkDestroyDebugUtilsMessengerEXT) = undefined,
         CreateDevice: std.meta.Child(c.PFN_vkCreateDevice) = undefined,
@@ -622,6 +634,187 @@ const VulkanInstance = struct {
         );
     }
 
+    fn getPhysicalDeviceSurfaceCapabilitiesKHR(
+        self: *Self,
+        physical_device: c.VkPhysicalDevice,
+        surface: c.VkSurfaceKHR,
+        capabilities: *c.VkSurfaceCapabilitiesKHR,
+    ) !void {
+        try checkVulkanError(
+            "Failed to get physical device surface capabilities",
+            self.dispatch.GetPhysicalDeviceSurfaceCapabilitiesKHR(
+                physical_device,
+                surface,
+                capabilities,
+            ),
+        );
+    }
+
+    fn getPhysicalDeviceSurfaceFormatsKHR(
+        self: *Self,
+        physical_device: c.VkPhysicalDevice,
+        surface: c.VkSurfaceKHR,
+        count: *u32,
+        formats: [*c]c.VkSurfaceFormatKHR,
+    ) !void {
+        const result = self.dispatch.GetPhysicalDeviceSurfaceFormatsKHR(
+            physical_device,
+            surface,
+            count,
+            formats,
+        );
+        if (result == c.VK_INCOMPLETE) {
+            // For vulkan documentation this is not an error. But in our case should never happen.
+            logWarn("Failed to get physical device surface formats: incomplete", .{});
+        } else {
+            try checkVulkanError(
+                "Failed to get physical device surface formats",
+                result,
+            );
+        }
+    }
+
+    fn getPhysicalDeviceSurfaceFormatsKHRAlloc(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        physical_device: c.VkPhysicalDevice,
+        surface: c.VkSurfaceKHR,
+    ) ![]c.VkSurfaceFormatKHR {
+        var count: u32 = undefined;
+        try self.getPhysicalDeviceSurfaceFormatsKHR(
+            physical_device,
+            surface,
+            &count,
+            null,
+        );
+
+        const result = try allocator.alloc(
+            c.VkSurfaceFormatKHR,
+            count,
+        );
+        errdefer allocator.free(result);
+
+        if (count > 0) {
+            try self.getPhysicalDeviceSurfaceFormatsKHR(
+                physical_device,
+                surface,
+                &count,
+                result.ptr,
+            );
+        }
+
+        return result;
+    }
+
+    fn getPhysicalDeviceSurfacePresentModesKHR(
+        self: *Self,
+        physical_device: c.VkPhysicalDevice,
+        surface: c.VkSurfaceKHR,
+        count: *u32,
+        present_modes: [*c]c.VkPresentModeKHR,
+    ) !void {
+        const result = self.dispatch.GetPhysicalDeviceSurfacePresentModesKHR(
+            physical_device,
+            surface,
+            count,
+            present_modes,
+        );
+        if (result == c.VK_INCOMPLETE) {
+            // For vulkan documentation this is not an error. But in our case should never happen.
+            logWarn("Failed to get physical device surface present modes: incomplete", .{});
+        } else {
+            try checkVulkanError(
+                "Failed to get physical device surface present modes",
+                result,
+            );
+        }
+    }
+
+    fn getPhysicalDeviceSurfacePresentModesKHRAlloc(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        physical_device: c.VkPhysicalDevice,
+        surface: c.VkSurfaceKHR,
+    ) ![]c.VkPresentModeKHR {
+        var count: u32 = undefined;
+        try self.getPhysicalDeviceSurfacePresentModesKHR(
+            physical_device,
+            surface,
+            &count,
+            null,
+        );
+
+        const result = try allocator.alloc(
+            c.VkPresentModeKHR,
+            count,
+        );
+        errdefer allocator.free(result);
+
+        if (count > 0) {
+            try self.getPhysicalDeviceSurfacePresentModesKHR(
+                physical_device,
+                surface,
+                &count,
+                result.ptr,
+            );
+        }
+
+        return result;
+    }
+
+    fn enumerateDeviceExtensionProperties(
+        self: *Self,
+        physical_device: c.VkPhysicalDevice,
+        layer_name: [*c]const u8,
+        count: *u32,
+        properties: [*c]c.VkExtensionProperties,
+    ) !void {
+        const result = self.dispatch.EnumerateDeviceExtensionProperties(
+            physical_device,
+            layer_name,
+            count,
+            properties,
+        );
+        if (result == c.VK_INCOMPLETE) {
+            // For vulkan documentation this is not an error. But in our case should never happen.
+            logWarn("Failed to enumerate Vulkan device extension properties: incomplete", .{});
+        } else {
+            try checkVulkanError(
+                "Failed to enumerate Vulkan device extension properties",
+                result,
+            );
+        }
+    }
+
+    fn enumerateDeviceExtensionPropertiesAlloc(
+        self: *Self,
+        allocator: std.mem.Allocator,
+        physical_device: c.VkPhysicalDevice,
+        layer_name: [*c]const u8,
+    ) ![]c.VkExtensionProperties {
+        var count: u32 = undefined;
+        try self.enumerateDeviceExtensionProperties(
+            physical_device,
+            layer_name,
+            &count,
+            null,
+        );
+
+        const result = try allocator.alloc(
+            c.VkExtensionProperties,
+            count,
+        );
+        errdefer allocator.free(result);
+
+        try self.enumerateDeviceExtensionProperties(
+            physical_device,
+            layer_name,
+            &count,
+            result.ptr,
+        );
+        return result;
+    }
+
     fn createDebugUtilsMessengerEXT(
         self: *Self,
         create_info: *const c.VkDebugUtilsMessengerCreateInfoEXT,
@@ -675,6 +868,9 @@ const VulkanDevice = struct {
     const Dispatch = struct {
         DestroyDevice: std.meta.Child(c.PFN_vkDestroyDevice) = undefined,
         GetDeviceQueue: std.meta.Child(c.PFN_vkGetDeviceQueue) = undefined,
+        CreateSwapchainKHR: std.meta.Child(c.PFN_vkCreateSwapchainKHR) = undefined,
+        DestroySwapchainKHR: std.meta.Child(c.PFN_vkDestroySwapchainKHR) = undefined,
+        GetSwapchainImagesKHR: std.meta.Child(c.PFN_vkGetSwapchainImagesKHR) = undefined,
     };
     const QueueFamilyIndices = struct {
         graphics_family: ?u32 = null,
@@ -706,6 +902,10 @@ const VulkanDevice = struct {
             return error.NoPhysicalDevicesFound;
         }
 
+        const device_required_extensions = [_][*:0]const u8{
+            c.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+        };
+
         var selected_physical_device: c.VkPhysicalDevice = null;
         var selected_physical_device_score: u32 = 0;
         var selected_physical_device_index: usize = 0;
@@ -716,11 +916,13 @@ const VulkanDevice = struct {
                 instance,
                 surface,
                 physical_device,
+                &device_required_extensions,
             );
 
             var properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
             instance.getPhysicalDeviceProperties(physical_device, &properties);
 
+            logDebug("---------------------------------------------------------------", .{});
             logDebug("  Physical device: {d}", .{index});
             logDebug("             Name: {s}", .{properties.deviceName});
             logDebug("      API version: {d}.{d}.{d}", .{
@@ -775,6 +977,7 @@ const VulkanDevice = struct {
             return error.NoSuitablePhysicalDevicesFound;
         }
 
+        logDebug("---------------------------------------------------------------", .{});
         logDebug(
             "Using physical device {d}: {s}",
             .{ selected_physical_device_index, selected_physical_device_properties.deviceName },
@@ -833,8 +1036,8 @@ const VulkanDevice = struct {
                 .pQueueCreateInfos = device_queue_create_infos.items.ptr,
                 .enabledLayerCount = @as(u32, @intCast(validation_layers.items.len)),
                 .ppEnabledLayerNames = validation_layers.items.ptr,
-                .enabledExtensionCount = 0,
-                .ppEnabledExtensionNames = null,
+                .enabledExtensionCount = @as(u32, @intCast(device_required_extensions.len)),
+                .ppEnabledExtensionNames = &device_required_extensions,
                 .pEnabledFeatures = &physical_device_features,
             },
         );
@@ -868,6 +1071,7 @@ const VulkanDevice = struct {
         instance: *VulkanInstance,
         surface: *const VulkanSurface,
         physical_device: c.VkPhysicalDevice,
+        required_extensions: []const [*:0]const u8,
     ) !u32 {
         var properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
         var features = std.mem.zeroes(c.VkPhysicalDeviceFeatures);
@@ -901,7 +1105,30 @@ const VulkanDevice = struct {
             physical_device,
             &features,
         );
-        if (features.geometryShader == 0 or !queue_family_indices.isComplete()) {
+
+        const device_extension_support = try checkDeviceExtensionSupport(
+            allocator,
+            instance,
+            physical_device,
+            required_extensions,
+        );
+
+        var swap_chain_support = try SwapChainSupportDetails.init(
+            allocator,
+            instance,
+            physical_device,
+            surface.handle,
+        );
+        defer swap_chain_support.deinit();
+
+        const swap_chain_adequate = (swap_chain_support.formats.len > 0 and
+            swap_chain_support.present_modes.len > 0);
+
+        if (features.geometryShader == 0 or
+            !queue_family_indices.isComplete() or
+            !device_extension_support or
+            !swap_chain_adequate)
+        {
             return 0;
         }
 
@@ -946,6 +1173,43 @@ const VulkanDevice = struct {
         return queue_family_indices;
     }
 
+    fn checkDeviceExtensionSupport(
+        allocator: std.mem.Allocator,
+        instance: *VulkanInstance,
+        physical_device: c.VkPhysicalDevice,
+        required_extensions: []const [*:0]const u8,
+    ) !bool {
+        const available_extensions = try instance.enumerateDeviceExtensionPropertiesAlloc(
+            allocator,
+            physical_device,
+            null,
+        );
+        defer allocator.free(available_extensions);
+
+        for (required_extensions) |required_extension| {
+            var found = false;
+            for (available_extensions) |available_extension| {
+                if (std.mem.eql(
+                    u8,
+                    std.mem.sliceTo(required_extension, 0),
+                    std.mem.sliceTo(&available_extension.extensionName, 0),
+                )) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                logErr(
+                    "Required device extension not found: {s}",
+                    .{required_extension},
+                );
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     fn getDeviceQueue(
         self: *const Self,
         queue_family_index: u32,
@@ -959,6 +1223,133 @@ const VulkanDevice = struct {
             queue,
         );
     }
+
+    fn createSwapchainKHR(
+        self: *const Self,
+        create_info: *const c.VkSwapchainCreateInfoKHR,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+        swapchain: *c.VkSwapchainKHR,
+    ) !void {
+        try checkVulkanError(
+            "Failed to create Vulkan swapchain",
+            self.dispatch.CreateSwapchainKHR(
+                self.device,
+                create_info,
+                allocation_callbacks,
+                swapchain,
+            ),
+        );
+    }
+
+    fn destroySwapchainKHR(
+        self: *const Self,
+        swapchain: c.VkSwapchainKHR,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+    ) void {
+        self.dispatch.DestroySwapchainKHR(
+            self.device,
+            swapchain,
+            allocation_callbacks,
+        );
+    }
+
+    fn getSwapchainImagesKHR(
+        self: *const Self,
+        swapchain: c.VkSwapchainKHR,
+        count: *u32,
+        images: [*c]c.VkImage,
+    ) !void {
+        const result = self.dispatch.GetSwapchainImagesKHR(
+            self.device,
+            swapchain,
+            count,
+            images,
+        );
+        if (result == c.VK_INCOMPLETE) {
+            // For vulkan documentation this is not an error. But in our case should never happen.
+            logWarn("Failed to get swapchain images: incomplete", .{});
+        } else {
+            try checkVulkanError(
+                "Failed to get swapchain images",
+                result,
+            );
+        }
+    }
+
+    fn getSwapchainImagesKHRAlloc(
+        self: *const Self,
+        allocator: std.mem.Allocator,
+        swapchain: c.VkSwapchainKHR,
+    ) ![]c.VkImage {
+        var count: u32 = undefined;
+        try self.getSwapchainImagesKHR(
+            swapchain,
+            &count,
+            null,
+        );
+
+        const result = try allocator.alloc(
+            c.VkImage,
+            count,
+        );
+        errdefer allocator.free(result);
+
+        try self.getSwapchainImagesKHR(
+            swapchain,
+            &count,
+            result.ptr,
+        );
+        return result;
+    }
+};
+
+const SwapChainSupportDetails = struct {
+    const Self = @This();
+
+    allocator: std.mem.Allocator,
+    capabilities: c.VkSurfaceCapabilitiesKHR,
+    formats: []c.VkSurfaceFormatKHR,
+    present_modes: []c.VkPresentModeKHR,
+
+    fn init(
+        allocator: std.mem.Allocator,
+        instance: *VulkanInstance,
+        physical_device: c.VkPhysicalDevice,
+        surface: c.VkSurfaceKHR,
+    ) !Self {
+        var capabilities: c.VkSurfaceCapabilitiesKHR = undefined;
+        try instance.getPhysicalDeviceSurfaceCapabilitiesKHR(
+            physical_device,
+            surface,
+            &capabilities,
+        );
+
+        const formats = try instance.getPhysicalDeviceSurfaceFormatsKHRAlloc(
+            allocator,
+            physical_device,
+            surface,
+        );
+        errdefer allocator.free(formats);
+
+        const present_modes = try instance.getPhysicalDeviceSurfacePresentModesKHRAlloc(
+            allocator,
+            physical_device,
+            surface,
+        );
+        errdefer allocator.free(present_modes);
+
+        return .{
+            .allocator = allocator,
+            .capabilities = capabilities,
+            .formats = formats,
+            .present_modes = present_modes,
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        self.allocator.free(self.formats);
+        self.allocator.free(self.present_modes);
+    }
 };
 
 const VulkanSurface = struct {
@@ -969,7 +1360,7 @@ const VulkanSurface = struct {
 
     handle: c.VkSurfaceKHR,
     dispatch: Dispatch,
-    instance_handle: c.VkInstance,
+    instance: *const VulkanInstance,
 
     fn init(
         graphics_ctx: *const z3dfx.GraphicsContext,
@@ -994,29 +1385,201 @@ const VulkanSurface = struct {
                 "",
                 instance.handle,
             ),
-            .instance_handle = instance.handle,
+            .instance = instance,
         };
     }
 
     fn deinit(self: *Self) void {
-        self.dispatch.DestroySurfaceKHR(self.instance_handle, self.handle, null);
+        self.dispatch.DestroySurfaceKHR(self.instance.handle, self.handle, null);
+    }
+};
+
+const VulkanSwapChain = struct {
+    const Self = @This();
+
+    allocator: std.mem.Allocator,
+    handle: c.VkSwapchainKHR,
+    device: *const VulkanDevice,
+    swap_chain_images: []c.VkImage,
+
+    fn init(
+        graphics_ctx: *const z3dfx.GraphicsContext,
+        instance: *VulkanInstance,
+        device: *const VulkanDevice,
+        surface: *const VulkanSurface,
+    ) !Self {
+        var swap_chain_support = try SwapChainSupportDetails.init(
+            graphics_ctx.allocator,
+            instance,
+            device.physical_device,
+            surface.handle,
+        );
+        errdefer swap_chain_support.deinit();
+
+        const surface_format = chooseSwapSurfaceFormat(swap_chain_support.formats);
+        const present_mode = chooseSwapPresentMode(swap_chain_support.present_modes);
+
+        var window_width: c_int = undefined;
+        var window_height: c_int = undefined;
+        c.glfwGetFramebufferSize(
+            graphics_ctx.options.window,
+            &window_width,
+            &window_height,
+        );
+        const extent = chooseSwapExtent(
+            &swap_chain_support.capabilities,
+            @intCast(window_width),
+            @intCast(window_height),
+        );
+
+        var image_count = swap_chain_support.capabilities.minImageCount + 1;
+        if (swap_chain_support.capabilities.maxImageCount > 0 and
+            image_count > swap_chain_support.capabilities.maxImageCount)
+        {
+            image_count = swap_chain_support.capabilities.maxImageCount;
+        }
+
+        var create_info = std.mem.zeroInit(
+            c.VkSwapchainCreateInfoKHR,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+                .surface = surface.handle,
+                .minImageCount = image_count,
+                .imageFormat = surface_format.format,
+                .imageColorSpace = surface_format.colorSpace,
+                .imageExtent = extent,
+                .imageArrayLayers = 1,
+                .imageUsage = c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+                .preTransform = swap_chain_support.capabilities.currentTransform,
+                .compositeAlpha = c.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+                .presentMode = present_mode,
+                .clipped = c.VK_TRUE,
+                //.oldSwapchain = c.VK_NULL_HANDLE,
+            },
+        );
+
+        const queue_family_indices = device.queue_family_indices;
+        const queue_family_indices_array = [_]u32{
+            queue_family_indices.graphics_family.?,
+            queue_family_indices.present_family.?,
+        };
+
+        if (queue_family_indices.graphics_family != queue_family_indices.present_family) {
+            create_info.imageSharingMode = c.VK_SHARING_MODE_CONCURRENT;
+            create_info.queueFamilyIndexCount = 2;
+            create_info.pQueueFamilyIndices = &queue_family_indices_array;
+        } else {
+            create_info.imageSharingMode = c.VK_SHARING_MODE_EXCLUSIVE;
+        }
+
+        var swap_chain: c.VkSwapchainKHR = undefined;
+        try device.createSwapchainKHR(
+            &create_info,
+            null,
+            &swap_chain,
+        );
+        errdefer device.destroySwapchainKHR(swap_chain, null);
+
+        logDebug("---------------------------------------------------------------", .{});
+        logDebug("Swap chain created", .{});
+        logDebug("       Image count: {d}", .{image_count});
+        logDebug("      Image format: {d}", .{surface_format.format});
+        logDebug(" Image color space: {d}", .{surface_format.colorSpace});
+        logDebug("      Image extent: {d}x{d}", .{ extent.width, extent.height });
+        logDebug("      Present mode: {d}", .{present_mode});
+        logDebug("---------------------------------------------------------------", .{});
+
+        const swap_chain_images = try device.getSwapchainImagesKHRAlloc(
+            graphics_ctx.allocator,
+            swap_chain,
+        );
+        errdefer graphics_ctx.allocator.free(swap_chain_images);
+
+        return .{
+            .allocator = graphics_ctx.allocator,
+            .handle = swap_chain,
+            .device = device,
+            .swap_chain_images = swap_chain_images,
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        self.allocator.free(self.swap_chain_images);
+        self.device.destroySwapchainKHR(self.handle, null);
+    }
+
+    fn chooseSwapSurfaceFormat(
+        formats: []c.VkSurfaceFormatKHR,
+    ) c.VkSurfaceFormatKHR {
+        for (formats) |format| {
+            if (format.format == c.VK_FORMAT_B8G8R8A8_SRGB and
+                format.colorSpace == c.VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+            {
+                return format;
+            }
+        }
+        return formats[0];
+    }
+
+    fn chooseSwapPresentMode(
+        present_modes: []c.VkPresentModeKHR,
+    ) c.VkPresentModeKHR {
+        for (present_modes) |present_mode| {
+            if (present_mode == c.VK_PRESENT_MODE_MAILBOX_KHR) {
+                return present_mode;
+            }
+        }
+        return c.VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    fn chooseSwapExtent(
+        capabilities: *c.VkSurfaceCapabilitiesKHR,
+        window_width: u32,
+        window_height: u32,
+    ) c.VkExtent2D {
+        if (capabilities.currentExtent.width != c.UINT32_MAX) {
+            return capabilities.currentExtent;
+        }
+
+        var actual_extent = c.VkExtent2D{
+            .width = window_width,
+            .height = window_height,
+        };
+
+        actual_extent.width = std.math.clamp(
+            actual_extent.width,
+            capabilities.minImageExtent.width,
+            capabilities.maxImageExtent.width,
+        );
+        actual_extent.height = std.math.clamp(
+            actual_extent.height,
+            capabilities.minImageExtent.height,
+            capabilities.maxImageExtent.height,
+        );
+
+        return actual_extent;
     }
 };
 
 const VulkanContext = struct {
     const Self = @This();
 
+    allocator: std.mem.Allocator,
     vulkan_library: VulkanLibrary,
-    instance: VulkanInstance,
-    device: VulkanDevice,
-    surface: VulkanSurface,
+    instance: *VulkanInstance,
+    device: *VulkanDevice,
+    surface: *VulkanSurface,
+    swap_chain: *VulkanSwapChain,
     debug_messenger: ?c.VkDebugUtilsMessengerEXT,
 
     fn init(graphics_ctx: *const z3dfx.GraphicsContext) !Self {
         var vulkan_library = try VulkanLibrary.init();
         errdefer vulkan_library.deinit();
 
-        var instance = try VulkanInstance.init(
+        var instance = try graphics_ctx.allocator.create(VulkanInstance);
+        errdefer graphics_ctx.allocator.destroy(instance);
+
+        instance.* = try VulkanInstance.init(
             graphics_ctx,
             &vulkan_library,
             null,
@@ -1025,54 +1588,82 @@ const VulkanContext = struct {
 
         const debug_messenger = try setupDebugMessenger(
             &graphics_ctx.options,
-            &instance,
+            instance,
         );
 
-        var surface = try VulkanSurface.init(
+        var surface = try graphics_ctx.allocator.create(VulkanSurface);
+        errdefer graphics_ctx.allocator.destroy(surface);
+
+        surface.* = try VulkanSurface.init(
             graphics_ctx,
             &vulkan_library,
-            &instance,
+            instance,
         );
         errdefer surface.deinit();
 
-        var device = try VulkanDevice.init(
+        var device = try graphics_ctx.allocator.create(VulkanDevice);
+        errdefer graphics_ctx.allocator.destroy(device);
+
+        device.* = try VulkanDevice.init(
             graphics_ctx,
             &vulkan_library,
-            &instance,
-            &surface,
+            instance,
+            surface,
         );
         errdefer device.deinit();
 
-        var graphics_queue: c.VkQueue = undefined;
-        device.getDeviceQueue(
-            device.queue_family_indices.graphics_family.?,
-            0,
-            &graphics_queue,
-        );
+        //var graphics_queue: c.VkQueue = undefined;
+        //device.getDeviceQueue(
+        //    device.queue_family_indices.graphics_family.?,
+        //    0,
+        //    &graphics_queue,
+        //);
 
-        var present_queue: c.VkQueue = undefined;
-        device.getDeviceQueue(
-            device.queue_family_indices.present_family.?,
-            0,
-            &present_queue,
+        //var present_queue: c.VkQueue = undefined;
+        //device.getDeviceQueue(
+        //    device.queue_family_indices.present_family.?,
+        //    0,
+        //    &present_queue,
+        //);
+
+        var swap_chain = try graphics_ctx.allocator.create(VulkanSwapChain);
+        errdefer graphics_ctx.allocator.destroy(swap_chain);
+
+        swap_chain.* = try VulkanSwapChain.init(
+            graphics_ctx,
+            instance,
+            device,
+            surface,
         );
+        errdefer swap_chain.deinit();
 
         return .{
+            .allocator = graphics_ctx.allocator,
             .vulkan_library = vulkan_library,
             .instance = instance,
             .debug_messenger = debug_messenger,
             .device = device,
             .surface = surface,
+            .swap_chain = swap_chain,
         };
     }
 
     fn deinit(self: *Self) void {
+        self.swap_chain.deinit();
+        self.allocator.destroy(self.swap_chain);
+
         self.surface.deinit();
+        self.allocator.destroy(self.surface);
+
         self.device.deinit();
+        self.allocator.destroy(self.device);
+
         if (self.debug_messenger) |debug_messenger| {
             self.instance.destroyDebugUtilsMessengerEXT(debug_messenger, null);
         }
         self.instance.deinit();
+        self.allocator.destroy(self.instance);
+
         self.vulkan_library.deinit();
     }
 
