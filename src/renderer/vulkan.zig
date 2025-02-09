@@ -883,6 +883,12 @@ const VulkanDevice = struct {
         DestroyImageView: std.meta.Child(c.PFN_vkDestroyImageView) = undefined,
         CreateShaderModule: std.meta.Child(c.PFN_vkCreateShaderModule) = undefined,
         DestroyShaderModule: std.meta.Child(c.PFN_vkDestroyShaderModule) = undefined,
+        CreatePipelineLayout: std.meta.Child(c.PFN_vkCreatePipelineLayout) = undefined,
+        DestroyPipelineLayout: std.meta.Child(c.PFN_vkDestroyPipelineLayout) = undefined,
+        CreateRenderPass: std.meta.Child(c.PFN_vkCreateRenderPass) = undefined,
+        DestroyRenderPass: std.meta.Child(c.PFN_vkDestroyRenderPass) = undefined,
+        CreateFramebuffer: std.meta.Child(c.PFN_vkCreateFramebuffer) = undefined,
+        DestroyFramebuffer: std.meta.Child(c.PFN_vkDestroyFramebuffer) = undefined,
     };
     const QueueFamilyIndices = struct {
         graphics_family: ?u32 = null,
@@ -1371,6 +1377,93 @@ const VulkanDevice = struct {
             allocation_callbacks,
         );
     }
+
+    fn createPipelineLayout(
+        self: *const Self,
+        create_info: *const c.VkPipelineLayoutCreateInfo,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+        pipeline_layout: *c.VkPipelineLayout,
+    ) !void {
+        try checkVulkanError(
+            "Failed to create Vulkan pipeline layout",
+            self.dispatch.CreatePipelineLayout(
+                self.device,
+                create_info,
+                allocation_callbacks,
+                pipeline_layout,
+            ),
+        );
+    }
+
+    fn destroyPipelineLayout(
+        self: *const Self,
+        pipeline_layout: c.VkPipelineLayout,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+    ) void {
+        self.dispatch.DestroyPipelineLayout(
+            self.device,
+            pipeline_layout,
+            allocation_callbacks,
+        );
+    }
+
+    fn createRenderPass(
+        self: *const Self,
+        create_info: *const c.VkRenderPassCreateInfo,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+        render_pass: *c.VkRenderPass,
+    ) !void {
+        try checkVulkanError(
+            "Failed to create Vulkan render pass",
+            self.dispatch.CreateRenderPass(
+                self.device,
+                create_info,
+                allocation_callbacks,
+                render_pass,
+            ),
+        );
+    }
+
+    fn destroyRenderPass(
+        self: *const Self,
+        render_pass: c.VkRenderPass,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+    ) void {
+        self.dispatch.DestroyRenderPass(
+            self.device,
+            render_pass,
+            allocation_callbacks,
+        );
+    }
+
+    fn createFrameBuffer(
+        self: *const Self,
+        create_info: *const c.VkFramebufferCreateInfo,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+        frame_buffer: *c.VkFramebuffer,
+    ) !void {
+        try checkVulkanError(
+            "Failed to create Vulkan frame buffer",
+            self.dispatch.CreateFramebuffer(
+                self.device,
+                create_info,
+                allocation_callbacks,
+                frame_buffer,
+            ),
+        );
+    }
+
+    fn destroyFrameBuffer(
+        self: *const Self,
+        frame_buffer: c.VkFramebuffer,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+    ) void {
+        self.dispatch.DestroyFramebuffer(
+            self.device,
+            frame_buffer,
+            allocation_callbacks,
+        );
+    }
 };
 
 const SwapChainSupportDetails = struct {
@@ -1470,8 +1563,11 @@ const VulkanSwapChain = struct {
     allocator: std.mem.Allocator,
     handle: c.VkSwapchainKHR,
     device: *const VulkanDevice,
-    swap_chain_images: []c.VkImage,
-    swap_chain_image_views: []c.VkImageView,
+    images: []c.VkImage,
+    image_views: []c.VkImageView,
+    extent: c.VkExtent2D,
+    format: c.VkFormat,
+    frame_buffers: ?[]c.VkFramebuffer,
 
     fn init(
         graphics_ctx: *const z3dfx.GraphicsContext,
@@ -1616,17 +1712,27 @@ const VulkanSwapChain = struct {
             .allocator = graphics_ctx.allocator,
             .handle = swap_chain,
             .device = device,
-            .swap_chain_images = swap_chain_images,
-            .swap_chain_image_views = swap_chain_image_views,
+            .images = swap_chain_images,
+            .image_views = swap_chain_image_views,
+            .extent = extent,
+            .format = surface_format.format,
+            .frame_buffers = null,
         };
     }
 
     fn deinit(self: *Self) void {
-        for (self.swap_chain_image_views) |image_view| {
+        if (self.frame_buffers) |frame_buffers| {
+            for (frame_buffers) |frame_buffer| {
+                self.device.destroyFrameBuffer(frame_buffer, null);
+            }
+            self.allocator.free(frame_buffers);
+        }
+
+        for (self.image_views) |image_view| {
             self.device.destroyImageView(image_view, null);
         }
-        self.allocator.free(self.swap_chain_image_views);
-        self.allocator.free(self.swap_chain_images);
+        self.allocator.free(self.image_views);
+        self.allocator.free(self.images);
         self.device.destroySwapchainKHR(self.handle, null);
     }
 
@@ -1681,6 +1787,105 @@ const VulkanSwapChain = struct {
 
         return actual_extent;
     }
+
+    fn createFrameBuffers(
+        self: *Self,
+        render_pass: *const VulkanRenderPass,
+    ) !void {
+        self.frame_buffers = try self.allocator.alloc(
+            c.VkFramebuffer,
+            self.image_views.len,
+        );
+
+        for (self.image_views, 0..) |image_view, index| {
+            const attachments = [1]c.VkImageView{image_view};
+
+            const frame_buffer_create_info = std.mem.zeroInit(
+                c.VkFramebufferCreateInfo,
+                .{
+                    .sType = c.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                    .renderPass = render_pass.handle,
+                    .attachmentCount = 1,
+                    .pAttachments = &attachments,
+                    .width = self.extent.width,
+                    .height = self.extent.height,
+                    .layers = 1,
+                },
+            );
+
+            try self.device.createFrameBuffer(
+                &frame_buffer_create_info,
+                null,
+                &self.frame_buffers.?[index],
+            );
+        }
+    }
+};
+
+const VulkanRenderPass = struct {
+    const Self = @This();
+
+    handle: c.VkRenderPass,
+    device: *const VulkanDevice,
+
+    fn init(device: *const VulkanDevice, format: c.VkFormat) !Self {
+        const color_attachment = std.mem.zeroInit(
+            c.VkAttachmentDescription,
+            .{
+                .format = format,
+                .samples = c.VK_SAMPLE_COUNT_1_BIT,
+                .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+                .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
+                .stencilLoadOp = c.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+                .stencilStoreOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+                .initialLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
+                .finalLayout = c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            },
+        );
+
+        const color_attachment_ref = std.mem.zeroInit(
+            c.VkAttachmentReference,
+            .{
+                .attachment = 0,
+                .layout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            },
+        );
+
+        const subpass = std.mem.zeroInit(
+            c.VkSubpassDescription,
+            .{
+                .pipelineBindPoint = c.VK_PIPELINE_BIND_POINT_GRAPHICS,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &color_attachment_ref,
+            },
+        );
+
+        const render_pass_info = std.mem.zeroInit(
+            c.VkRenderPassCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+                .attachmentCount = 1,
+                .pAttachments = &color_attachment,
+                .subpassCount = 1,
+                .pSubpasses = &subpass,
+            },
+        );
+
+        var render_pass: c.VkRenderPass = undefined;
+        try device.createRenderPass(
+            &render_pass_info,
+            null,
+            &render_pass,
+        );
+        return .{
+            .handle = render_pass,
+            .device = device,
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        self.device.destroyRenderPass(self.handle, null);
+    }
 };
 
 const VulkanContext = struct {
@@ -1692,9 +1897,11 @@ const VulkanContext = struct {
     device: *VulkanDevice,
     surface: *VulkanSurface,
     swap_chain: *VulkanSwapChain,
+    main_render_pass: *VulkanRenderPass,
     debug_messenger: ?c.VkDebugUtilsMessengerEXT,
 
     shader_modules: [z3dfx.MaxShaderHandles]c.VkShaderModule,
+    programs: [z3dfx.MaxProgramHandles]c.VkPipelineLayout,
 
     fn init(graphics_ctx: *const z3dfx.GraphicsContext) !Self {
         var vulkan_library = try VulkanLibrary.init();
@@ -1761,6 +1968,17 @@ const VulkanContext = struct {
         );
         errdefer swap_chain.deinit();
 
+        var main_render_pass = try graphics_ctx.allocator.create(VulkanRenderPass);
+        errdefer graphics_ctx.allocator.destroy(main_render_pass);
+
+        main_render_pass.* = try VulkanRenderPass.init(
+            device,
+            swap_chain.format,
+        );
+        errdefer main_render_pass.deinit();
+
+        try swap_chain.createFrameBuffers(main_render_pass);
+
         return .{
             .allocator = graphics_ctx.allocator,
             .vulkan_library = vulkan_library,
@@ -1769,11 +1987,16 @@ const VulkanContext = struct {
             .device = device,
             .surface = surface,
             .swap_chain = swap_chain,
+            .main_render_pass = main_render_pass,
             .shader_modules = undefined,
+            .programs = undefined,
         };
     }
 
     fn deinit(self: *Self) void {
+        self.main_render_pass.deinit();
+        self.allocator.destroy(self.main_render_pass);
+
         self.swap_chain.deinit();
         self.allocator.destroy(self.swap_chain);
 
@@ -1865,5 +2088,152 @@ pub const VulkanRenderer = struct {
             null,
         );
         logDebug("Destroyed Vulkan shader module: {d}", .{handle});
+    }
+
+    pub fn createProgram(
+        _: *const VulkanRenderer,
+        handle: z3dfx.ProgramHandle,
+        vertex_shader: z3dfx.ShaderHandle,
+        fragment_shader: z3dfx.ShaderHandle,
+    ) !void {
+        _ = vertex_shader;
+        _ = fragment_shader;
+
+        //const dynamic_states = [_]c.VkDynamicState{
+        //    c.VK_DYNAMIC_STATE_VIEWPORT,
+        //    c.VK_DYNAMIC_STATE_SCISSOR,
+        //};
+
+        //const dynamic_state_create_info = std.mem.zeroInit(
+        //    c.VkPipelineDynamicStateCreateInfo,
+        //    .{
+        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+        //        .dynamicStateCount = @as(u32, dynamic_states.len),
+        //        .pDynamicStates = &dynamic_states,
+        //    },
+        //);
+
+        //const vertex_input_info = std.mem.zeroInit(
+        //    c.VkPipelineVertexInputStateCreateInfo,
+        //    .{
+        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+        //        .vertexBindingDescriptionCount = 0,
+        //        .pVertexBindingDescriptions = null,
+        //        .vertexAttributeDescriptionCount = 0,
+        //        .pVertexAttributeDescriptions = null,
+        //    },
+        //);
+
+        //const input_assembly = std.mem.zeroInit(
+        //    c.VkPipelineInputAssemblyStateCreateInfo,
+        //    .{
+        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+        //        .topology = c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+        //        .primitiveRestartEnable = c.VK_FALSE,
+        //    },
+        //);
+
+        //const viewport = std.mem.zeroInit(
+        //    c.VkViewport,
+        //    .{
+        //        .x = 0.0,
+        //        .y = 0.0,
+        //        .width = @as(f32, @floatFromInt(context.swap_chain.extent.width)),
+        //        .height = @as(f32, @floatFromInt(context.swap_chain.extent.height)),
+        //        .minDepth = 0.0,
+        //        .maxDepth = 1.0,
+        //    },
+        //);
+
+        //const scissor = std.mem.zeroInit(
+        //    c.VkRect2D,
+        //    .{
+        //        .offset = c.VkOffset2D{ .x = 0, .y = 0 },
+        //        .extent = context.swap_chain.extent,
+        //    },
+        //);
+
+        //const viewport_state = std.mem.zeroInit(
+        //    c.VkPipelineViewportStateCreateInfo,
+        //    .{
+        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+        //        .viewportCount = 1,
+        //        .pViewports = &viewport,
+        //        .scissorCount = 1,
+        //        .pScissors = &scissor,
+        //    },
+        //);
+
+        //const rasterizer = std.mem.zeroInit(
+        //    c.VkPipelineRasterizationStateCreateInfo,
+        //    .{
+        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+        //        .depthClampEnable = c.VK_FALSE,
+        //        .rasterizerDiscardEnable = c.VK_FALSE,
+        //        .polygonMode = c.VK_POLYGON_MODE_FILL,
+        //        .lineWidth = 1.0,
+        //        .cullMode = c.VK_CULL_MODE_BACK_BIT,
+        //        .frontFace = c.VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        //        .depthBiasEnable = c.VK_FALSE,
+        //    },
+        //);
+
+        //const multisampling = std.mem.zeroInit(
+        //    c.VkPipelineMultisampleStateCreateInfo,
+        //    .{
+        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+        //        .sampleShadingEnable = c.VK_FALSE,
+        //        .rasterizationSamples = c.VK_SAMPLE_COUNT_1_BIT,
+        //    },
+        //);
+
+        //const color_blend_attachment = std.mem.zeroInit(
+        //    c.VkPipelineColorBlendAttachmentState,
+        //    .{
+        //        .colorWriteMask = c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT | c.VK_COLOR_COMPONENT_B_BIT | c.VK_COLOR_COMPONENT_A_BIT,
+        //        .blendEnable = c.VK_FALSE,
+        //    },
+        //);
+
+        //const color_blending = std.mem.zeroInit(
+        //    c.VkPipelineColorBlendStateCreateInfo,
+        //    .{
+        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+        //        .logicOpEnable = c.VK_FALSE,
+        //        .logicOp = c.VK_LOGIC_OP_COPY,
+        //        .attachmentCount = 1,
+        //        .pAttachments = &color_blend_attachment,
+        //    },
+        //);
+
+        const pipeline_layout_info = std.mem.zeroInit(
+            c.VkPipelineLayoutCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                .setLayoutCount = 0,
+                .pSetLayouts = null,
+                .pushConstantRangeCount = 0,
+                .pPushConstantRanges = null,
+            },
+        );
+
+        try context.device.createPipelineLayout(
+            &pipeline_layout_info,
+            null,
+            &context.programs[handle],
+        );
+
+        logDebug("Created Vulkan program: {d}", .{handle});
+    }
+
+    pub fn destroyProgram(
+        _: *const VulkanRenderer,
+        handle: z3dfx.ProgramHandle,
+    ) void {
+        context.device.destroyPipelineLayout(
+            context.programs[handle],
+            null,
+        );
+        logDebug("Destroyed Vulkan program: {d}", .{handle});
     }
 };

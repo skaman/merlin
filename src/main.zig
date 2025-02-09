@@ -54,9 +54,11 @@ pub fn main() !void {
     const vert_shader_handle = try z3dfx.createShaderUnaligned(vert_shader_code);
     defer z3dfx.destroyShader(vert_shader_handle);
 
-    // Fragment shader
     const frag_shader_handle = try z3dfx.createShaderUnaligned(frag_shader_code);
     defer z3dfx.destroyShader(frag_shader_handle);
+
+    const program_handle = try z3dfx.createProgram(vert_shader_handle, frag_shader_handle);
+    defer z3dfx.destroyProgram(program_handle);
 
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE and false) {
         c.glfwPollEvents();

@@ -29,10 +29,11 @@ pub const RendererType = enum {
     vulkan,
 };
 
-pub const Handle = u16;
-pub const ShaderHandle = Handle;
+pub const ShaderHandle = u16;
+pub const ProgramHandle = u16;
 
 pub const MaxShaderHandles = 512;
+pub const MaxProgramHandles = 512;
 
 fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
     return struct {
@@ -48,7 +49,7 @@ fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
             };
 
             for (0..size) |i| {
-                self.free_list[i] = @intCast(i);
+                self.free_list[i] = @intCast((size - 1) - i);
             }
 
             return self;
@@ -76,6 +77,8 @@ pub const Renderer = struct {
         deinit: *const fn (*anyopaque) void,
         createShader: *const fn (*anyopaque, handle: ShaderHandle, []align(@alignOf(u32)) const u8) anyerror!void,
         destroyShader: *const fn (*anyopaque, handle: ShaderHandle) void,
+        createProgram: *const fn (*anyopaque, handle: ProgramHandle, vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!void,
+        destroyProgram: *const fn (*anyopaque, handle: ProgramHandle) void,
     };
 
     ptr: *anyopaque,
@@ -96,6 +99,14 @@ pub const Renderer = struct {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.destroyShader(handle);
             }
+            fn createProgram(ptr_: *anyopaque, handle: ProgramHandle, vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                return self.createProgram(handle, vertex_shader, fragment_shader);
+            }
+            fn destroyProgram(ptr_: *anyopaque, handle: ProgramHandle) void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                self.destroyProgram(handle);
+            }
         };
         return .{
             .ptr = ptr,
@@ -103,6 +114,8 @@ pub const Renderer = struct {
                 .deinit = impl.deinit,
                 .createShader = impl.createShader,
                 .destroyShader = impl.destroyShader,
+                .createProgram = impl.createProgram,
+                .destroyProgram = impl.destroyProgram,
             },
         };
     }
@@ -118,6 +131,14 @@ pub const Renderer = struct {
     fn destroyShader(self: *Self, handle: ShaderHandle) void {
         return self.vtab.destroyShader(self.ptr, handle);
     }
+
+    fn createProgram(self: *Self, handle: ProgramHandle, vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) !void {
+        return self.vtab.createProgram(self.ptr, handle, vertex_shader, fragment_shader);
+    }
+
+    fn destroyProgram(self: *Self, handle: ProgramHandle) void {
+        return self.vtab.destroyProgram(self.ptr, handle);
+    }
 };
 
 pub const Context = struct {
@@ -129,6 +150,7 @@ pub const Context = struct {
     renderer: Renderer,
 
     shader_handles: HandlePool(ShaderHandle, MaxShaderHandles),
+    program_handles: HandlePool(ProgramHandle, MaxProgramHandles),
 
     pub fn deinit(self: *const Self) void {
         self.renderer.deinit();
@@ -159,6 +181,7 @@ pub fn init(
         .renderer = renderer,
         .renderer_type = options.renderer_type,
         .shader_handles = .init(),
+        .program_handles = .init(),
     };
 }
 
@@ -188,6 +211,19 @@ pub fn createShaderUnaligned(data: []const u8) !ShaderHandle {
 pub fn destroyShader(handle: ShaderHandle) void {
     context.renderer.destroyShader(handle);
     context.shader_handles.free(handle);
+}
+
+pub fn createProgram(vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) !ProgramHandle {
+    const handle = try context.program_handles.alloc();
+    errdefer context.program_handles.free(handle);
+
+    try context.renderer.createProgram(handle, vertex_shader, fragment_shader);
+    return handle;
+}
+
+pub fn destroyProgram(handle: ProgramHandle) void {
+    context.renderer.destroyProgram(handle);
+    context.program_handles.free(handle);
 }
 
 fn createRenderer(
