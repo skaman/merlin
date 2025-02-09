@@ -136,6 +136,10 @@ fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void {
             logErr("{s}: compression exhausted", .{message});
             return error.VulkanCompressionExhausted;
         },
+        c.VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR => {
+            logErr("{s}: invalid opaque capture address", .{message});
+            return error.VulkanInvalidOpaqueCaptureAddress;
+        },
         else => {
             logErr("{s}: {d}", .{ message, result });
             return error.VulkanUnknownError;
@@ -871,6 +875,8 @@ const VulkanDevice = struct {
         CreateSwapchainKHR: std.meta.Child(c.PFN_vkCreateSwapchainKHR) = undefined,
         DestroySwapchainKHR: std.meta.Child(c.PFN_vkDestroySwapchainKHR) = undefined,
         GetSwapchainImagesKHR: std.meta.Child(c.PFN_vkGetSwapchainImagesKHR) = undefined,
+        CreateImageView: std.meta.Child(c.PFN_vkCreateImageView) = undefined,
+        DestroyImageView: std.meta.Child(c.PFN_vkDestroyImageView) = undefined,
     };
     const QueueFamilyIndices = struct {
         graphics_family: ?u32 = null,
@@ -1301,6 +1307,35 @@ const VulkanDevice = struct {
         );
         return result;
     }
+
+    fn createImageView(
+        self: *const Self,
+        create_info: *const c.VkImageViewCreateInfo,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+        image_view: *c.VkImageView,
+    ) !void {
+        try checkVulkanError(
+            "Failed to create Vulkan image view",
+            self.dispatch.CreateImageView(
+                self.device,
+                create_info,
+                allocation_callbacks,
+                image_view,
+            ),
+        );
+    }
+
+    fn destroyImageView(
+        self: *const Self,
+        image_view: c.VkImageView,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+    ) void {
+        self.dispatch.DestroyImageView(
+            self.device,
+            image_view,
+            allocation_callbacks,
+        );
+    }
 };
 
 const SwapChainSupportDetails = struct {
@@ -1401,6 +1436,7 @@ const VulkanSwapChain = struct {
     handle: c.VkSwapchainKHR,
     device: *const VulkanDevice,
     swap_chain_images: []c.VkImage,
+    swap_chain_image_views: []c.VkImageView,
 
     fn init(
         graphics_ctx: *const z3dfx.GraphicsContext,
@@ -1414,7 +1450,7 @@ const VulkanSwapChain = struct {
             device.physical_device,
             surface.handle,
         );
-        errdefer swap_chain_support.deinit();
+        defer swap_chain_support.deinit();
 
         const surface_format = chooseSwapSurfaceFormat(swap_chain_support.formats);
         const present_mode = chooseSwapPresentMode(swap_chain_support.present_modes);
@@ -1495,15 +1531,66 @@ const VulkanSwapChain = struct {
         );
         errdefer graphics_ctx.allocator.free(swap_chain_images);
 
+        var swap_chain_image_views = try graphics_ctx.allocator.alloc(
+            c.VkImageView,
+            swap_chain_images.len,
+        );
+        errdefer graphics_ctx.allocator.free(swap_chain_image_views);
+
+        @memset(swap_chain_image_views, null);
+        errdefer {
+            for (swap_chain_image_views) |image_view| {
+                if (image_view != null) {
+                    device.destroyImageView(image_view, null);
+                }
+            }
+        }
+
+        for (swap_chain_images, 0..) |swap_chain_image, index| {
+            const image_view_create_info = std.mem.zeroInit(
+                c.VkImageViewCreateInfo,
+                .{
+                    .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                    .image = swap_chain_image,
+                    .viewType = c.VK_IMAGE_VIEW_TYPE_2D,
+                    .format = surface_format.format,
+                    .components = c.VkComponentMapping{
+                        .r = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                        .g = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                        .b = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                        .a = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                    },
+                    .subresourceRange = c.VkImageSubresourceRange{
+                        .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                        .baseMipLevel = 0,
+                        .levelCount = 1,
+                        .baseArrayLayer = 0,
+                        .layerCount = 1,
+                    },
+                },
+            );
+
+            try device.createImageView(
+                &image_view_create_info,
+                null,
+                &swap_chain_image_views[index],
+            );
+        }
+
         return .{
             .allocator = graphics_ctx.allocator,
             .handle = swap_chain,
             .device = device,
             .swap_chain_images = swap_chain_images,
+            .swap_chain_image_views = swap_chain_image_views,
         };
     }
 
     fn deinit(self: *Self) void {
+        for (self.swap_chain_image_views) |image_view| {
+            self.device.destroyImageView(image_view, null);
+        }
+        self.allocator.free(self.swap_chain_image_views);
         self.allocator.free(self.swap_chain_images);
         self.device.destroySwapchainKHR(self.handle, null);
     }
