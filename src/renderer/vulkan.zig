@@ -140,6 +140,10 @@ fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void {
             logErr("{s}: invalid opaque capture address", .{message});
             return error.VulkanInvalidOpaqueCaptureAddress;
         },
+        c.VK_ERROR_INVALID_SHADER_NV => {
+            logErr("{s}: invalid shader", .{message});
+            return error.VulkanInvalidShader;
+        },
         else => {
             logErr("{s}: {d}", .{ message, result });
             return error.VulkanUnknownError;
@@ -877,6 +881,8 @@ const VulkanDevice = struct {
         GetSwapchainImagesKHR: std.meta.Child(c.PFN_vkGetSwapchainImagesKHR) = undefined,
         CreateImageView: std.meta.Child(c.PFN_vkCreateImageView) = undefined,
         DestroyImageView: std.meta.Child(c.PFN_vkDestroyImageView) = undefined,
+        CreateShaderModule: std.meta.Child(c.PFN_vkCreateShaderModule) = undefined,
+        DestroyShaderModule: std.meta.Child(c.PFN_vkDestroyShaderModule) = undefined,
     };
     const QueueFamilyIndices = struct {
         graphics_family: ?u32 = null,
@@ -1336,6 +1342,35 @@ const VulkanDevice = struct {
             allocation_callbacks,
         );
     }
+
+    fn createShaderModule(
+        self: *const Self,
+        create_info: *const c.VkShaderModuleCreateInfo,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+        shader_module: *c.VkShaderModule,
+    ) !void {
+        try checkVulkanError(
+            "Failed to create Vulkan shader module",
+            self.dispatch.CreateShaderModule(
+                self.device,
+                create_info,
+                allocation_callbacks,
+                shader_module,
+            ),
+        );
+    }
+
+    fn destroyShaderModule(
+        self: *const Self,
+        shader_module: c.VkShaderModule,
+        allocation_callbacks: ?*const c.VkAllocationCallbacks,
+    ) void {
+        self.dispatch.DestroyShaderModule(
+            self.device,
+            shader_module,
+            allocation_callbacks,
+        );
+    }
 };
 
 const SwapChainSupportDetails = struct {
@@ -1659,6 +1694,8 @@ const VulkanContext = struct {
     swap_chain: *VulkanSwapChain,
     debug_messenger: ?c.VkDebugUtilsMessengerEXT,
 
+    shader_modules: [z3dfx.MaxShaderHandles]c.VkShaderModule,
+
     fn init(graphics_ctx: *const z3dfx.GraphicsContext) !Self {
         var vulkan_library = try VulkanLibrary.init();
         errdefer vulkan_library.deinit();
@@ -1732,6 +1769,7 @@ const VulkanContext = struct {
             .device = device,
             .surface = surface,
             .swap_chain = swap_chain,
+            .shader_modules = undefined,
         };
     }
 
@@ -1790,10 +1828,42 @@ pub const VulkanRenderer = struct {
         return .{};
     }
 
-    pub fn deinit(self: *const VulkanRenderer) void {
-        _ = self;
+    pub fn deinit(_: *const VulkanRenderer) void {
         logDebug("Deinitializing Vulkan renderer...", .{});
 
         context.deinit();
+    }
+
+    pub fn createShader(
+        _: *const VulkanRenderer,
+        handle: z3dfx.ShaderHandle,
+        data: []align(@alignOf(u32)) const u8,
+    ) !void {
+        const create_info = std.mem.zeroInit(
+            c.VkShaderModuleCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+                .codeSize = @as(u64, data.len),
+                .pCode = std.mem.bytesAsSlice(u32, data).ptr,
+            },
+        );
+
+        try context.device.createShaderModule(
+            &create_info,
+            null,
+            &context.shader_modules[handle],
+        );
+        logDebug("Created Vulkan shader module: {d}", .{handle});
+    }
+
+    pub fn destroyShader(
+        _: *VulkanRenderer,
+        handle: z3dfx.ShaderHandle,
+    ) void {
+        context.device.destroyShaderModule(
+            context.shader_modules[handle],
+            null,
+        );
+        logDebug("Destroyed Vulkan shader module: {d}", .{handle});
     }
 };
