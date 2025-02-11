@@ -79,6 +79,8 @@ pub const Renderer = struct {
         destroyShader: *const fn (*anyopaque, handle: ShaderHandle) void,
         createProgram: *const fn (*anyopaque, handle: ProgramHandle, vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!void,
         destroyProgram: *const fn (*anyopaque, handle: ProgramHandle) void,
+        beginFrame: *const fn (*anyopaque) void,
+        endFrame: *const fn (*anyopaque) void,
     };
 
     ptr: *anyopaque,
@@ -107,6 +109,14 @@ pub const Renderer = struct {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.destroyProgram(handle);
             }
+            fn beginFrame(ptr_: *anyopaque) void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                self.beginFrame();
+            }
+            fn endFrame(ptr_: *anyopaque) void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                self.endFrame();
+            }
         };
         return .{
             .ptr = ptr,
@@ -116,6 +126,8 @@ pub const Renderer = struct {
                 .destroyShader = impl.destroyShader,
                 .createProgram = impl.createProgram,
                 .destroyProgram = impl.destroyProgram,
+                .beginFrame = impl.beginFrame,
+                .endFrame = impl.endFrame,
             },
         };
     }
@@ -138,6 +150,14 @@ pub const Renderer = struct {
 
     fn destroyProgram(self: *Self, handle: ProgramHandle) void {
         return self.vtab.destroyProgram(self.ptr, handle);
+    }
+
+    fn beginFrame(self: *Self) void {
+        return self.vtab.beginFrame(self.ptr);
+    }
+
+    fn endFrame(self: *Self) void {
+        return self.vtab.endFrame(self.ptr);
     }
 };
 
@@ -224,6 +244,14 @@ pub fn createProgram(vertex_shader: ShaderHandle, fragment_shader: ShaderHandle)
 pub fn destroyProgram(handle: ProgramHandle) void {
     context.renderer.destroyProgram(handle);
     context.program_handles.free(handle);
+}
+
+pub fn beginFrame() void {
+    context.renderer.beginFrame();
+}
+
+pub fn endFrame() void {
+    context.renderer.endFrame();
 }
 
 fn createRenderer(

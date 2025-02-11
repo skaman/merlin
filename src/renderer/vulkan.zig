@@ -826,7 +826,6 @@ const VulkanInstance = struct {
     fn createDebugUtilsMessengerEXT(
         self: *Self,
         create_info: *const c.VkDebugUtilsMessengerCreateInfoEXT,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
         messenger: *c.VkDebugUtilsMessengerEXT,
     ) !void {
         try checkVulkanError(
@@ -834,7 +833,7 @@ const VulkanInstance = struct {
             self.dispatch.CreateDebugUtilsMessengerEXT(
                 self.handle,
                 create_info,
-                allocation_callbacks,
+                self.allocation_callbacks,
                 messenger,
             ),
         );
@@ -843,12 +842,11 @@ const VulkanInstance = struct {
     fn destroyDebugUtilsMessengerEXT(
         self: *Self,
         messenger: c.VkDebugUtilsMessengerEXT,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
     ) void {
         self.dispatch.DestroyDebugUtilsMessengerEXT(
             self.handle,
             messenger,
-            allocation_callbacks,
+            self.allocation_callbacks,
         );
     }
 
@@ -856,7 +854,6 @@ const VulkanInstance = struct {
         self: *Self,
         physical_device: c.VkPhysicalDevice,
         create_info: *const c.VkDeviceCreateInfo,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
         device: *c.VkDevice,
     ) !void {
         try checkVulkanError(
@@ -864,7 +861,7 @@ const VulkanInstance = struct {
             self.dispatch.CreateDevice(
                 physical_device,
                 create_info,
-                allocation_callbacks,
+                self.allocation_callbacks,
                 device,
             ),
         );
@@ -889,6 +886,9 @@ const VulkanDevice = struct {
         DestroyRenderPass: std.meta.Child(c.PFN_vkDestroyRenderPass) = undefined,
         CreateFramebuffer: std.meta.Child(c.PFN_vkCreateFramebuffer) = undefined,
         DestroyFramebuffer: std.meta.Child(c.PFN_vkDestroyFramebuffer) = undefined,
+        CreateCommandPool: std.meta.Child(c.PFN_vkCreateCommandPool) = undefined,
+        DestroyCommandPool: std.meta.Child(c.PFN_vkDestroyCommandPool) = undefined,
+        AllocateCommandBuffers: std.meta.Child(c.PFN_vkAllocateCommandBuffers) = undefined,
     };
     const QueueFamilyIndices = struct {
         graphics_family: ?u32 = null,
@@ -899,6 +899,7 @@ const VulkanDevice = struct {
         }
     };
 
+    instance: *const VulkanInstance,
     physical_device: c.VkPhysicalDevice,
     device: c.VkDevice,
     dispatch: Dispatch,
@@ -1064,11 +1065,11 @@ const VulkanDevice = struct {
         try instance.createDevice(
             selected_physical_device,
             &device_create_info,
-            null,
             &device,
         );
 
         return .{
+            .instance = instance,
             .physical_device = selected_physical_device,
             .device = device,
             .dispatch = try vulkan_library.load(
@@ -1081,7 +1082,10 @@ const VulkanDevice = struct {
     }
 
     fn deinit(self: *Self) void {
-        self.dispatch.DestroyDevice(self.device, null);
+        self.dispatch.DestroyDevice(
+            self.device,
+            self.instance.allocation_callbacks,
+        );
     }
 
     fn rateDeviceSuitability(
@@ -1245,7 +1249,6 @@ const VulkanDevice = struct {
     fn createSwapchainKHR(
         self: *const Self,
         create_info: *const c.VkSwapchainCreateInfoKHR,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
         swapchain: *c.VkSwapchainKHR,
     ) !void {
         try checkVulkanError(
@@ -1253,7 +1256,7 @@ const VulkanDevice = struct {
             self.dispatch.CreateSwapchainKHR(
                 self.device,
                 create_info,
-                allocation_callbacks,
+                self.instance.allocation_callbacks,
                 swapchain,
             ),
         );
@@ -1262,12 +1265,11 @@ const VulkanDevice = struct {
     fn destroySwapchainKHR(
         self: *const Self,
         swapchain: c.VkSwapchainKHR,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
     ) void {
         self.dispatch.DestroySwapchainKHR(
             self.device,
             swapchain,
-            allocation_callbacks,
+            self.instance.allocation_callbacks,
         );
     }
 
@@ -1323,7 +1325,6 @@ const VulkanDevice = struct {
     fn createImageView(
         self: *const Self,
         create_info: *const c.VkImageViewCreateInfo,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
         image_view: *c.VkImageView,
     ) !void {
         try checkVulkanError(
@@ -1331,7 +1332,7 @@ const VulkanDevice = struct {
             self.dispatch.CreateImageView(
                 self.device,
                 create_info,
-                allocation_callbacks,
+                self.instance.allocation_callbacks,
                 image_view,
             ),
         );
@@ -1340,19 +1341,17 @@ const VulkanDevice = struct {
     fn destroyImageView(
         self: *const Self,
         image_view: c.VkImageView,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
     ) void {
         self.dispatch.DestroyImageView(
             self.device,
             image_view,
-            allocation_callbacks,
+            self.instance.allocation_callbacks,
         );
     }
 
     fn createShaderModule(
         self: *const Self,
         create_info: *const c.VkShaderModuleCreateInfo,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
         shader_module: *c.VkShaderModule,
     ) !void {
         try checkVulkanError(
@@ -1360,7 +1359,7 @@ const VulkanDevice = struct {
             self.dispatch.CreateShaderModule(
                 self.device,
                 create_info,
-                allocation_callbacks,
+                self.instance.allocation_callbacks,
                 shader_module,
             ),
         );
@@ -1369,19 +1368,17 @@ const VulkanDevice = struct {
     fn destroyShaderModule(
         self: *const Self,
         shader_module: c.VkShaderModule,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
     ) void {
         self.dispatch.DestroyShaderModule(
             self.device,
             shader_module,
-            allocation_callbacks,
+            self.instance.allocation_callbacks,
         );
     }
 
     fn createPipelineLayout(
         self: *const Self,
         create_info: *const c.VkPipelineLayoutCreateInfo,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
         pipeline_layout: *c.VkPipelineLayout,
     ) !void {
         try checkVulkanError(
@@ -1389,7 +1386,7 @@ const VulkanDevice = struct {
             self.dispatch.CreatePipelineLayout(
                 self.device,
                 create_info,
-                allocation_callbacks,
+                self.instance.allocation_callbacks,
                 pipeline_layout,
             ),
         );
@@ -1398,19 +1395,17 @@ const VulkanDevice = struct {
     fn destroyPipelineLayout(
         self: *const Self,
         pipeline_layout: c.VkPipelineLayout,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
     ) void {
         self.dispatch.DestroyPipelineLayout(
             self.device,
             pipeline_layout,
-            allocation_callbacks,
+            self.instance.allocation_callbacks,
         );
     }
 
     fn createRenderPass(
         self: *const Self,
         create_info: *const c.VkRenderPassCreateInfo,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
         render_pass: *c.VkRenderPass,
     ) !void {
         try checkVulkanError(
@@ -1418,7 +1413,7 @@ const VulkanDevice = struct {
             self.dispatch.CreateRenderPass(
                 self.device,
                 create_info,
-                allocation_callbacks,
+                self.instance.allocation_callbacks,
                 render_pass,
             ),
         );
@@ -1427,19 +1422,17 @@ const VulkanDevice = struct {
     fn destroyRenderPass(
         self: *const Self,
         render_pass: c.VkRenderPass,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
     ) void {
         self.dispatch.DestroyRenderPass(
             self.device,
             render_pass,
-            allocation_callbacks,
+            self.instance.allocation_callbacks,
         );
     }
 
     fn createFrameBuffer(
         self: *const Self,
         create_info: *const c.VkFramebufferCreateInfo,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
         frame_buffer: *c.VkFramebuffer,
     ) !void {
         try checkVulkanError(
@@ -1447,7 +1440,7 @@ const VulkanDevice = struct {
             self.dispatch.CreateFramebuffer(
                 self.device,
                 create_info,
-                allocation_callbacks,
+                self.instance.allocation_callbacks,
                 frame_buffer,
             ),
         );
@@ -1456,12 +1449,53 @@ const VulkanDevice = struct {
     fn destroyFrameBuffer(
         self: *const Self,
         frame_buffer: c.VkFramebuffer,
-        allocation_callbacks: ?*const c.VkAllocationCallbacks,
     ) void {
         self.dispatch.DestroyFramebuffer(
             self.device,
             frame_buffer,
-            allocation_callbacks,
+            self.instance.allocation_callbacks,
+        );
+    }
+
+    fn createCommandPool(
+        self: *const Self,
+        create_info: *const c.VkCommandPoolCreateInfo,
+        command_pool: *c.VkCommandPool,
+    ) !void {
+        try checkVulkanError(
+            "Failed to create Vulkan command pool",
+            self.dispatch.CreateCommandPool(
+                self.device,
+                create_info,
+                self.instance.allocation_callbacks,
+                command_pool,
+            ),
+        );
+    }
+
+    fn destroyCommandPool(
+        self: *const Self,
+        command_pool: c.VkCommandPool,
+    ) void {
+        self.dispatch.DestroyCommandPool(
+            self.device,
+            command_pool,
+            self.instance.allocation_callbacks,
+        );
+    }
+
+    fn allocateCommandBuffers(
+        self: *const Self,
+        allocate_info: *const c.VkCommandBufferAllocateInfo,
+        command_buffers: [*c]c.VkCommandBuffer,
+    ) !void {
+        try checkVulkanError(
+            "Failed to allocate Vulkan command buffers",
+            self.dispatch.AllocateCommandBuffers(
+                self.device,
+                allocate_info,
+                command_buffers,
+            ),
         );
     }
 };
@@ -1536,7 +1570,7 @@ const VulkanSurface = struct {
             c.glfwCreateWindowSurface(
                 instance.handle,
                 graphics_ctx.options.window,
-                null,
+                instance.allocation_callbacks,
                 &surface,
             ),
         );
@@ -1553,7 +1587,11 @@ const VulkanSurface = struct {
     }
 
     fn deinit(self: *Self) void {
-        self.dispatch.DestroySurfaceKHR(self.instance.handle, self.handle, null);
+        self.dispatch.DestroySurfaceKHR(
+            self.instance.handle,
+            self.handle,
+            self.instance.allocation_callbacks,
+        );
     }
 };
 
@@ -1642,10 +1680,9 @@ const VulkanSwapChain = struct {
         var swap_chain: c.VkSwapchainKHR = undefined;
         try device.createSwapchainKHR(
             &create_info,
-            null,
             &swap_chain,
         );
-        errdefer device.destroySwapchainKHR(swap_chain, null);
+        errdefer device.destroySwapchainKHR(swap_chain);
 
         logDebug("---------------------------------------------------------------", .{});
         logDebug("Swap chain created", .{});
@@ -1672,7 +1709,7 @@ const VulkanSwapChain = struct {
         errdefer {
             for (swap_chain_image_views) |image_view| {
                 if (image_view != null) {
-                    device.destroyImageView(image_view, null);
+                    device.destroyImageView(image_view);
                 }
             }
         }
@@ -1703,7 +1740,6 @@ const VulkanSwapChain = struct {
 
             try device.createImageView(
                 &image_view_create_info,
-                null,
                 &swap_chain_image_views[index],
             );
         }
@@ -1723,17 +1759,17 @@ const VulkanSwapChain = struct {
     fn deinit(self: *Self) void {
         if (self.frame_buffers) |frame_buffers| {
             for (frame_buffers) |frame_buffer| {
-                self.device.destroyFrameBuffer(frame_buffer, null);
+                self.device.destroyFrameBuffer(frame_buffer);
             }
             self.allocator.free(frame_buffers);
         }
 
         for (self.image_views) |image_view| {
-            self.device.destroyImageView(image_view, null);
+            self.device.destroyImageView(image_view);
         }
         self.allocator.free(self.image_views);
         self.allocator.free(self.images);
-        self.device.destroySwapchainKHR(self.handle, null);
+        self.device.destroySwapchainKHR(self.handle);
     }
 
     fn chooseSwapSurfaceFormat(
@@ -1815,7 +1851,6 @@ const VulkanSwapChain = struct {
 
             try self.device.createFrameBuffer(
                 &frame_buffer_create_info,
-                null,
                 &self.frame_buffers.?[index],
             );
         }
@@ -1874,7 +1909,6 @@ const VulkanRenderPass = struct {
         var render_pass: c.VkRenderPass = undefined;
         try device.createRenderPass(
             &render_pass_info,
-            null,
             &render_pass,
         );
         return .{
@@ -1884,7 +1918,59 @@ const VulkanRenderPass = struct {
     }
 
     fn deinit(self: *Self) void {
-        self.device.destroyRenderPass(self.handle, null);
+        self.device.destroyRenderPass(self.handle);
+    }
+};
+
+const VulkanCommandQueue = struct {
+    const Self = @This();
+
+    command_pool: c.VkCommandPool,
+    command_buffer: c.VkCommandBuffer,
+    device: *const VulkanDevice,
+
+    fn init(device: *const VulkanDevice) !Self {
+        const create_info = std.mem.zeroInit(
+            c.VkCommandPoolCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
+                .queueFamilyIndex = device.queue_family_indices.graphics_family.?,
+                .flags = c.VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT,
+            },
+        );
+
+        var command_pool: c.VkCommandPool = undefined;
+        try device.createCommandPool(
+            &create_info,
+            &command_pool,
+        );
+        errdefer device.destroyCommandPool(command_pool);
+
+        const allocate_info = std.mem.zeroInit(
+            c.VkCommandBufferAllocateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                .commandPool = command_pool,
+                .level = c.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+                .commandBufferCount = 1,
+            },
+        );
+
+        var command_buffer: c.VkCommandBuffer = undefined;
+        try device.allocateCommandBuffers(
+            &allocate_info,
+            &command_buffer,
+        );
+
+        return .{
+            .command_pool = command_pool,
+            .device = device,
+            .command_buffer = command_buffer,
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        self.device.destroyCommandPool(self.command_pool);
     }
 };
 
@@ -1898,6 +1984,7 @@ const VulkanContext = struct {
     surface: *VulkanSurface,
     swap_chain: *VulkanSwapChain,
     main_render_pass: *VulkanRenderPass,
+    command_queue: *VulkanCommandQueue,
     debug_messenger: ?c.VkDebugUtilsMessengerEXT,
 
     shader_modules: [z3dfx.MaxShaderHandles]c.VkShaderModule,
@@ -1979,6 +2066,12 @@ const VulkanContext = struct {
 
         try swap_chain.createFrameBuffers(main_render_pass);
 
+        var command_queue = try graphics_ctx.allocator.create(VulkanCommandQueue);
+        errdefer graphics_ctx.allocator.destroy(command_queue);
+
+        command_queue.* = try VulkanCommandQueue.init(device);
+        errdefer command_queue.deinit();
+
         return .{
             .allocator = graphics_ctx.allocator,
             .vulkan_library = vulkan_library,
@@ -1988,12 +2081,16 @@ const VulkanContext = struct {
             .surface = surface,
             .swap_chain = swap_chain,
             .main_render_pass = main_render_pass,
+            .command_queue = command_queue,
             .shader_modules = undefined,
             .programs = undefined,
         };
     }
 
     fn deinit(self: *Self) void {
+        self.command_queue.deinit();
+        self.allocator.destroy(self.command_queue);
+
         self.main_render_pass.deinit();
         self.allocator.destroy(self.main_render_pass);
 
@@ -2007,7 +2104,7 @@ const VulkanContext = struct {
         self.allocator.destroy(self.device);
 
         if (self.debug_messenger) |debug_messenger| {
-            self.instance.destroyDebugUtilsMessengerEXT(debug_messenger, null);
+            self.instance.destroyDebugUtilsMessengerEXT(debug_messenger);
         }
         self.instance.deinit();
         self.allocator.destroy(self.instance);
@@ -2033,7 +2130,6 @@ const VulkanContext = struct {
         var debug_messenger: c.VkDebugUtilsMessengerEXT = undefined;
         try instance.createDebugUtilsMessengerEXT(
             &create_info,
-            null,
             &debug_messenger,
         );
         return debug_messenger;
@@ -2073,7 +2169,6 @@ pub const VulkanRenderer = struct {
 
         try context.device.createShaderModule(
             &create_info,
-            null,
             &context.shader_modules[handle],
         );
         logDebug("Created Vulkan shader module: {d}", .{handle});
@@ -2083,10 +2178,7 @@ pub const VulkanRenderer = struct {
         _: *VulkanRenderer,
         handle: z3dfx.ShaderHandle,
     ) void {
-        context.device.destroyShaderModule(
-            context.shader_modules[handle],
-            null,
-        );
+        context.device.destroyShaderModule(context.shader_modules[handle]);
         logDebug("Destroyed Vulkan shader module: {d}", .{handle});
     }
 
@@ -2219,7 +2311,6 @@ pub const VulkanRenderer = struct {
 
         try context.device.createPipelineLayout(
             &pipeline_layout_info,
-            null,
             &context.programs[handle],
         );
 
@@ -2232,8 +2323,15 @@ pub const VulkanRenderer = struct {
     ) void {
         context.device.destroyPipelineLayout(
             context.programs[handle],
-            null,
         );
         logDebug("Destroyed Vulkan program: {d}", .{handle});
+    }
+
+    pub fn beginFrame(_: *const VulkanRenderer) void {
+        //logDebug("Begin Vulkan frame...", .{});
+    }
+
+    pub fn endFrame(_: *const VulkanRenderer) void {
+        //logDebug("End Vulkan frame...", .{});
     }
 };

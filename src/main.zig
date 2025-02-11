@@ -60,11 +60,13 @@ pub fn main() !void {
     const program_handle = try z3dfx.createProgram(vert_shader_handle, frag_shader_handle);
     defer z3dfx.destroyProgram(program_handle);
 
-    while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE and false) {
+    while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
         c.glfwPollEvents();
+        z3dfx.beginFrame();
 
-        // render your things here
+        z3dfx.endFrame();
+        _ = arena.reset(.retain_capacity);
 
-        c.glfwPollEvents();
+        break;
     }
 }

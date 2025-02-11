@@ -8,4 +8,6 @@ pub const NoopRenderer = struct {
     pub fn destroyShader(_: *NoopRenderer, _: z3dfx.ShaderHandle) void {}
     pub fn createProgram(_: *NoopRenderer, _: z3dfx.ProgramHandle, _: z3dfx.ShaderHandle, _: z3dfx.ShaderHandle) !void {}
     pub fn destroyProgram(_: *NoopRenderer, _: z3dfx.ProgramHandle) void {}
+    pub fn beginFrame(_: *NoopRenderer) void {}
+    pub fn endFrame(_: *NoopRenderer) void {}
 };
