@@ -6,7 +6,7 @@
         // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
         .system_sdk = .{
             .url = "https://github.com/zig-gamedev/system_sdk/archive/refs/tags/v0.2.1.zip",
-            .hash = "1220656f2bef421ddb4ceba4319b0899985b6322b29cafb6b1b196b3c1ae85ebd52d",
+            .hash = "122071280f7f0852ef6d2cd74f7c6593511eb48ec3b1b88d1457cd2453eb8597d925",
         },
     },
 

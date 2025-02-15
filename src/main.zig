@@ -62,9 +62,19 @@ pub fn main() !void {
 
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
         c.glfwPollEvents();
-        z3dfx.beginFrame();
+        z3dfx.beginFrame() catch |err| {
+            std.log.err("Failed to begin frame: {}", .{err});
+        };
 
-        z3dfx.endFrame();
+        z3dfx.setViewport(.{ .x = 0, .y = 0, .width = 600, .height = 600 });
+        z3dfx.setScissor(.{ .x = 0, .y = 0, .width = 600, .height = 600 });
+        z3dfx.bindProgram(program_handle);
+        z3dfx.draw(3, 1, 0, 0);
+
+        z3dfx.endFrame() catch |err| {
+            std.log.err("Failed to end frame: {}", .{err});
+        };
+
         _ = arena.reset(.retain_capacity);
 
         break;

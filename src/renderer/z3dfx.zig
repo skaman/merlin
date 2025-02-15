@@ -71,6 +71,20 @@ fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
     };
 }
 
+pub const Viewport = struct {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+};
+
+pub const Scissor = struct {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+};
+
 pub const Renderer = struct {
     const Self = @This();
     const VTab = struct {
@@ -79,8 +93,12 @@ pub const Renderer = struct {
         destroyShader: *const fn (*anyopaque, handle: ShaderHandle) void,
         createProgram: *const fn (*anyopaque, handle: ProgramHandle, vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!void,
         destroyProgram: *const fn (*anyopaque, handle: ProgramHandle) void,
-        beginFrame: *const fn (*anyopaque) void,
-        endFrame: *const fn (*anyopaque) void,
+        beginFrame: *const fn (*anyopaque) anyerror!void,
+        endFrame: *const fn (*anyopaque) anyerror!void,
+        setViewport: *const fn (*anyopaque, viewport: Viewport) void,
+        setScissor: *const fn (*anyopaque, scissor: Scissor) void,
+        bindProgram: *const fn (*anyopaque, program: ProgramHandle) void,
+        draw: *const fn (*anyopaque, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void,
     };
 
     ptr: *anyopaque,
@@ -109,13 +127,29 @@ pub const Renderer = struct {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.destroyProgram(handle);
             }
-            fn beginFrame(ptr_: *anyopaque) void {
+            fn beginFrame(ptr_: *anyopaque) !void {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
-                self.beginFrame();
+                return self.beginFrame();
             }
-            fn endFrame(ptr_: *anyopaque) void {
+            fn endFrame(ptr_: *anyopaque) !void {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
-                self.endFrame();
+                return self.endFrame();
+            }
+            fn setViewport(ptr_: *anyopaque, viewport: Viewport) void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                self.setViewport(viewport);
+            }
+            fn setScissor(ptr_: *anyopaque, scissor: Scissor) void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                self.setScissor(scissor);
+            }
+            fn bindProgram(ptr_: *anyopaque, program: ProgramHandle) void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                self.bindProgram(program);
+            }
+            fn draw(ptr_: *anyopaque, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                self.draw(vertex_count, instance_count, first_vertex, first_instance);
             }
         };
         return .{
@@ -128,6 +162,10 @@ pub const Renderer = struct {
                 .destroyProgram = impl.destroyProgram,
                 .beginFrame = impl.beginFrame,
                 .endFrame = impl.endFrame,
+                .setViewport = impl.setViewport,
+                .setScissor = impl.setScissor,
+                .bindProgram = impl.bindProgram,
+                .draw = impl.draw,
             },
         };
     }
@@ -141,7 +179,7 @@ pub const Renderer = struct {
     }
 
     fn destroyShader(self: *Self, handle: ShaderHandle) void {
-        return self.vtab.destroyShader(self.ptr, handle);
+        self.vtab.destroyShader(self.ptr, handle);
     }
 
     fn createProgram(self: *Self, handle: ProgramHandle, vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) !void {
@@ -149,15 +187,31 @@ pub const Renderer = struct {
     }
 
     fn destroyProgram(self: *Self, handle: ProgramHandle) void {
-        return self.vtab.destroyProgram(self.ptr, handle);
+        self.vtab.destroyProgram(self.ptr, handle);
     }
 
-    fn beginFrame(self: *Self) void {
+    fn beginFrame(self: *Self) !void {
         return self.vtab.beginFrame(self.ptr);
     }
 
-    fn endFrame(self: *Self) void {
+    fn endFrame(self: *Self) !void {
         return self.vtab.endFrame(self.ptr);
+    }
+
+    fn setViewport(self: *Self, viewport: Viewport) void {
+        return self.vtab.setViewport(self.ptr, viewport);
+    }
+
+    fn setScissor(self: *Self, scissor: Scissor) void {
+        self.vtab.setScissor(self.ptr, scissor);
+    }
+
+    fn bindProgram(self: *Self, handle: ProgramHandle) void {
+        self.vtab.bindProgram(self.ptr, handle);
+    }
+
+    fn draw(self: *Self, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
+        self.vtab.draw(self.ptr, vertex_count, instance_count, first_vertex, first_instance);
     }
 };
 
@@ -246,12 +300,28 @@ pub fn destroyProgram(handle: ProgramHandle) void {
     context.program_handles.free(handle);
 }
 
-pub fn beginFrame() void {
-    context.renderer.beginFrame();
+pub fn beginFrame() !void {
+    return context.renderer.beginFrame();
 }
 
-pub fn endFrame() void {
-    context.renderer.endFrame();
+pub fn endFrame() !void {
+    return context.renderer.endFrame();
+}
+
+pub fn setViewport(viewport: Viewport) void {
+    context.renderer.setViewport(viewport);
+}
+
+pub fn setScissor(scissor: Scissor) void {
+    context.renderer.setScissor(scissor);
+}
+
+pub fn bindProgram(handle: ProgramHandle) void {
+    context.renderer.bindProgram(handle);
+}
+
+pub fn draw(vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
+    context.renderer.draw(vertex_count, instance_count, first_vertex, first_instance);
 }
 
 fn createRenderer(

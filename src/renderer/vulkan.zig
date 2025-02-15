@@ -880,6 +880,8 @@ const VulkanDevice = struct {
         DestroyImageView: std.meta.Child(c.PFN_vkDestroyImageView) = undefined,
         CreateShaderModule: std.meta.Child(c.PFN_vkCreateShaderModule) = undefined,
         DestroyShaderModule: std.meta.Child(c.PFN_vkDestroyShaderModule) = undefined,
+        CreateGraphicsPipelines: std.meta.Child(c.PFN_vkCreateGraphicsPipelines) = undefined,
+        DestroyPipeline: std.meta.Child(c.PFN_vkDestroyPipeline) = undefined,
         CreatePipelineLayout: std.meta.Child(c.PFN_vkCreatePipelineLayout) = undefined,
         DestroyPipelineLayout: std.meta.Child(c.PFN_vkDestroyPipelineLayout) = undefined,
         CreateRenderPass: std.meta.Child(c.PFN_vkCreateRenderPass) = undefined,
@@ -1372,6 +1374,37 @@ const VulkanDevice = struct {
         self.dispatch.DestroyShaderModule(
             self.device,
             shader_module,
+            self.instance.allocation_callbacks,
+        );
+    }
+
+    fn createGraphicsPipelines(
+        self: *const Self,
+        pipeline_cache: c.VkPipelineCache,
+        create_info_count: u32,
+        create_infos: [*c]const c.VkGraphicsPipelineCreateInfo,
+        pipelines: [*c]c.VkPipeline,
+    ) !void {
+        try checkVulkanError(
+            "Failed to create Vulkan graphics pipelines",
+            self.dispatch.CreateGraphicsPipelines(
+                self.device,
+                pipeline_cache,
+                create_info_count,
+                create_infos,
+                self.instance.allocation_callbacks,
+                pipelines,
+            ),
+        );
+    }
+
+    fn destroyPipeline(
+        self: *const Self,
+        pipeline: c.VkPipeline,
+    ) void {
+        self.dispatch.DestroyPipeline(
+            self.device,
+            pipeline,
             self.instance.allocation_callbacks,
         );
     }
@@ -1924,12 +1957,26 @@ const VulkanRenderPass = struct {
 
 const VulkanCommandQueue = struct {
     const Self = @This();
+    const Dispatch = struct {
+        BeginCommandBuffer: std.meta.Child(c.PFN_vkBeginCommandBuffer) = undefined,
+        EndCommandBuffer: std.meta.Child(c.PFN_vkEndCommandBuffer) = undefined,
+        CmdBeginRenderPass: std.meta.Child(c.PFN_vkCmdBeginRenderPass) = undefined,
+        CmdEndRenderPass: std.meta.Child(c.PFN_vkCmdEndRenderPass) = undefined,
+        CmdSetViewport: std.meta.Child(c.PFN_vkCmdSetViewport) = undefined,
+        CmdSetScissor: std.meta.Child(c.PFN_vkCmdSetScissor) = undefined,
+        CmdBindPipeline: std.meta.Child(c.PFN_vkCmdBindPipeline) = undefined,
+        CmdDraw: std.meta.Child(c.PFN_vkCmdDraw) = undefined,
+    };
 
     command_pool: c.VkCommandPool,
     command_buffer: c.VkCommandBuffer,
     device: *const VulkanDevice,
+    dispatch: Dispatch,
 
-    fn init(device: *const VulkanDevice) !Self {
+    fn init(
+        vulkan_library: *VulkanLibrary,
+        device: *const VulkanDevice,
+    ) !Self {
         const create_info = std.mem.zeroInit(
             c.VkCommandPoolCreateInfo,
             .{
@@ -1966,12 +2013,307 @@ const VulkanCommandQueue = struct {
             .command_pool = command_pool,
             .device = device,
             .command_buffer = command_buffer,
+            .dispatch = try vulkan_library.load(
+                Dispatch,
+                "",
+                device.instance.handle,
+            ),
         };
     }
 
     fn deinit(self: *Self) void {
         self.device.destroyCommandPool(self.command_pool);
     }
+
+    fn begin(self: *Self) !void {
+        const begin_info = std.mem.zeroInit(
+            c.VkCommandBufferBeginInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                //.flags = c.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            },
+        );
+
+        try checkVulkanError(
+            "Failed to begin command buffer",
+            self.dispatch.BeginCommandBuffer(self.command_buffer, &begin_info),
+        );
+    }
+
+    fn end(self: *Self) !void {
+        try checkVulkanError(
+            "Failed to end command buffer",
+            self.dispatch.EndCommandBuffer(self.command_buffer),
+        );
+    }
+
+    fn beginRenderPass(
+        self: *Self,
+        render_pass: c.VkRenderPass,
+        framebuffer: c.VkFramebuffer,
+        extent: c.VkExtent2D,
+    ) void {
+        const begin_info = std.mem.zeroInit(
+            c.VkRenderPassBeginInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                .renderPass = render_pass,
+                .framebuffer = framebuffer,
+                .renderArea = .{
+                    .offset = .{ .x = 0, .y = 0 },
+                    .extent = extent,
+                },
+                .clearValueCount = 1,
+                .pClearValues = &[_]c.VkClearValue{
+                    .{
+                        .color = .{
+                            .float32 = [_]f32{ 0.0, 0.0, 0.0, 1.0 },
+                        },
+                    },
+                },
+            },
+        );
+
+        self.dispatch.CmdBeginRenderPass(self.command_buffer, &begin_info, c.VK_SUBPASS_CONTENTS_INLINE);
+    }
+
+    fn endRenderPass(self: *Self) void {
+        self.dispatch.CmdEndRenderPass(self.command_buffer);
+    }
+
+    fn setViewport(self: *Self, viewport: c.VkViewport) void {
+        self.dispatch.CmdSetViewport(self.command_buffer, 0, 1, &viewport);
+    }
+
+    fn setScissor(self: *Self, scissor: c.VkRect2D) void {
+        self.dispatch.CmdSetScissor(self.command_buffer, 0, 1, &scissor);
+    }
+
+    fn bindPipeline(self: *Self, pipeline: c.VkPipeline) void {
+        self.dispatch.CmdBindPipeline(self.command_buffer, c.VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    }
+
+    fn draw(self: *Self, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
+        self.dispatch.CmdDraw(self.command_buffer, vertex_count, instance_count, first_vertex, first_instance);
+    }
+};
+
+const VulkanProgram = struct {
+    const Self = @This();
+
+    device: *const VulkanDevice,
+    pipeline_layout: c.VkPipelineLayout,
+    vertex_shader: c.VkShaderModule,
+    fragment_shader: c.VkShaderModule,
+
+    fn init(
+        device: *const VulkanDevice,
+        vertex_shader: c.VkShaderModule,
+        fragment_shader: c.VkShaderModule,
+    ) !Self {
+        const pipeline_layout_create_info = std.mem.zeroInit(
+            c.VkPipelineLayoutCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+                .setLayoutCount = 0,
+                .pSetLayouts = null,
+                .pushConstantRangeCount = 0,
+                .pPushConstantRanges = null,
+            },
+        );
+
+        var pipeline_layout: c.VkPipelineLayout = undefined;
+        try device.createPipelineLayout(
+            &pipeline_layout_create_info,
+            &pipeline_layout,
+        );
+        return .{
+            .device = device,
+            .pipeline_layout = pipeline_layout,
+            .vertex_shader = vertex_shader,
+            .fragment_shader = fragment_shader,
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        self.device.destroyPipelineLayout(self.pipeline_layout);
+    }
+};
+
+const VulkanPipeline = struct {
+    const Self = @This();
+
+    device: *const VulkanDevice,
+    handle: c.VkPipeline,
+
+    fn init(
+        device: *const VulkanDevice,
+        program: *const VulkanProgram,
+        render_pass: *const VulkanRenderPass,
+    ) !Self {
+        const vertex_input_info = std.mem.zeroInit(
+            c.VkPipelineVertexInputStateCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+                .vertexBindingDescriptionCount = 0,
+                .pVertexBindingDescriptions = null,
+                .vertexAttributeDescriptionCount = 0,
+                .pVertexAttributeDescriptions = null,
+            },
+        );
+
+        const input_assembly = std.mem.zeroInit(
+            c.VkPipelineInputAssemblyStateCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+                .topology = c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+                .primitiveRestartEnable = c.VK_FALSE,
+            },
+        );
+
+        //const viewport = std.mem.zeroInit(
+        //    c.VkViewport,
+        //    .{
+        //        .x = 0.0,
+        //        .y = 0.0,
+        //        .width = @as(f32, @floatFromInt(context.swap_chain.extent.width)),
+        //        .height = @as(f32, @floatFromInt(context.swap_chain.extent.height)),
+        //        .minDepth = 0.0,
+        //        .maxDepth = 1.0,
+        //    },
+        //);
+
+        //const scissor = std.mem.zeroInit(
+        //    c.VkRect2D,
+        //    .{
+        //        .offset = c.VkOffset2D{ .x = 0, .y = 0 },
+        //        .extent = context.swap_chain.extent,
+        //    },
+        //);
+
+        const viewport_state = std.mem.zeroInit(
+            c.VkPipelineViewportStateCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+                .viewportCount = 1,
+                //.pViewports = &viewport,
+                .scissorCount = 1,
+                //.pScissors = &scissor,
+            },
+        );
+
+        const rasterizer = std.mem.zeroInit(
+            c.VkPipelineRasterizationStateCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+                .depthClampEnable = c.VK_FALSE,
+                .rasterizerDiscardEnable = c.VK_FALSE,
+                .polygonMode = c.VK_POLYGON_MODE_FILL,
+                .lineWidth = 1.0,
+                .cullMode = c.VK_CULL_MODE_BACK_BIT,
+                .frontFace = c.VK_FRONT_FACE_COUNTER_CLOCKWISE,
+                .depthBiasEnable = c.VK_FALSE,
+            },
+        );
+
+        const multisampling = std.mem.zeroInit(
+            c.VkPipelineMultisampleStateCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+                .sampleShadingEnable = c.VK_FALSE,
+                .rasterizationSamples = c.VK_SAMPLE_COUNT_1_BIT,
+            },
+        );
+
+        const color_blend_attachment = std.mem.zeroInit(
+            c.VkPipelineColorBlendAttachmentState,
+            .{
+                .colorWriteMask = c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT | c.VK_COLOR_COMPONENT_B_BIT | c.VK_COLOR_COMPONENT_A_BIT,
+                .blendEnable = c.VK_FALSE,
+            },
+        );
+
+        const color_blending = std.mem.zeroInit(
+            c.VkPipelineColorBlendStateCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+                .logicOpEnable = c.VK_FALSE,
+                .logicOp = c.VK_LOGIC_OP_COPY,
+                .attachmentCount = 1,
+                .pAttachments = &color_blend_attachment,
+            },
+        );
+
+        const dynamic_states = [_]c.VkDynamicState{
+            c.VK_DYNAMIC_STATE_VIEWPORT,
+            c.VK_DYNAMIC_STATE_SCISSOR,
+        };
+
+        const dynamic_state = std.mem.zeroInit(
+            c.VkPipelineDynamicStateCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+                .dynamicStateCount = @as(u32, dynamic_states.len),
+                .pDynamicStates = &dynamic_states,
+            },
+        );
+
+        const stages = [_]c.VkPipelineShaderStageCreateInfo{
+            c.VkPipelineShaderStageCreateInfo{
+                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
+                .module = program.vertex_shader,
+                .pName = "main",
+            },
+            c.VkPipelineShaderStageCreateInfo{
+                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+                .module = program.fragment_shader,
+                .pName = "main",
+            },
+        };
+
+        const pipeline_create_info = std.mem.zeroInit(
+            c.VkGraphicsPipelineCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+                .stageCount = 2,
+                .pStages = &stages,
+                .pVertexInputState = &vertex_input_info,
+                .pInputAssemblyState = &input_assembly,
+                .pViewportState = &viewport_state,
+                .pRasterizationState = &rasterizer,
+                .pMultisampleState = &multisampling,
+                .pColorBlendState = &color_blending,
+                .pDynamicState = &dynamic_state,
+                .layout = program.pipeline_layout,
+                .renderPass = render_pass.handle,
+                .subpass = 0,
+                //.basePipelineHandle = c.VK_NULL_HANDLE,
+            },
+        );
+
+        var pipeline: c.VkPipeline = undefined;
+        try device.createGraphicsPipelines(
+            null,
+            1,
+            &pipeline_create_info,
+            &pipeline,
+        );
+
+        return .{
+            .device = device,
+            .handle = pipeline,
+        };
+    }
+
+    fn deinit(self: *Self) void {
+        self.device.destroyPipeline(self.handle);
+    }
+};
+
+const PipelineKey = struct {
+    program: z3dfx.ProgramHandle,
 };
 
 const VulkanContext = struct {
@@ -1988,7 +2330,8 @@ const VulkanContext = struct {
     debug_messenger: ?c.VkDebugUtilsMessengerEXT,
 
     shader_modules: [z3dfx.MaxShaderHandles]c.VkShaderModule,
-    programs: [z3dfx.MaxProgramHandles]c.VkPipelineLayout,
+    programs: [z3dfx.MaxProgramHandles]VulkanProgram,
+    pipelines: std.AutoHashMap(PipelineKey, VulkanPipeline),
 
     fn init(graphics_ctx: *const z3dfx.GraphicsContext) !Self {
         var vulkan_library = try VulkanLibrary.init();
@@ -2069,7 +2412,7 @@ const VulkanContext = struct {
         var command_queue = try graphics_ctx.allocator.create(VulkanCommandQueue);
         errdefer graphics_ctx.allocator.destroy(command_queue);
 
-        command_queue.* = try VulkanCommandQueue.init(device);
+        command_queue.* = try VulkanCommandQueue.init(&vulkan_library, device);
         errdefer command_queue.deinit();
 
         return .{
@@ -2084,10 +2427,17 @@ const VulkanContext = struct {
             .command_queue = command_queue,
             .shader_modules = undefined,
             .programs = undefined,
+            .pipelines = .init(graphics_ctx.allocator),
         };
     }
 
     fn deinit(self: *Self) void {
+        var iterator = self.pipelines.valueIterator();
+        while (iterator.next()) |pipeline| {
+            pipeline.deinit();
+        }
+        self.pipelines.deinit();
+
         self.command_queue.deinit();
         self.allocator.destroy(self.command_queue);
 
@@ -2188,130 +2538,10 @@ pub const VulkanRenderer = struct {
         vertex_shader: z3dfx.ShaderHandle,
         fragment_shader: z3dfx.ShaderHandle,
     ) !void {
-        _ = vertex_shader;
-        _ = fragment_shader;
-
-        //const dynamic_states = [_]c.VkDynamicState{
-        //    c.VK_DYNAMIC_STATE_VIEWPORT,
-        //    c.VK_DYNAMIC_STATE_SCISSOR,
-        //};
-
-        //const dynamic_state_create_info = std.mem.zeroInit(
-        //    c.VkPipelineDynamicStateCreateInfo,
-        //    .{
-        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-        //        .dynamicStateCount = @as(u32, dynamic_states.len),
-        //        .pDynamicStates = &dynamic_states,
-        //    },
-        //);
-
-        //const vertex_input_info = std.mem.zeroInit(
-        //    c.VkPipelineVertexInputStateCreateInfo,
-        //    .{
-        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-        //        .vertexBindingDescriptionCount = 0,
-        //        .pVertexBindingDescriptions = null,
-        //        .vertexAttributeDescriptionCount = 0,
-        //        .pVertexAttributeDescriptions = null,
-        //    },
-        //);
-
-        //const input_assembly = std.mem.zeroInit(
-        //    c.VkPipelineInputAssemblyStateCreateInfo,
-        //    .{
-        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-        //        .topology = c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-        //        .primitiveRestartEnable = c.VK_FALSE,
-        //    },
-        //);
-
-        //const viewport = std.mem.zeroInit(
-        //    c.VkViewport,
-        //    .{
-        //        .x = 0.0,
-        //        .y = 0.0,
-        //        .width = @as(f32, @floatFromInt(context.swap_chain.extent.width)),
-        //        .height = @as(f32, @floatFromInt(context.swap_chain.extent.height)),
-        //        .minDepth = 0.0,
-        //        .maxDepth = 1.0,
-        //    },
-        //);
-
-        //const scissor = std.mem.zeroInit(
-        //    c.VkRect2D,
-        //    .{
-        //        .offset = c.VkOffset2D{ .x = 0, .y = 0 },
-        //        .extent = context.swap_chain.extent,
-        //    },
-        //);
-
-        //const viewport_state = std.mem.zeroInit(
-        //    c.VkPipelineViewportStateCreateInfo,
-        //    .{
-        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-        //        .viewportCount = 1,
-        //        .pViewports = &viewport,
-        //        .scissorCount = 1,
-        //        .pScissors = &scissor,
-        //    },
-        //);
-
-        //const rasterizer = std.mem.zeroInit(
-        //    c.VkPipelineRasterizationStateCreateInfo,
-        //    .{
-        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-        //        .depthClampEnable = c.VK_FALSE,
-        //        .rasterizerDiscardEnable = c.VK_FALSE,
-        //        .polygonMode = c.VK_POLYGON_MODE_FILL,
-        //        .lineWidth = 1.0,
-        //        .cullMode = c.VK_CULL_MODE_BACK_BIT,
-        //        .frontFace = c.VK_FRONT_FACE_COUNTER_CLOCKWISE,
-        //        .depthBiasEnable = c.VK_FALSE,
-        //    },
-        //);
-
-        //const multisampling = std.mem.zeroInit(
-        //    c.VkPipelineMultisampleStateCreateInfo,
-        //    .{
-        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-        //        .sampleShadingEnable = c.VK_FALSE,
-        //        .rasterizationSamples = c.VK_SAMPLE_COUNT_1_BIT,
-        //    },
-        //);
-
-        //const color_blend_attachment = std.mem.zeroInit(
-        //    c.VkPipelineColorBlendAttachmentState,
-        //    .{
-        //        .colorWriteMask = c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT | c.VK_COLOR_COMPONENT_B_BIT | c.VK_COLOR_COMPONENT_A_BIT,
-        //        .blendEnable = c.VK_FALSE,
-        //    },
-        //);
-
-        //const color_blending = std.mem.zeroInit(
-        //    c.VkPipelineColorBlendStateCreateInfo,
-        //    .{
-        //        .sType = c.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-        //        .logicOpEnable = c.VK_FALSE,
-        //        .logicOp = c.VK_LOGIC_OP_COPY,
-        //        .attachmentCount = 1,
-        //        .pAttachments = &color_blend_attachment,
-        //    },
-        //);
-
-        const pipeline_layout_info = std.mem.zeroInit(
-            c.VkPipelineLayoutCreateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-                .setLayoutCount = 0,
-                .pSetLayouts = null,
-                .pushConstantRangeCount = 0,
-                .pPushConstantRanges = null,
-            },
-        );
-
-        try context.device.createPipelineLayout(
-            &pipeline_layout_info,
-            &context.programs[handle],
+        context.programs[handle] = try VulkanProgram.init(
+            context.device,
+            context.shader_modules[vertex_shader],
+            context.shader_modules[fragment_shader],
         );
 
         logDebug("Created Vulkan program: {d}", .{handle});
@@ -2321,17 +2551,93 @@ pub const VulkanRenderer = struct {
         _: *const VulkanRenderer,
         handle: z3dfx.ProgramHandle,
     ) void {
-        context.device.destroyPipelineLayout(
-            context.programs[handle],
-        );
+        context.programs[handle].deinit();
         logDebug("Destroyed Vulkan program: {d}", .{handle});
     }
 
-    pub fn beginFrame(_: *const VulkanRenderer) void {
-        //logDebug("Begin Vulkan frame...", .{});
+    pub fn beginFrame(_: *const VulkanRenderer) !void {
+        try context.command_queue.begin();
+
+        context.command_queue.beginRenderPass(
+            context.main_render_pass.handle,
+            context.swap_chain.frame_buffers.?[
+                0
+                //context.current_frame
+            ],
+            context.swap_chain.extent,
+        );
     }
 
-    pub fn endFrame(_: *const VulkanRenderer) void {
-        //logDebug("End Vulkan frame...", .{});
+    pub fn endFrame(_: *const VulkanRenderer) !void {
+        context.command_queue.endRenderPass();
+        try context.command_queue.end();
+    }
+
+    pub fn setViewport(_: *const VulkanRenderer, viewport: z3dfx.Viewport) void {
+        const vk_viewport = std.mem.zeroInit(
+            c.VkViewport,
+            .{
+                .x = @as(f32, viewport.x),
+                .y = @as(f32, viewport.y),
+                .width = @as(f32, viewport.width),
+                .height = @as(f32, viewport.height),
+                .minDepth = 0,
+                .maxDepth = 1,
+            },
+        );
+        context.command_queue.setViewport(vk_viewport);
+    }
+
+    pub fn setScissor(_: *const VulkanRenderer, scissor: z3dfx.Scissor) void {
+        const vk_scissor = std.mem.zeroInit(
+            c.VkRect2D,
+            .{
+                .offset = c.VkOffset2D{
+                    .x = @as(i32, @intFromFloat(scissor.x)),
+                    .y = @as(i32, @intFromFloat(scissor.y)),
+                },
+                .extent = c.VkExtent2D{
+                    .width = @as(u32, @intFromFloat(scissor.width)),
+                    .height = @as(u32, @intFromFloat(scissor.height)),
+                },
+            },
+        );
+        context.command_queue.setScissor(vk_scissor);
+    }
+
+    pub fn bindProgram(self: *const VulkanRenderer, program: z3dfx.ProgramHandle) void {
+        const pipeline = self.getPipeline(program) catch {
+            logErr("Failed to bind Vulkan program: {d}", .{program});
+            return;
+        };
+        context.command_queue.bindPipeline(pipeline.handle);
+    }
+    pub fn draw(
+        _: *const VulkanRenderer,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    ) void {
+        context.command_queue.draw(vertex_count, instance_count, first_vertex, first_instance);
+    }
+
+    fn getPipeline(
+        _: *const VulkanRenderer,
+        program: z3dfx.ProgramHandle,
+    ) !VulkanPipeline {
+        const key = PipelineKey{ .program = program };
+        var pipeline = context.pipelines.get(key);
+        if (pipeline != null) {
+            return pipeline.?;
+        }
+
+        pipeline = try VulkanPipeline.init(
+            context.device,
+            &context.programs[program],
+            context.main_render_pass,
+        );
+        try context.pipelines.put(key, pipeline.?);
+        return pipeline.?;
     }
 };
