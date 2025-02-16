@@ -412,7 +412,7 @@ const VulkanInstance = struct {
                 .applicationVersion = c.VK_MAKE_VERSION(1, 0, 0),
                 .pEngineName = "z3dfx",
                 .engineVersion = c.VK_MAKE_VERSION(1, 0, 0),
-                .apiVersion = c.VK_API_VERSION_1_0,
+                .apiVersion = c.VK_API_VERSION_1_3,
             },
         );
 
@@ -873,6 +873,8 @@ const VulkanDevice = struct {
     const Dispatch = struct {
         DestroyDevice: std.meta.Child(c.PFN_vkDestroyDevice) = undefined,
         GetDeviceQueue: std.meta.Child(c.PFN_vkGetDeviceQueue) = undefined,
+        QueueSubmit: std.meta.Child(c.PFN_vkQueueSubmit) = undefined,
+        QueuePresentKHR: std.meta.Child(c.PFN_vkQueuePresentKHR) = undefined,
         CreateSwapchainKHR: std.meta.Child(c.PFN_vkCreateSwapchainKHR) = undefined,
         DestroySwapchainKHR: std.meta.Child(c.PFN_vkDestroySwapchainKHR) = undefined,
         GetSwapchainImagesKHR: std.meta.Child(c.PFN_vkGetSwapchainImagesKHR) = undefined,
@@ -891,6 +893,13 @@ const VulkanDevice = struct {
         CreateCommandPool: std.meta.Child(c.PFN_vkCreateCommandPool) = undefined,
         DestroyCommandPool: std.meta.Child(c.PFN_vkDestroyCommandPool) = undefined,
         AllocateCommandBuffers: std.meta.Child(c.PFN_vkAllocateCommandBuffers) = undefined,
+        CreateSemaphore: std.meta.Child(c.PFN_vkCreateSemaphore) = undefined,
+        DestroySemaphore: std.meta.Child(c.PFN_vkDestroySemaphore) = undefined,
+        CreateFence: std.meta.Child(c.PFN_vkCreateFence) = undefined,
+        DestroyFence: std.meta.Child(c.PFN_vkDestroyFence) = undefined,
+        WaitForFences: std.meta.Child(c.PFN_vkWaitForFences) = undefined,
+        ResetFences: std.meta.Child(c.PFN_vkResetFences) = undefined,
+        AcquireNextImageKHR: std.meta.Child(c.PFN_vkAcquireNextImageKHR) = undefined,
     };
     const QueueFamilyIndices = struct {
         graphics_family: ?u32 = null,
@@ -1248,6 +1257,38 @@ const VulkanDevice = struct {
         );
     }
 
+    fn queueSubmit(
+        self: *const Self,
+        queue: c.VkQueue,
+        submit_count: u32,
+        submits: [*c]const c.VkSubmitInfo,
+        fence: c.VkFence,
+    ) !void {
+        try checkVulkanError(
+            "Failed to submit Vulkan queue",
+            self.dispatch.QueueSubmit(
+                queue,
+                submit_count,
+                submits,
+                fence,
+            ),
+        );
+    }
+
+    fn queuePresentKHR(
+        self: *const Self,
+        queue: c.VkQueue,
+        present_info: *const c.VkPresentInfoKHR,
+    ) !void {
+        try checkVulkanError(
+            "Failed to present Vulkan queue",
+            self.dispatch.QueuePresentKHR(
+                queue,
+                present_info,
+            ),
+        );
+    }
+
     fn createSwapchainKHR(
         self: *const Self,
         create_info: *const c.VkSwapchainCreateInfoKHR,
@@ -1530,6 +1571,124 @@ const VulkanDevice = struct {
                 command_buffers,
             ),
         );
+    }
+
+    fn createSemaphore(
+        self: *const Self,
+        create_info: *const c.VkSemaphoreCreateInfo,
+        semaphore: *c.VkSemaphore,
+    ) !void {
+        try checkVulkanError(
+            "Failed to create Vulkan semaphore",
+            self.dispatch.CreateSemaphore(
+                self.device,
+                create_info,
+                self.instance.allocation_callbacks,
+                semaphore,
+            ),
+        );
+    }
+
+    fn destroySemaphore(
+        self: *const Self,
+        semaphore: c.VkSemaphore,
+    ) void {
+        self.dispatch.DestroySemaphore(
+            self.device,
+            semaphore,
+            self.instance.allocation_callbacks,
+        );
+    }
+
+    fn createFence(
+        self: *const Self,
+        create_info: *const c.VkFenceCreateInfo,
+        fence: *c.VkFence,
+    ) !void {
+        try checkVulkanError(
+            "Failed to create Vulkan fence",
+            self.dispatch.CreateFence(
+                self.device,
+                create_info,
+                self.instance.allocation_callbacks,
+                fence,
+            ),
+        );
+    }
+
+    fn destroyFence(
+        self: *const Self,
+        fence: c.VkFence,
+    ) void {
+        self.dispatch.DestroyFence(
+            self.device,
+            fence,
+            self.instance.allocation_callbacks,
+        );
+    }
+
+    fn waitForFences(
+        self: *const Self,
+        fence_count: u32,
+        fences: [*c]c.VkFence,
+        wait_all: c.VkBool32,
+        timeout: u64,
+    ) !void {
+        try checkVulkanError(
+            "Failed to wait for Vulkan fences",
+            self.dispatch.WaitForFences(
+                self.device,
+                fence_count,
+                fences,
+                wait_all,
+                timeout,
+            ),
+        );
+    }
+
+    fn resetFences(
+        self: *const Self,
+        fence_count: u32,
+        fences: [*c]c.VkFence,
+    ) !void {
+        try checkVulkanError(
+            "Failed to reset Vulkan fences",
+            self.dispatch.ResetFences(
+                self.device,
+                fence_count,
+                fences,
+            ),
+        );
+    }
+
+    fn acquireNextImageKHR(
+        self: *const Self,
+        swapchain: c.VkSwapchainKHR,
+        timeout: u64,
+        semaphore: c.VkSemaphore,
+        fence: c.VkFence,
+        image_index: *u32,
+    ) !c.VkResult {
+        const result = self.dispatch.AcquireNextImageKHR(
+            self.device,
+            swapchain,
+            timeout,
+            semaphore,
+            fence,
+            image_index,
+        );
+
+        // These are not errors
+        if (result == c.VK_TIMEOUT or result == c.VK_NOT_READY or result == c.VK_SUBOPTIMAL_KHR) {
+            return result;
+        }
+
+        try checkVulkanError(
+            "Failed to acquire next Vulkan image",
+            result,
+        );
+
+        return result;
     }
 };
 
@@ -1928,6 +2087,18 @@ const VulkanRenderPass = struct {
             },
         );
 
+        const dependency = std.mem.zeroInit(
+            c.VkSubpassDependency,
+            .{
+                .srcSubpass = c.VK_SUBPASS_EXTERNAL,
+                .dstSubpass = 0,
+                .srcStageMask = c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                .srcAccessMask = 0,
+                .dstStageMask = c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                .dstAccessMask = c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            },
+        );
+
         const render_pass_info = std.mem.zeroInit(
             c.VkRenderPassCreateInfo,
             .{
@@ -1936,6 +2107,8 @@ const VulkanRenderPass = struct {
                 .pAttachments = &color_attachment,
                 .subpassCount = 1,
                 .pSubpasses = &subpass,
+                .dependencyCount = 1,
+                .pDependencies = &dependency,
             },
         );
 
@@ -1960,6 +2133,7 @@ const VulkanCommandQueue = struct {
     const Dispatch = struct {
         BeginCommandBuffer: std.meta.Child(c.PFN_vkBeginCommandBuffer) = undefined,
         EndCommandBuffer: std.meta.Child(c.PFN_vkEndCommandBuffer) = undefined,
+        ResetCommandBuffer: std.meta.Child(c.PFN_vkResetCommandBuffer) = undefined,
         CmdBeginRenderPass: std.meta.Child(c.PFN_vkCmdBeginRenderPass) = undefined,
         CmdEndRenderPass: std.meta.Child(c.PFN_vkCmdEndRenderPass) = undefined,
         CmdSetViewport: std.meta.Child(c.PFN_vkCmdSetViewport) = undefined,
@@ -2044,6 +2218,13 @@ const VulkanCommandQueue = struct {
         try checkVulkanError(
             "Failed to end command buffer",
             self.dispatch.EndCommandBuffer(self.command_buffer),
+        );
+    }
+
+    fn reset(self: *Self) !void {
+        try checkVulkanError(
+            "Failed to reset command buffer",
+            self.dispatch.ResetCommandBuffer(self.command_buffer, 0),
         );
     }
 
@@ -2323,6 +2504,8 @@ const VulkanContext = struct {
     vulkan_library: VulkanLibrary,
     instance: *VulkanInstance,
     device: *VulkanDevice,
+    graphics_queue: c.VkQueue,
+    present_queue: c.VkQueue,
     surface: *VulkanSurface,
     swap_chain: *VulkanSwapChain,
     main_render_pass: *VulkanRenderPass,
@@ -2332,6 +2515,12 @@ const VulkanContext = struct {
     shader_modules: [z3dfx.MaxShaderHandles]c.VkShaderModule,
     programs: [z3dfx.MaxProgramHandles]VulkanProgram,
     pipelines: std.AutoHashMap(PipelineKey, VulkanPipeline),
+
+    image_available_semaphore: c.VkSemaphore,
+    render_finished_semaphore: c.VkSemaphore,
+    in_flight_fence: c.VkFence,
+
+    current_image_index: u32,
 
     fn init(graphics_ctx: *const z3dfx.GraphicsContext) !Self {
         var vulkan_library = try VulkanLibrary.init();
@@ -2373,19 +2562,19 @@ const VulkanContext = struct {
         );
         errdefer device.deinit();
 
-        //var graphics_queue: c.VkQueue = undefined;
-        //device.getDeviceQueue(
-        //    device.queue_family_indices.graphics_family.?,
-        //    0,
-        //    &graphics_queue,
-        //);
+        var graphics_queue: c.VkQueue = undefined;
+        device.getDeviceQueue(
+            device.queue_family_indices.graphics_family.?,
+            0,
+            &graphics_queue,
+        );
 
-        //var present_queue: c.VkQueue = undefined;
-        //device.getDeviceQueue(
-        //    device.queue_family_indices.present_family.?,
-        //    0,
-        //    &present_queue,
-        //);
+        var present_queue: c.VkQueue = undefined;
+        device.getDeviceQueue(
+            device.queue_family_indices.present_family.?,
+            0,
+            &present_queue,
+        );
 
         var swap_chain = try graphics_ctx.allocator.create(VulkanSwapChain);
         errdefer graphics_ctx.allocator.destroy(swap_chain);
@@ -2415,12 +2604,47 @@ const VulkanContext = struct {
         command_queue.* = try VulkanCommandQueue.init(&vulkan_library, device);
         errdefer command_queue.deinit();
 
+        const semaphore_create_info = std.mem.zeroInit(
+            c.VkSemaphoreCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
+            },
+        );
+
+        var image_available_semaphore: c.VkSemaphore = undefined;
+        try device.createSemaphore(
+            &semaphore_create_info,
+            &image_available_semaphore,
+        );
+
+        var render_finished_semaphore: c.VkSemaphore = undefined;
+        try device.createSemaphore(
+            &semaphore_create_info,
+            &render_finished_semaphore,
+        );
+
+        const fence_create_info = std.mem.zeroInit(
+            c.VkFenceCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
+                .flags = c.VK_FENCE_CREATE_SIGNALED_BIT,
+            },
+        );
+
+        var in_flight_fence: c.VkFence = undefined;
+        try device.createFence(
+            &fence_create_info,
+            &in_flight_fence,
+        );
+
         return .{
             .allocator = graphics_ctx.allocator,
             .vulkan_library = vulkan_library,
             .instance = instance,
             .debug_messenger = debug_messenger,
             .device = device,
+            .graphics_queue = graphics_queue,
+            .present_queue = present_queue,
             .surface = surface,
             .swap_chain = swap_chain,
             .main_render_pass = main_render_pass,
@@ -2428,10 +2652,20 @@ const VulkanContext = struct {
             .shader_modules = undefined,
             .programs = undefined,
             .pipelines = .init(graphics_ctx.allocator),
+            .image_available_semaphore = image_available_semaphore,
+            .render_finished_semaphore = render_finished_semaphore,
+            .in_flight_fence = in_flight_fence,
+            .current_image_index = 0,
         };
     }
 
     fn deinit(self: *Self) void {
+        //self.device.waitIdle();
+
+        self.device.destroyFence(self.in_flight_fence);
+        self.device.destroySemaphore(self.render_finished_semaphore);
+        self.device.destroySemaphore(self.image_available_semaphore);
+
         var iterator = self.pipelines.valueIterator();
         while (iterator.next()) |pipeline| {
             pipeline.deinit();
@@ -2556,14 +2790,28 @@ pub const VulkanRenderer = struct {
     }
 
     pub fn beginFrame(_: *const VulkanRenderer) !void {
+        try context.device.waitForFences(
+            1,
+            &context.in_flight_fence,
+            c.VK_TRUE,
+            c.UINT64_MAX,
+        );
+        try context.device.resetFences(1, &context.in_flight_fence);
+
+        _ = try context.device.acquireNextImageKHR(
+            context.swap_chain.handle,
+            c.UINT64_MAX,
+            context.image_available_semaphore,
+            null,
+            &context.current_image_index,
+        );
+
+        try context.command_queue.reset();
         try context.command_queue.begin();
 
         context.command_queue.beginRenderPass(
             context.main_render_pass.handle,
-            context.swap_chain.frame_buffers.?[
-                0
-                //context.current_frame
-            ],
+            context.swap_chain.frame_buffers.?[context.current_image_index],
             context.swap_chain.extent,
         );
     }
@@ -2571,6 +2819,44 @@ pub const VulkanRenderer = struct {
     pub fn endFrame(_: *const VulkanRenderer) !void {
         context.command_queue.endRenderPass();
         try context.command_queue.end();
+
+        const wait_stages = [_]c.VkPipelineStageFlags{c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        const wait_semaphores = [_]c.VkSemaphore{context.image_available_semaphore};
+        const signal_semaphores = [_]c.VkSemaphore{context.render_finished_semaphore};
+        const submit_info = std.mem.zeroInit(
+            c.VkSubmitInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                .waitSemaphoreCount = 1,
+                .pWaitSemaphores = &wait_semaphores,
+                .pWaitDstStageMask = &wait_stages,
+                .commandBufferCount = 1,
+                .pCommandBuffers = &context.command_queue.command_buffer,
+                .signalSemaphoreCount = 1,
+                .pSignalSemaphores = &signal_semaphores,
+            },
+        );
+
+        try context.device.queueSubmit(
+            context.graphics_queue,
+            1,
+            &submit_info,
+            context.in_flight_fence,
+        );
+
+        const present_info = std.mem.zeroInit(
+            c.VkPresentInfoKHR,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_PRESENT_INFO_KHR,
+                .waitSemaphoreCount = 1,
+                .pWaitSemaphores = &signal_semaphores,
+                .swapchainCount = 1,
+                .pSwapchains = &context.swap_chain.handle,
+                .pImageIndices = &context.current_image_index,
+            },
+        );
+
+        try context.device.queuePresentKHR(context.present_queue, &present_info);
     }
 
     pub fn setViewport(_: *const VulkanRenderer, viewport: z3dfx.Viewport) void {

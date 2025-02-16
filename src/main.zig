@@ -77,6 +77,6 @@ pub fn main() !void {
 
         _ = arena.reset(.retain_capacity);
 
-        break;
+        //break;
     }
 }
