@@ -5,6 +5,19 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const options = .{
+        .enable_x11 = b.option(
+            bool,
+            "x11",
+            "Whether to build with X11 support (default: true)",
+        ) orelse true,
+        .enable_wayland = b.option(
+            bool,
+            "wayland",
+            "Whether to build with Wayland support (default: true)",
+        ) orelse true,
+    };
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -148,23 +161,40 @@ pub fn build(b: *std.Build) !void {
                 },
                 .flags = &.{},
             });
-            glfw.addCSourceFiles(.{
-                .files = &.{
-                    src_dir ++ "xkb_unicode.c",
-                    src_dir ++ "linux_joystick.c",
-                    src_dir ++ "posix_poll.c",
-                },
-                .flags = &.{},
-            });
-            glfw.addCSourceFiles(.{
-                .files = &.{
-                    src_dir ++ "wl_init.c",
-                    src_dir ++ "wl_monitor.c",
-                    src_dir ++ "wl_window.c",
-                },
-                .flags = &.{},
-            });
-            glfw.root_module.addCMacro("_GLFW_WAYLAND", "1");
+            if (options.enable_x11 or options.enable_wayland) {
+                glfw.addCSourceFiles(.{
+                    .files = &.{
+                        src_dir ++ "xkb_unicode.c",
+                        src_dir ++ "linux_joystick.c",
+                        src_dir ++ "posix_poll.c",
+                    },
+                    .flags = &.{},
+                });
+            }
+            if (options.enable_x11) {
+                glfw.addCSourceFiles(.{
+                    .files = &.{
+                        src_dir ++ "x11_init.c",
+                        src_dir ++ "x11_monitor.c",
+                        src_dir ++ "x11_window.c",
+                        src_dir ++ "glx_context.c",
+                    },
+                    .flags = &.{},
+                });
+                glfw.root_module.addCMacro("_GLFW_X11", "1");
+                glfw.linkSystemLibrary("X11");
+            }
+            if (options.enable_wayland) {
+                glfw.addCSourceFiles(.{
+                    .files = &.{
+                        src_dir ++ "wl_init.c",
+                        src_dir ++ "wl_monitor.c",
+                        src_dir ++ "wl_window.c",
+                    },
+                    .flags = &.{},
+                });
+                glfw.root_module.addCMacro("_GLFW_WAYLAND", "1");
+            }
         },
         else => {},
     }
