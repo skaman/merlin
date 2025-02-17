@@ -71,32 +71,34 @@ fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
     };
 }
 
-pub const Viewport = struct {
+pub const Position = struct {
     x: f32,
     y: f32,
+};
+
+pub const Size = struct {
     width: f32,
     height: f32,
 };
 
-pub const Scissor = struct {
-    x: f32,
-    y: f32,
-    width: f32,
-    height: f32,
+pub const Rect = struct {
+    position: Position,
+    size: Size,
 };
 
 pub const Renderer = struct {
     const Self = @This();
     const VTab = struct {
         deinit: *const fn (*anyopaque) void,
+        getSwapchainSize: *const fn (*anyopaque) Size,
         createShader: *const fn (*anyopaque, handle: ShaderHandle, []align(@alignOf(u32)) const u8) anyerror!void,
         destroyShader: *const fn (*anyopaque, handle: ShaderHandle) void,
         createProgram: *const fn (*anyopaque, handle: ProgramHandle, vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!void,
         destroyProgram: *const fn (*anyopaque, handle: ProgramHandle) void,
         beginFrame: *const fn (*anyopaque) anyerror!void,
         endFrame: *const fn (*anyopaque) anyerror!void,
-        setViewport: *const fn (*anyopaque, viewport: Viewport) void,
-        setScissor: *const fn (*anyopaque, scissor: Scissor) void,
+        setViewport: *const fn (*anyopaque, viewport: Rect) void,
+        setScissor: *const fn (*anyopaque, scissor: Rect) void,
         bindProgram: *const fn (*anyopaque, program: ProgramHandle) void,
         draw: *const fn (*anyopaque, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void,
     };
@@ -110,6 +112,10 @@ pub const Renderer = struct {
             fn deinit(ptr_: *anyopaque) void {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.deinit();
+            }
+            fn getSwapchainSize(ptr_: *anyopaque) Size {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                return self.getSwapchainSize();
             }
             fn createShader(ptr_: *anyopaque, handle: ShaderHandle, data: []align(@alignOf(u32)) const u8) anyerror!void {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
@@ -135,11 +141,11 @@ pub const Renderer = struct {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 return self.endFrame();
             }
-            fn setViewport(ptr_: *anyopaque, viewport: Viewport) void {
+            fn setViewport(ptr_: *anyopaque, viewport: Rect) void {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.setViewport(viewport);
             }
-            fn setScissor(ptr_: *anyopaque, scissor: Scissor) void {
+            fn setScissor(ptr_: *anyopaque, scissor: Rect) void {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.setScissor(scissor);
             }
@@ -156,6 +162,7 @@ pub const Renderer = struct {
             .ptr = ptr,
             .vtab = &.{
                 .deinit = impl.deinit,
+                .getSwapchainSize = impl.getSwapchainSize,
                 .createShader = impl.createShader,
                 .destroyShader = impl.destroyShader,
                 .createProgram = impl.createProgram,
@@ -172,6 +179,10 @@ pub const Renderer = struct {
 
     fn deinit(self: Self) void {
         self.vtab.deinit(self.ptr);
+    }
+
+    fn getSwapchainSize(self: *Self) Size {
+        return self.vtab.getSwapchainSize(self.ptr);
     }
 
     fn createShader(self: *Self, handle: ShaderHandle, data: []align(@alignOf(u32)) const u8) !void {
@@ -198,11 +209,11 @@ pub const Renderer = struct {
         return self.vtab.endFrame(self.ptr);
     }
 
-    fn setViewport(self: *Self, viewport: Viewport) void {
+    fn setViewport(self: *Self, viewport: Rect) void {
         return self.vtab.setViewport(self.ptr, viewport);
     }
 
-    fn setScissor(self: *Self, scissor: Scissor) void {
+    fn setScissor(self: *Self, scissor: Rect) void {
         self.vtab.setScissor(self.ptr, scissor);
     }
 
@@ -264,6 +275,10 @@ pub fn deinit() void {
     context.deinit();
 }
 
+pub fn getSwapchainSize() Size {
+    return context.renderer.getSwapchainSize();
+}
+
 pub fn createShader(data: []align(@alignOf(u32)) const u8) !ShaderHandle {
     const handle = try context.shader_handles.alloc();
     errdefer context.shader_handles.free(handle);
@@ -308,11 +323,11 @@ pub fn endFrame() !void {
     return context.renderer.endFrame();
 }
 
-pub fn setViewport(viewport: Viewport) void {
+pub fn setViewport(viewport: Rect) void {
     context.renderer.setViewport(viewport);
 }
 
-pub fn setScissor(scissor: Scissor) void {
+pub fn setScissor(scissor: Rect) void {
     context.renderer.setScissor(scissor);
 }
 

@@ -900,6 +900,7 @@ const VulkanDevice = struct {
         WaitForFences: std.meta.Child(c.PFN_vkWaitForFences) = undefined,
         ResetFences: std.meta.Child(c.PFN_vkResetFences) = undefined,
         AcquireNextImageKHR: std.meta.Child(c.PFN_vkAcquireNextImageKHR) = undefined,
+        DeviceWaitIdle: std.meta.Child(c.PFN_vkDeviceWaitIdle) = undefined,
     };
     const QueueFamilyIndices = struct {
         graphics_family: ?u32 = null,
@@ -1690,6 +1691,13 @@ const VulkanDevice = struct {
 
         return result;
     }
+
+    fn waitIdle(self: *const Self) !void {
+        try checkVulkanError(
+            "Failed to wait for Vulkan device idle",
+            self.dispatch.DeviceWaitIdle(self.device),
+        );
+    }
 };
 
 const SwapChainSupportDetails = struct {
@@ -2392,7 +2400,7 @@ const VulkanPipeline = struct {
                 .polygonMode = c.VK_POLYGON_MODE_FILL,
                 .lineWidth = 1.0,
                 .cullMode = c.VK_CULL_MODE_BACK_BIT,
-                .frontFace = c.VK_FRONT_FACE_COUNTER_CLOCKWISE,
+                .frontFace = c.VK_FRONT_FACE_CLOCKWISE,
                 .depthBiasEnable = c.VK_FALSE,
             },
         );
@@ -2660,7 +2668,9 @@ const VulkanContext = struct {
     }
 
     fn deinit(self: *Self) void {
-        //self.device.waitIdle();
+        self.device.waitIdle() catch {
+            logErr("Failed to wait for Vulkan device to become idle", .{});
+        };
 
         self.device.destroyFence(self.in_flight_fence);
         self.device.destroySemaphore(self.render_finished_semaphore);
@@ -2735,6 +2745,13 @@ pub const VulkanRenderer = struct {
         logDebug("Deinitializing Vulkan renderer...", .{});
 
         context.deinit();
+    }
+
+    pub fn getSwapchainSize(_: *const VulkanRenderer) z3dfx.Size {
+        return .{
+            .width = @as(f32, @floatFromInt(context.swap_chain.extent.width)),
+            .height = @as(f32, @floatFromInt(context.swap_chain.extent.height)),
+        };
     }
 
     pub fn createShader(
@@ -2859,14 +2876,14 @@ pub const VulkanRenderer = struct {
         try context.device.queuePresentKHR(context.present_queue, &present_info);
     }
 
-    pub fn setViewport(_: *const VulkanRenderer, viewport: z3dfx.Viewport) void {
+    pub fn setViewport(_: *const VulkanRenderer, viewport: z3dfx.Rect) void {
         const vk_viewport = std.mem.zeroInit(
             c.VkViewport,
             .{
-                .x = @as(f32, viewport.x),
-                .y = @as(f32, viewport.y),
-                .width = @as(f32, viewport.width),
-                .height = @as(f32, viewport.height),
+                .x = @as(f32, viewport.position.x),
+                .y = @as(f32, viewport.position.y),
+                .width = @as(f32, viewport.size.width),
+                .height = @as(f32, viewport.size.height),
                 .minDepth = 0,
                 .maxDepth = 1,
             },
@@ -2874,17 +2891,17 @@ pub const VulkanRenderer = struct {
         context.command_queue.setViewport(vk_viewport);
     }
 
-    pub fn setScissor(_: *const VulkanRenderer, scissor: z3dfx.Scissor) void {
+    pub fn setScissor(_: *const VulkanRenderer, scissor: z3dfx.Rect) void {
         const vk_scissor = std.mem.zeroInit(
             c.VkRect2D,
             .{
                 .offset = c.VkOffset2D{
-                    .x = @as(i32, @intFromFloat(scissor.x)),
-                    .y = @as(i32, @intFromFloat(scissor.y)),
+                    .x = @as(i32, @intFromFloat(scissor.position.x)),
+                    .y = @as(i32, @intFromFloat(scissor.position.y)),
                 },
                 .extent = c.VkExtent2D{
-                    .width = @as(u32, @intFromFloat(scissor.width)),
-                    .height = @as(u32, @intFromFloat(scissor.height)),
+                    .width = @as(u32, @intFromFloat(scissor.size.width)),
+                    .height = @as(u32, @intFromFloat(scissor.size.height)),
                 },
             },
         );

@@ -66,8 +66,10 @@ pub fn main() !void {
             std.log.err("Failed to begin frame: {}", .{err});
         };
 
-        z3dfx.setViewport(.{ .x = 0, .y = 0, .width = 600, .height = 600 });
-        z3dfx.setScissor(.{ .x = 0, .y = 0, .width = 600, .height = 600 });
+        const swapchain_size = z3dfx.getSwapchainSize();
+
+        z3dfx.setViewport(.{ .position = .{ .x = 0, .y = 0 }, .size = swapchain_size });
+        z3dfx.setScissor(.{ .position = .{ .x = 0, .y = 0 }, .size = swapchain_size });
         z3dfx.bindProgram(program_handle);
         z3dfx.draw(3, 1, 0, 0);
 
