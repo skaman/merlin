@@ -151,6 +151,8 @@ fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void {
     };
 }
 
+const MaxFramesInFlight = 2;
+
 const VulkanLibrary = struct {
     const Self = @This();
     const LibraryNames = switch (builtin.os.tag) {
@@ -183,7 +185,7 @@ const VulkanLibrary = struct {
             .get_instance_proc_addr = get_instance_proc_addr,
             .dispatch = undefined,
         };
-        self.dispatch = try self.load(Dispatch, "", null);
+        self.dispatch = try self.load(Dispatch, null);
         return self;
     }
 
@@ -216,7 +218,6 @@ const VulkanLibrary = struct {
     fn load(
         self: VulkanLibrary,
         comptime TDispatch: type,
-        comptime suffix: []const u8,
         instance: c.VkInstance,
     ) !TDispatch {
         var dispatch = TDispatch{};
@@ -224,7 +225,7 @@ const VulkanLibrary = struct {
             @field(dispatch, field.name) = try self.get_proc(
                 ?field.type,
                 instance,
-                "vk" ++ field.name ++ suffix,
+                "vk" ++ field.name,
             );
         }
         return dispatch;
@@ -455,7 +456,7 @@ const VulkanInstance = struct {
         return .{
             .handle = instance,
             .allocation_callbacks = allocation_callbacks,
-            .dispatch = try vulkan_library.load(Dispatch, "", instance),
+            .dispatch = try vulkan_library.load(Dispatch, instance),
         };
     }
 
@@ -1084,11 +1085,7 @@ const VulkanDevice = struct {
             .instance = instance,
             .physical_device = selected_physical_device,
             .device = device,
-            .dispatch = try vulkan_library.load(
-                Dispatch,
-                "",
-                instance.handle,
-            ),
+            .dispatch = try vulkan_library.load(Dispatch, instance.handle),
             .queue_family_indices = queue_family_indices,
         };
     }
@@ -1777,11 +1774,7 @@ const VulkanSurface = struct {
 
         return .{
             .handle = surface,
-            .dispatch = try vulkan_library.load(
-                Dispatch,
-                "",
-                instance.handle,
-            ),
+            .dispatch = try vulkan_library.load(Dispatch, instance.handle),
             .instance = instance,
         };
     }
@@ -2151,7 +2144,7 @@ const VulkanCommandQueue = struct {
     };
 
     command_pool: c.VkCommandPool,
-    command_buffer: c.VkCommandBuffer,
+    command_buffers: [MaxFramesInFlight]c.VkCommandBuffer,
     device: *const VulkanDevice,
     dispatch: Dispatch,
 
@@ -2175,31 +2168,27 @@ const VulkanCommandQueue = struct {
         );
         errdefer device.destroyCommandPool(command_pool);
 
+        var command_buffers: [MaxFramesInFlight]c.VkCommandBuffer = undefined;
         const allocate_info = std.mem.zeroInit(
             c.VkCommandBufferAllocateInfo,
             .{
                 .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
                 .commandPool = command_pool,
                 .level = c.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                .commandBufferCount = 1,
+                .commandBufferCount = command_buffers.len,
             },
         );
 
-        var command_buffer: c.VkCommandBuffer = undefined;
         try device.allocateCommandBuffers(
             &allocate_info,
-            &command_buffer,
+            &command_buffers,
         );
 
         return .{
             .command_pool = command_pool,
             .device = device,
-            .command_buffer = command_buffer,
-            .dispatch = try vulkan_library.load(
-                Dispatch,
-                "",
-                device.instance.handle,
-            ),
+            .command_buffers = command_buffers,
+            .dispatch = try vulkan_library.load(Dispatch, device.instance.handle),
         };
     }
 
@@ -2207,7 +2196,7 @@ const VulkanCommandQueue = struct {
         self.device.destroyCommandPool(self.command_pool);
     }
 
-    fn begin(self: *Self) !void {
+    fn begin(self: *Self, frame_index: u32) !void {
         const begin_info = std.mem.zeroInit(
             c.VkCommandBufferBeginInfo,
             .{
@@ -2218,21 +2207,21 @@ const VulkanCommandQueue = struct {
 
         try checkVulkanError(
             "Failed to begin command buffer",
-            self.dispatch.BeginCommandBuffer(self.command_buffer, &begin_info),
+            self.dispatch.BeginCommandBuffer(self.command_buffers[frame_index], &begin_info),
         );
     }
 
-    fn end(self: *Self) !void {
+    fn end(self: *Self, frame_index: u32) !void {
         try checkVulkanError(
             "Failed to end command buffer",
-            self.dispatch.EndCommandBuffer(self.command_buffer),
+            self.dispatch.EndCommandBuffer(self.command_buffers[frame_index]),
         );
     }
 
-    fn reset(self: *Self) !void {
+    fn reset(self: *Self, frame_index: u32) !void {
         try checkVulkanError(
             "Failed to reset command buffer",
-            self.dispatch.ResetCommandBuffer(self.command_buffer, 0),
+            self.dispatch.ResetCommandBuffer(self.command_buffers[frame_index], 0),
         );
     }
 
@@ -2241,6 +2230,7 @@ const VulkanCommandQueue = struct {
         render_pass: c.VkRenderPass,
         framebuffer: c.VkFramebuffer,
         extent: c.VkExtent2D,
+        frame_index: u32,
     ) void {
         const begin_info = std.mem.zeroInit(
             c.VkRenderPassBeginInfo,
@@ -2263,27 +2253,48 @@ const VulkanCommandQueue = struct {
             },
         );
 
-        self.dispatch.CmdBeginRenderPass(self.command_buffer, &begin_info, c.VK_SUBPASS_CONTENTS_INLINE);
+        self.dispatch.CmdBeginRenderPass(
+            self.command_buffers[frame_index],
+            &begin_info,
+            c.VK_SUBPASS_CONTENTS_INLINE,
+        );
     }
 
-    fn endRenderPass(self: *Self) void {
-        self.dispatch.CmdEndRenderPass(self.command_buffer);
+    fn endRenderPass(self: *Self, frame_index: u32) void {
+        self.dispatch.CmdEndRenderPass(self.command_buffers[frame_index]);
     }
 
-    fn setViewport(self: *Self, viewport: c.VkViewport) void {
-        self.dispatch.CmdSetViewport(self.command_buffer, 0, 1, &viewport);
+    fn setViewport(self: *Self, viewport: c.VkViewport, frame_index: u32) void {
+        self.dispatch.CmdSetViewport(self.command_buffers[frame_index], 0, 1, &viewport);
     }
 
-    fn setScissor(self: *Self, scissor: c.VkRect2D) void {
-        self.dispatch.CmdSetScissor(self.command_buffer, 0, 1, &scissor);
+    fn setScissor(self: *Self, scissor: c.VkRect2D, frame_index: u32) void {
+        self.dispatch.CmdSetScissor(self.command_buffers[frame_index], 0, 1, &scissor);
     }
 
-    fn bindPipeline(self: *Self, pipeline: c.VkPipeline) void {
-        self.dispatch.CmdBindPipeline(self.command_buffer, c.VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    fn bindPipeline(self: *Self, pipeline: c.VkPipeline, frame_index: u32) void {
+        self.dispatch.CmdBindPipeline(
+            self.command_buffers[frame_index],
+            c.VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipeline,
+        );
     }
 
-    fn draw(self: *Self, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
-        self.dispatch.CmdDraw(self.command_buffer, vertex_count, instance_count, first_vertex, first_instance);
+    fn draw(
+        self: *Self,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+        frame_index: u32,
+    ) void {
+        self.dispatch.CmdDraw(
+            self.command_buffers[frame_index],
+            vertex_count,
+            instance_count,
+            first_vertex,
+            first_instance,
+        );
     }
 };
 
@@ -2359,26 +2370,6 @@ const VulkanPipeline = struct {
                 .primitiveRestartEnable = c.VK_FALSE,
             },
         );
-
-        //const viewport = std.mem.zeroInit(
-        //    c.VkViewport,
-        //    .{
-        //        .x = 0.0,
-        //        .y = 0.0,
-        //        .width = @as(f32, @floatFromInt(context.swap_chain.extent.width)),
-        //        .height = @as(f32, @floatFromInt(context.swap_chain.extent.height)),
-        //        .minDepth = 0.0,
-        //        .maxDepth = 1.0,
-        //    },
-        //);
-
-        //const scissor = std.mem.zeroInit(
-        //    c.VkRect2D,
-        //    .{
-        //        .offset = c.VkOffset2D{ .x = 0, .y = 0 },
-        //        .extent = context.swap_chain.extent,
-        //    },
-        //);
 
         const viewport_state = std.mem.zeroInit(
             c.VkPipelineViewportStateCreateInfo,
@@ -2524,11 +2515,12 @@ const VulkanContext = struct {
     programs: [z3dfx.MaxProgramHandles]VulkanProgram,
     pipelines: std.AutoHashMap(PipelineKey, VulkanPipeline),
 
-    image_available_semaphore: c.VkSemaphore,
-    render_finished_semaphore: c.VkSemaphore,
-    in_flight_fence: c.VkFence,
+    image_available_semaphores: [MaxFramesInFlight]c.VkSemaphore,
+    render_finished_semaphores: [MaxFramesInFlight]c.VkSemaphore,
+    in_flight_fences: [MaxFramesInFlight]c.VkFence,
 
     current_image_index: u32,
+    current_frame: u32,
 
     fn init(graphics_ctx: *const z3dfx.GraphicsContext) !Self {
         var vulkan_library = try VulkanLibrary.init();
@@ -2619,18 +2611,6 @@ const VulkanContext = struct {
             },
         );
 
-        var image_available_semaphore: c.VkSemaphore = undefined;
-        try device.createSemaphore(
-            &semaphore_create_info,
-            &image_available_semaphore,
-        );
-
-        var render_finished_semaphore: c.VkSemaphore = undefined;
-        try device.createSemaphore(
-            &semaphore_create_info,
-            &render_finished_semaphore,
-        );
-
         const fence_create_info = std.mem.zeroInit(
             c.VkFenceCreateInfo,
             .{
@@ -2639,11 +2619,26 @@ const VulkanContext = struct {
             },
         );
 
-        var in_flight_fence: c.VkFence = undefined;
-        try device.createFence(
-            &fence_create_info,
-            &in_flight_fence,
-        );
+        var image_available_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
+        var render_finished_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
+        var in_flight_fences: [MaxFramesInFlight]c.VkFence = undefined;
+
+        for (0..MaxFramesInFlight) |i| {
+            try device.createSemaphore(
+                &semaphore_create_info,
+                &image_available_semaphores[i],
+            );
+
+            try device.createSemaphore(
+                &semaphore_create_info,
+                &render_finished_semaphores[i],
+            );
+
+            try device.createFence(
+                &fence_create_info,
+                &in_flight_fences[i],
+            );
+        }
 
         return .{
             .allocator = graphics_ctx.allocator,
@@ -2660,10 +2655,11 @@ const VulkanContext = struct {
             .shader_modules = undefined,
             .programs = undefined,
             .pipelines = .init(graphics_ctx.allocator),
-            .image_available_semaphore = image_available_semaphore,
-            .render_finished_semaphore = render_finished_semaphore,
-            .in_flight_fence = in_flight_fence,
+            .image_available_semaphores = image_available_semaphores,
+            .render_finished_semaphores = render_finished_semaphores,
+            .in_flight_fences = in_flight_fences,
             .current_image_index = 0,
+            .current_frame = 0,
         };
     }
 
@@ -2672,9 +2668,11 @@ const VulkanContext = struct {
             logErr("Failed to wait for Vulkan device to become idle", .{});
         };
 
-        self.device.destroyFence(self.in_flight_fence);
-        self.device.destroySemaphore(self.render_finished_semaphore);
-        self.device.destroySemaphore(self.image_available_semaphore);
+        for (0..MaxFramesInFlight) |i| {
+            self.device.destroySemaphore(self.image_available_semaphores[i]);
+            self.device.destroySemaphore(self.render_finished_semaphores[i]);
+            self.device.destroyFence(self.in_flight_fences[i]);
+        }
 
         var iterator = self.pipelines.valueIterator();
         while (iterator.next()) |pipeline| {
@@ -2809,37 +2807,38 @@ pub const VulkanRenderer = struct {
     pub fn beginFrame(_: *const VulkanRenderer) !void {
         try context.device.waitForFences(
             1,
-            &context.in_flight_fence,
+            &context.in_flight_fences[context.current_frame],
             c.VK_TRUE,
             c.UINT64_MAX,
         );
-        try context.device.resetFences(1, &context.in_flight_fence);
+        try context.device.resetFences(1, &context.in_flight_fences[context.current_frame]);
 
         _ = try context.device.acquireNextImageKHR(
             context.swap_chain.handle,
             c.UINT64_MAX,
-            context.image_available_semaphore,
+            context.image_available_semaphores[context.current_frame],
             null,
             &context.current_image_index,
         );
 
-        try context.command_queue.reset();
-        try context.command_queue.begin();
+        try context.command_queue.reset(context.current_frame);
+        try context.command_queue.begin(context.current_frame);
 
         context.command_queue.beginRenderPass(
             context.main_render_pass.handle,
             context.swap_chain.frame_buffers.?[context.current_image_index],
             context.swap_chain.extent,
+            context.current_frame,
         );
     }
 
     pub fn endFrame(_: *const VulkanRenderer) !void {
-        context.command_queue.endRenderPass();
-        try context.command_queue.end();
+        context.command_queue.endRenderPass(context.current_frame);
+        try context.command_queue.end(context.current_frame);
 
         const wait_stages = [_]c.VkPipelineStageFlags{c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        const wait_semaphores = [_]c.VkSemaphore{context.image_available_semaphore};
-        const signal_semaphores = [_]c.VkSemaphore{context.render_finished_semaphore};
+        const wait_semaphores = [_]c.VkSemaphore{context.image_available_semaphores[context.current_frame]};
+        const signal_semaphores = [_]c.VkSemaphore{context.render_finished_semaphores[context.current_frame]};
         const submit_info = std.mem.zeroInit(
             c.VkSubmitInfo,
             .{
@@ -2848,7 +2847,7 @@ pub const VulkanRenderer = struct {
                 .pWaitSemaphores = &wait_semaphores,
                 .pWaitDstStageMask = &wait_stages,
                 .commandBufferCount = 1,
-                .pCommandBuffers = &context.command_queue.command_buffer,
+                .pCommandBuffers = &context.command_queue.command_buffers[context.current_frame],
                 .signalSemaphoreCount = 1,
                 .pSignalSemaphores = &signal_semaphores,
             },
@@ -2858,7 +2857,7 @@ pub const VulkanRenderer = struct {
             context.graphics_queue,
             1,
             &submit_info,
-            context.in_flight_fence,
+            context.in_flight_fences[context.current_frame],
         );
 
         const present_info = std.mem.zeroInit(
@@ -2874,6 +2873,8 @@ pub const VulkanRenderer = struct {
         );
 
         try context.device.queuePresentKHR(context.present_queue, &present_info);
+
+        context.current_frame = (context.current_frame + 1) % MaxFramesInFlight;
     }
 
     pub fn setViewport(_: *const VulkanRenderer, viewport: z3dfx.Rect) void {
@@ -2888,7 +2889,7 @@ pub const VulkanRenderer = struct {
                 .maxDepth = 1,
             },
         );
-        context.command_queue.setViewport(vk_viewport);
+        context.command_queue.setViewport(vk_viewport, context.current_frame);
     }
 
     pub fn setScissor(_: *const VulkanRenderer, scissor: z3dfx.Rect) void {
@@ -2905,7 +2906,7 @@ pub const VulkanRenderer = struct {
                 },
             },
         );
-        context.command_queue.setScissor(vk_scissor);
+        context.command_queue.setScissor(vk_scissor, context.current_frame);
     }
 
     pub fn bindProgram(self: *const VulkanRenderer, program: z3dfx.ProgramHandle) void {
@@ -2913,7 +2914,7 @@ pub const VulkanRenderer = struct {
             logErr("Failed to bind Vulkan program: {d}", .{program});
             return;
         };
-        context.command_queue.bindPipeline(pipeline.handle);
+        context.command_queue.bindPipeline(pipeline.handle, context.current_frame);
     }
     pub fn draw(
         _: *const VulkanRenderer,
@@ -2922,7 +2923,13 @@ pub const VulkanRenderer = struct {
         first_vertex: u32,
         first_instance: u32,
     ) void {
-        context.command_queue.draw(vertex_count, instance_count, first_vertex, first_instance);
+        context.command_queue.draw(
+            vertex_count,
+            instance_count,
+            first_vertex,
+            first_instance,
+            context.current_frame,
+        );
     }
 
     fn getPipeline(
