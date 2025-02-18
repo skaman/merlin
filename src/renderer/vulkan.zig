@@ -88,6 +88,18 @@ fn prepareValidationLayers(
 fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void {
     return switch (result) {
         c.VK_SUCCESS => {},
+        c.VK_TIMEOUT => {
+            logErr("{s}: timeout", .{message});
+            return error.VulkanTimeout;
+        },
+        c.VK_NOT_READY => {
+            logErr("{s}: not ready", .{message});
+            return error.VulkanNotReady;
+        },
+        c.VK_SUBOPTIMAL_KHR => {
+            logErr("{s}: suboptimal", .{message});
+            return error.VulkanSuboptimal;
+        },
         c.VK_ERROR_OUT_OF_HOST_MEMORY => {
             logErr("{s}: out of host memory", .{message});
             return error.VulkanOutOfHostMemory;
@@ -143,6 +155,10 @@ fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void {
         c.VK_ERROR_INVALID_SHADER_NV => {
             logErr("{s}: invalid shader", .{message});
             return error.VulkanInvalidShader;
+        },
+        c.VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT => {
+            logErr("{s}: full screen exclusive mode lost", .{message});
+            return error.VulkanFullScreenExclusiveModeLost;
         },
         else => {
             logErr("{s}: {d}", .{ message, result });
@@ -1277,14 +1293,20 @@ const VulkanDevice = struct {
         self: *const Self,
         queue: c.VkQueue,
         present_info: *const c.VkPresentInfoKHR,
-    ) !void {
-        try checkVulkanError(
-            "Failed to present Vulkan queue",
-            self.dispatch.QueuePresentKHR(
-                queue,
-                present_info,
-            ),
+    ) !c.VkResult {
+        const result = self.dispatch.QueuePresentKHR(
+            queue,
+            present_info,
         );
+
+        // Not error, but should be handled.
+        if (result == c.VK_ERROR_OUT_OF_DATE_KHR or result == c.VK_SUBOPTIMAL_KHR) {
+            return result;
+        }
+
+        try checkVulkanError("Failed to present Vulkan queue", result);
+
+        return result;
     }
 
     fn createSwapchainKHR(
@@ -1676,8 +1698,8 @@ const VulkanDevice = struct {
             image_index,
         );
 
-        // These are not errors
-        if (result == c.VK_TIMEOUT or result == c.VK_NOT_READY or result == c.VK_SUBOPTIMAL_KHR) {
+        // Not an error, but should be handled by the caller.
+        if (result == c.VK_SUBOPTIMAL_KHR or result == c.VK_ERROR_OUT_OF_DATE_KHR) {
             return result;
         }
 
@@ -1801,13 +1823,14 @@ const VulkanSwapChain = struct {
     frame_buffers: ?[]c.VkFramebuffer,
 
     fn init(
-        graphics_ctx: *const z3dfx.GraphicsContext,
+        allocator: std.mem.Allocator,
         instance: *VulkanInstance,
         device: *const VulkanDevice,
         surface: *const VulkanSurface,
+        window: *c.GLFWwindow,
     ) !Self {
         var swap_chain_support = try SwapChainSupportDetails.init(
-            graphics_ctx.allocator,
+            allocator,
             instance,
             device.physical_device,
             surface.handle,
@@ -1820,7 +1843,7 @@ const VulkanSwapChain = struct {
         var window_width: c_int = undefined;
         var window_height: c_int = undefined;
         c.glfwGetFramebufferSize(
-            graphics_ctx.options.window,
+            window,
             &window_width,
             &window_height,
         );
@@ -1887,16 +1910,16 @@ const VulkanSwapChain = struct {
         logDebug("---------------------------------------------------------------", .{});
 
         const swap_chain_images = try device.getSwapchainImagesKHRAlloc(
-            graphics_ctx.allocator,
+            allocator,
             swap_chain,
         );
-        errdefer graphics_ctx.allocator.free(swap_chain_images);
+        errdefer allocator.free(swap_chain_images);
 
-        var swap_chain_image_views = try graphics_ctx.allocator.alloc(
+        var swap_chain_image_views = try allocator.alloc(
             c.VkImageView,
             swap_chain_images.len,
         );
-        errdefer graphics_ctx.allocator.free(swap_chain_image_views);
+        errdefer allocator.free(swap_chain_image_views);
 
         @memset(swap_chain_image_views, null);
         errdefer {
@@ -1938,7 +1961,7 @@ const VulkanSwapChain = struct {
         }
 
         return .{
-            .allocator = graphics_ctx.allocator,
+            .allocator = allocator,
             .handle = swap_chain,
             .device = device,
             .images = swap_chain_images,
@@ -2510,6 +2533,7 @@ const VulkanContext = struct {
     main_render_pass: *VulkanRenderPass,
     command_queue: *VulkanCommandQueue,
     debug_messenger: ?c.VkDebugUtilsMessengerEXT,
+    options: z3dfx.GraphicsOptions,
 
     shader_modules: [z3dfx.MaxShaderHandles]c.VkShaderModule,
     programs: [z3dfx.MaxProgramHandles]VulkanProgram,
@@ -2521,6 +2545,8 @@ const VulkanContext = struct {
 
     current_image_index: u32,
     current_frame: u32,
+
+    framebuffer_invalidated: bool,
 
     fn init(graphics_ctx: *const z3dfx.GraphicsContext) !Self {
         var vulkan_library = try VulkanLibrary.init();
@@ -2580,10 +2606,11 @@ const VulkanContext = struct {
         errdefer graphics_ctx.allocator.destroy(swap_chain);
 
         swap_chain.* = try VulkanSwapChain.init(
-            graphics_ctx,
+            graphics_ctx.allocator,
             instance,
             device,
             surface,
+            graphics_ctx.options.window,
         );
         errdefer swap_chain.deinit();
 
@@ -2645,6 +2672,7 @@ const VulkanContext = struct {
             .vulkan_library = vulkan_library,
             .instance = instance,
             .debug_messenger = debug_messenger,
+            .options = graphics_ctx.options,
             .device = device,
             .graphics_queue = graphics_queue,
             .present_queue = present_queue,
@@ -2660,6 +2688,7 @@ const VulkanContext = struct {
             .in_flight_fences = in_flight_fences,
             .current_image_index = 0,
             .current_frame = 0,
+            .framebuffer_invalidated = false,
         };
     }
 
@@ -2726,6 +2755,26 @@ const VulkanContext = struct {
         );
         return debug_messenger;
     }
+
+    fn recreateSwapChain(self: *Self) !void {
+        self.device.waitIdle() catch {
+            logErr("Failed to wait for Vulkan device to become idle", .{});
+        };
+
+        self.swap_chain.deinit();
+        self.allocator.destroy(self.swap_chain);
+
+        self.swap_chain = try self.allocator.create(VulkanSwapChain);
+        self.swap_chain.* = try VulkanSwapChain.init(
+            self.allocator,
+            self.instance,
+            self.device,
+            self.surface,
+            self.options.window,
+        );
+
+        try self.swap_chain.createFrameBuffers(self.main_render_pass);
+    }
 };
 
 var context: VulkanContext = undefined;
@@ -2750,6 +2799,10 @@ pub const VulkanRenderer = struct {
             .width = @as(f32, @floatFromInt(context.swap_chain.extent.width)),
             .height = @as(f32, @floatFromInt(context.swap_chain.extent.height)),
         };
+    }
+
+    pub fn invalidateFramebuffer(_: *const VulkanRenderer) void {
+        context.framebuffer_invalidated = true;
     }
 
     pub fn createShader(
@@ -2804,22 +2857,26 @@ pub const VulkanRenderer = struct {
         logDebug("Destroyed Vulkan program: {d}", .{handle});
     }
 
-    pub fn beginFrame(_: *const VulkanRenderer) !void {
+    pub fn beginFrame(_: *const VulkanRenderer) !bool {
         try context.device.waitForFences(
             1,
             &context.in_flight_fences[context.current_frame],
             c.VK_TRUE,
             c.UINT64_MAX,
         );
-        try context.device.resetFences(1, &context.in_flight_fences[context.current_frame]);
 
-        _ = try context.device.acquireNextImageKHR(
+        if (try context.device.acquireNextImageKHR(
             context.swap_chain.handle,
             c.UINT64_MAX,
             context.image_available_semaphores[context.current_frame],
             null,
             &context.current_image_index,
-        );
+        ) == c.VK_ERROR_OUT_OF_DATE_KHR) {
+            try context.recreateSwapChain();
+            return false;
+        }
+
+        try context.device.resetFences(1, &context.in_flight_fences[context.current_frame]);
 
         try context.command_queue.reset(context.current_frame);
         try context.command_queue.begin(context.current_frame);
@@ -2830,6 +2887,8 @@ pub const VulkanRenderer = struct {
             context.swap_chain.extent,
             context.current_frame,
         );
+
+        return true;
     }
 
     pub fn endFrame(_: *const VulkanRenderer) !void {
@@ -2872,7 +2931,11 @@ pub const VulkanRenderer = struct {
             },
         );
 
-        try context.device.queuePresentKHR(context.present_queue, &present_info);
+        const result = try context.device.queuePresentKHR(context.present_queue, &present_info);
+        if (result == c.VK_ERROR_OUT_OF_DATE_KHR or result == c.VK_SUBOPTIMAL_KHR or context.framebuffer_invalidated) {
+            context.framebuffer_invalidated = false;
+            try context.recreateSwapChain();
+        }
 
         context.current_frame = (context.current_frame + 1) % MaxFramesInFlight;
     }

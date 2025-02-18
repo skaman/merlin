@@ -91,11 +91,12 @@ pub const Renderer = struct {
     const VTab = struct {
         deinit: *const fn (*anyopaque) void,
         getSwapchainSize: *const fn (*anyopaque) Size,
+        invalidateFramebuffer: *const fn (*anyopaque) void,
         createShader: *const fn (*anyopaque, handle: ShaderHandle, []align(@alignOf(u32)) const u8) anyerror!void,
         destroyShader: *const fn (*anyopaque, handle: ShaderHandle) void,
         createProgram: *const fn (*anyopaque, handle: ProgramHandle, vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!void,
         destroyProgram: *const fn (*anyopaque, handle: ProgramHandle) void,
-        beginFrame: *const fn (*anyopaque) anyerror!void,
+        beginFrame: *const fn (*anyopaque) anyerror!bool,
         endFrame: *const fn (*anyopaque) anyerror!void,
         setViewport: *const fn (*anyopaque, viewport: Rect) void,
         setScissor: *const fn (*anyopaque, scissor: Rect) void,
@@ -117,6 +118,10 @@ pub const Renderer = struct {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 return self.getSwapchainSize();
             }
+            fn invalidateFramebuffer(ptr_: *anyopaque) void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                self.invalidateFramebuffer();
+            }
             fn createShader(ptr_: *anyopaque, handle: ShaderHandle, data: []align(@alignOf(u32)) const u8) anyerror!void {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 return self.createShader(handle, data);
@@ -133,7 +138,7 @@ pub const Renderer = struct {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.destroyProgram(handle);
             }
-            fn beginFrame(ptr_: *anyopaque) !void {
+            fn beginFrame(ptr_: *anyopaque) !bool {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 return self.beginFrame();
             }
@@ -163,6 +168,7 @@ pub const Renderer = struct {
             .vtab = &.{
                 .deinit = impl.deinit,
                 .getSwapchainSize = impl.getSwapchainSize,
+                .invalidateFramebuffer = impl.invalidateFramebuffer,
                 .createShader = impl.createShader,
                 .destroyShader = impl.destroyShader,
                 .createProgram = impl.createProgram,
@@ -185,6 +191,10 @@ pub const Renderer = struct {
         return self.vtab.getSwapchainSize(self.ptr);
     }
 
+    fn invalidateFramebuffer(self: *Self) void {
+        self.vtab.invalidateFramebuffer(self.ptr);
+    }
+
     fn createShader(self: *Self, handle: ShaderHandle, data: []align(@alignOf(u32)) const u8) !void {
         return self.vtab.createShader(self.ptr, handle, data);
     }
@@ -201,7 +211,7 @@ pub const Renderer = struct {
         self.vtab.destroyProgram(self.ptr, handle);
     }
 
-    fn beginFrame(self: *Self) !void {
+    fn beginFrame(self: *Self) !bool {
         return self.vtab.beginFrame(self.ptr);
     }
 
@@ -279,6 +289,10 @@ pub fn getSwapchainSize() Size {
     return context.renderer.getSwapchainSize();
 }
 
+pub fn invalidateFramebuffer() void {
+    context.renderer.invalidateFramebuffer();
+}
+
 pub fn createShader(data: []align(@alignOf(u32)) const u8) !ShaderHandle {
     const handle = try context.shader_handles.alloc();
     errdefer context.shader_handles.free(handle);
@@ -315,7 +329,7 @@ pub fn destroyProgram(handle: ProgramHandle) void {
     context.program_handles.free(handle);
 }
 
-pub fn beginFrame() !void {
+pub fn beginFrame() !bool {
     return context.renderer.beginFrame();
 }
 

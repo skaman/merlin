@@ -10,6 +10,10 @@ pub fn glfwErrorCallback(_: c_int, description: [*c]const u8) callconv(.c) void 
     std.log.err("{s}", .{description});
 }
 
+pub fn glfwFramebufferSizeCallback(_: ?*c.GLFWwindow, _: c_int, _: c_int) callconv(.c) void {
+    z3dfx.invalidateFramebuffer();
+}
+
 pub fn main() !void {
     _ = c.glfwSetErrorCallback(&glfwErrorCallback);
 
@@ -30,6 +34,8 @@ pub fn main() !void {
         null,
     ) orelse return error.WindowInitFailed;
     defer c.glfwDestroyWindow(window);
+
+    _ = c.glfwSetFramebufferSizeCallback(window, &glfwFramebufferSizeCallback);
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -62,9 +68,11 @@ pub fn main() !void {
 
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
         c.glfwPollEvents();
-        z3dfx.beginFrame() catch |err| {
+        const result = z3dfx.beginFrame() catch |err| {
             std.log.err("Failed to begin frame: {}", .{err});
+            continue;
         };
+        if (!result) continue;
 
         const swapchain_size = z3dfx.getSwapchainSize();
 
