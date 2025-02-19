@@ -66,6 +66,30 @@ pub fn main() !void {
     const program_handle = try z3dfx.createProgram(vert_shader_handle, frag_shader_handle);
     defer z3dfx.destroyProgram(program_handle);
 
+    var vertex_layout = z3dfx.VertexLayout.init();
+    vertex_layout.add(.position, 2, .float, false, false);
+    vertex_layout.add(.color_0, 3, .float, false, false);
+
+    const Vector2 = @Vector(2, f32);
+    const Vector3 = @Vector(3, f32);
+    const Vertex = packed struct {
+        position: Vector2,
+        color_0: Vector3,
+    };
+
+    var vertices = [_]Vertex{
+        .{ .position = [_]f32{ 0.0, -0.5 }, .color_0 = [_]f32{ 1.0, 0.0, 0.0 } },
+        .{ .position = [_]f32{ 0.5, 0.5 }, .color_0 = [_]f32{ 0.0, 1.0, 0.0 } },
+        .{ .position = [_]f32{ -0.5, 0.5 }, .color_0 = [_]f32{ 0.0, 0.0, 1.0 } },
+    };
+
+    const vertex_buffer_handle = try z3dfx.createVertexBuffer(
+        @ptrCast(&vertices),
+        vertices.len * @sizeOf(Vertex),
+        vertex_layout,
+    );
+    defer z3dfx.destroyVertexBuffer(vertex_buffer_handle);
+
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
         c.glfwPollEvents();
         const result = z3dfx.beginFrame() catch |err| {

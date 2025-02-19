@@ -12,6 +12,8 @@ pub const NoopRenderer = struct {
     pub fn destroyShader(_: *const NoopRenderer, _: z3dfx.ShaderHandle) void {}
     pub fn createProgram(_: *const NoopRenderer, _: z3dfx.ProgramHandle, _: z3dfx.ShaderHandle, _: z3dfx.ShaderHandle) !void {}
     pub fn destroyProgram(_: *const NoopRenderer, _: z3dfx.ProgramHandle) void {}
+    pub fn createVertexBuffer(_: *const NoopRenderer, _: z3dfx.VertexBufferHandle, _: [*]const u8, _: u32, _: z3dfx.VertexLayout) !void {}
+    pub fn destroyVertexBuffer(_: *const NoopRenderer, _: z3dfx.VertexBufferHandle) void {}
     pub fn beginFrame(_: *const NoopRenderer) !bool {
         return true;
     }

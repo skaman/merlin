@@ -2363,6 +2363,14 @@ const VulkanProgram = struct {
     }
 };
 
+const VulkanBuffer = struct {
+    //
+};
+
+const VulkanVertexBuffer = struct {
+    //
+};
+
 const VulkanPipeline = struct {
     const Self = @This();
 
@@ -2856,6 +2864,19 @@ pub const VulkanRenderer = struct {
         context.programs[handle].deinit();
         logDebug("Destroyed Vulkan program: {d}", .{handle});
     }
+
+    pub fn createVertexBuffer(
+        _: *const VulkanRenderer,
+        _: z3dfx.VertexBufferHandle,
+        _: [*]const u8,
+        _: u32,
+        _: z3dfx.VertexLayout,
+    ) !void {}
+
+    pub fn destroyVertexBuffer(
+        _: *const VulkanRenderer,
+        _: z3dfx.VertexBufferHandle,
+    ) void {}
 
     pub fn beginFrame(_: *const VulkanRenderer) !bool {
         try context.device.waitForFences(

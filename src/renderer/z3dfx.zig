@@ -31,9 +31,11 @@ pub const RendererType = enum {
 
 pub const ShaderHandle = u16;
 pub const ProgramHandle = u16;
+pub const VertexBufferHandle = u16;
 
 pub const MaxShaderHandles = 512;
 pub const MaxProgramHandles = 512;
+pub const MaxVertexBufferHandles = 512;
 
 fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
     return struct {
@@ -86,6 +88,92 @@ pub const Rect = struct {
     size: Size,
 };
 
+pub const Attribute = enum(u5) {
+    position,
+    normal,
+    tangent,
+    bitangent,
+    color_0,
+    color_1,
+    color_2,
+    color_3,
+    indices,
+    weight,
+    tex_coord_0,
+    tex_coord_1,
+    tex_coord_2,
+    tex_coord_3,
+    tex_coord_4,
+    tex_coord_5,
+    tex_coord_6,
+    tex_coord_7,
+};
+
+pub const AttributeType = enum(u3) {
+    uint_8,
+    uint_10,
+    int_16,
+    half,
+    float,
+
+    const SizeTable = [_][4]u8{
+        [_]u8{ 1, 2, 4, 4 }, // uint_8
+        [_]u8{ 4, 4, 4, 4 }, // uint_10
+        [_]u8{ 2, 4, 8, 8 }, // int_16
+        [_]u8{ 2, 4, 8, 8 }, // half
+        [_]u8{ 4, 8, 12, 16 }, // float
+    };
+
+    pub fn getSize(self: AttributeType, num: u3) u8 {
+        return SizeTable[@intFromEnum(self)][num];
+    }
+};
+
+pub const AttributeData = packed struct {
+    normalized: bool,
+    type: AttributeType,
+    num: u3,
+    as_int: bool,
+};
+
+pub const VertexLayout = struct {
+    stride: u16,
+    offsets: [@typeInfo(Attribute).@"enum".fields.len]u16,
+    attributes: [@typeInfo(Attribute).@"enum".fields.len]AttributeData,
+
+    pub fn init() VertexLayout {
+        var offsets: [@typeInfo(Attribute).@"enum".fields.len]u16 = undefined;
+        @memset(&offsets, 0);
+
+        var attributes: [@typeInfo(Attribute).@"enum".fields.len]AttributeData = undefined;
+        @memset(&attributes, .{ .normalized = false, .type = .uint_8, .num = 0, .as_int = false });
+
+        return .{
+            .stride = 0,
+            .offsets = offsets,
+            .attributes = attributes,
+        };
+    }
+
+    pub fn add(self: *VertexLayout, attribute: Attribute, num: u3, type_: AttributeType, normalized: bool, as_int: bool) void {
+        const index = @intFromEnum(attribute);
+        const size = type_.getSize(num);
+
+        self.attributes[index] = .{
+            .normalized = normalized,
+            .type = type_,
+            .num = num,
+            .as_int = as_int,
+        };
+        self.offsets[index] = self.stride;
+        self.stride += size;
+    }
+
+    pub fn skip(self: *VertexLayout, num: u8) void {
+        self.stride += num;
+    }
+};
+
 pub const Renderer = struct {
     const Self = @This();
     const VTab = struct {
@@ -96,6 +184,8 @@ pub const Renderer = struct {
         destroyShader: *const fn (*anyopaque, handle: ShaderHandle) void,
         createProgram: *const fn (*anyopaque, handle: ProgramHandle, vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!void,
         destroyProgram: *const fn (*anyopaque, handle: ProgramHandle) void,
+        createVertexBuffer: *const fn (*anyopaque, handle: VertexBufferHandle, data: [*]const u8, size: u32, layout: VertexLayout) anyerror!void,
+        destroyVertexBuffer: *const fn (*anyopaque, handle: VertexBufferHandle) void,
         beginFrame: *const fn (*anyopaque) anyerror!bool,
         endFrame: *const fn (*anyopaque) anyerror!void,
         setViewport: *const fn (*anyopaque, viewport: Rect) void,
@@ -138,6 +228,14 @@ pub const Renderer = struct {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.destroyProgram(handle);
             }
+            fn createVertexBuffer(ptr_: *anyopaque, handle: VertexBufferHandle, data: [*]const u8, size: u32, layout: VertexLayout) anyerror!void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                return self.createVertexBuffer(handle, data, size, layout);
+            }
+            fn destroyVertexBuffer(ptr_: *anyopaque, handle: VertexBufferHandle) void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                self.destroyVertexBuffer(handle);
+            }
             fn beginFrame(ptr_: *anyopaque) !bool {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 return self.beginFrame();
@@ -173,6 +271,8 @@ pub const Renderer = struct {
                 .destroyShader = impl.destroyShader,
                 .createProgram = impl.createProgram,
                 .destroyProgram = impl.destroyProgram,
+                .createVertexBuffer = impl.createVertexBuffer,
+                .destroyVertexBuffer = impl.destroyVertexBuffer,
                 .beginFrame = impl.beginFrame,
                 .endFrame = impl.endFrame,
                 .setViewport = impl.setViewport,
@@ -211,6 +311,14 @@ pub const Renderer = struct {
         self.vtab.destroyProgram(self.ptr, handle);
     }
 
+    fn createVertexBuffer(self: *Self, handle: VertexBufferHandle, data: [*]const u8, size: u32, layout: VertexLayout) !void {
+        return self.vtab.createVertexBuffer(self.ptr, handle, data, size, layout);
+    }
+
+    fn destroyVertexBuffer(self: *Self, handle: VertexBufferHandle) void {
+        self.vtab.destroyVertexBuffer(self.ptr, handle);
+    }
+
     fn beginFrame(self: *Self) !bool {
         return self.vtab.beginFrame(self.ptr);
     }
@@ -246,6 +354,7 @@ pub const Context = struct {
 
     shader_handles: HandlePool(ShaderHandle, MaxShaderHandles),
     program_handles: HandlePool(ProgramHandle, MaxProgramHandles),
+    vertex_buffer_handles: HandlePool(VertexBufferHandle, MaxVertexBufferHandles),
 
     pub fn deinit(self: *const Self) void {
         self.renderer.deinit();
@@ -277,6 +386,7 @@ pub fn init(
         .renderer_type = options.renderer_type,
         .shader_handles = .init(),
         .program_handles = .init(),
+        .vertex_buffer_handles = .init(),
     };
 }
 
@@ -327,6 +437,19 @@ pub fn createProgram(vertex_shader: ShaderHandle, fragment_shader: ShaderHandle)
 pub fn destroyProgram(handle: ProgramHandle) void {
     context.renderer.destroyProgram(handle);
     context.program_handles.free(handle);
+}
+
+pub fn createVertexBuffer(data: [*]const u8, size: u32, layout: VertexLayout) !VertexBufferHandle {
+    const handle = try context.vertex_buffer_handles.alloc();
+    errdefer context.vertex_buffer_handles.free(handle);
+
+    try context.renderer.createVertexBuffer(handle, data, size, layout);
+    return handle;
+}
+
+pub fn destroyVertexBuffer(handle: VertexBufferHandle) void {
+    context.renderer.destroyVertexBuffer(handle);
+    context.vertex_buffer_handles.free(handle);
 }
 
 pub fn beginFrame() !bool {
