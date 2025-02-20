@@ -13,3 +13,9 @@
 [submodule "vendor/glslang"]
 	path = vendor/glslang
 	url = https://github.com/KhronosGroup/glslang.git
+[submodule "vendor/shaderc"]
+	path = vendor/shaderc
+	url = https://github.com/google/shaderc.git
+[submodule "vendor/zig-clap"]
+	path = vendor/zig-clap
+	url = https://github.com/Hejsil/zig-clap.git

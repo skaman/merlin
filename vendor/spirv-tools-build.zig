@@ -272,7 +272,6 @@ pub fn addLibrary(
             src_dir ++ "val/instruction.cpp",
             src_dir ++ "val/validation_state.cpp",
         },
-        //.flags = &.{"-D_GLFW_WIN32"},
     });
 
     spirv_headers_build.linkLibrary(b, spirv_tools);

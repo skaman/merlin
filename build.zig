@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 
 const glfw_build = @import("vendor/glfw-build.zig");
 const glslang_build = @import("vendor/glslang-build.zig");
+const libshaderc_build = @import("vendor/shaderc-build.zig");
 const spirv_tools_build = @import("vendor/spirv-tools-build.zig");
 const vulkan_headers_build = @import("vendor/vulkan-headers-build.zig");
 
@@ -60,7 +61,13 @@ pub fn build(b: *std.Build) !void {
     spirv_tools_build.linkLibrary(b, shaderc_exe, spirv_tools);
 
     const glslang = glslang_build.addLibrary(b, target, optimize, spirv_tools);
-    glslang_build.linkLibrary(b, exe, glslang);
+    glslang_build.linkLibrary(b, shaderc_exe, glslang);
+
+    const libshaderc = libshaderc_build.addLibrary(b, target, optimize, spirv_tools, glslang);
+    libshaderc_build.linkLibrary(b, shaderc_exe, libshaderc);
+
+    const clap = b.dependency("clap", .{});
+    shaderc_exe.root_module.addImport("clap", clap.module("clap"));
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());

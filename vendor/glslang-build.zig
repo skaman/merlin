@@ -15,76 +15,61 @@ pub fn addLibrary(
         .optimize = optimize,
     });
 
-    //const tag = target.result.os.tag;
-    //if (tag == .windows) {
-    //    spirv_tools.root_module.addCMacro("SPIRV_WINDOWS", "");
-    //} else if (tag == .linux) {
-    //    spirv_tools.root_module.addCMacro("SPIRV_LINUX", "");
-    //} else if (tag == .macos) {
-    //    spirv_tools.root_module.addCMacro("SPIRV_MAC", "");
-    //} else if (tag == .ios) {
-    //    spirv_tools.root_module.addCMacro("SPIRV_IOS", "");
-    //} else if (tag == .tvos) {
-    //    spirv_tools.root_module.addCMacro("SPIRV_TVOS", "");
-    //} else if (tag == .freebsd) {
-    //    spirv_tools.root_module.addCMacro("SPIRV_FREEBSD", "");
-    //} else if (tag == .openbsd) {
-    //    spirv_tools.root_module.addCMacro("SPIRV_OPENBSD", "");
-    //} else if (tag == .fuchsia) {
-    //    spirv_tools.root_module.addCMacro("SPIRV_FUCHSIA", "");
-    //} else {
-    //    std.log.err("Incompatible target platform.", .{});
-    //    std.process.exit(1);
-    //}
-
     glslang.linkLibCpp();
-    //spirv_tools.addIncludePath(b.path("vendor/spirv-tools"));
-    //spirv_tools.addIncludePath(b.path("vendor/spirv-tools/include"));
-    //spirv_tools.addIncludePath(b.path("vendor/spirv-tools-generated"));
+    glslang.addIncludePath(b.path("vendor/glslang/"));
+    glslang.addIncludePath(b.path("vendor/glslang-generated/"));
 
     const src_dir = "vendor/glslang/";
     glslang.addCSourceFiles(.{
         .files = &.{
             // glslang - GenericCodeGen
-            src_dir ++ "GenericCodeGen/CodeGen.cpp",
-            src_dir ++ "GenericCodeGen/Link.cpp",
+            src_dir ++ "glslang/GenericCodeGen/CodeGen.cpp",
+            src_dir ++ "glslang/GenericCodeGen/Link.cpp",
             // glslang - ResourceLimits
-            src_dir ++ "ResourceLimits/resource_limits_c.cpp",
-            src_dir ++ "ResourceLimits/ResourceLimits.cpp",
+            src_dir ++ "glslang/ResourceLimits/resource_limits_c.cpp",
+            src_dir ++ "glslang/ResourceLimits/ResourceLimits.cpp",
             // glslang - MachineIndependent
-            src_dir ++ "MachineIndependent/attribute.cpp",
-            src_dir ++ "MachineIndependent/Constant.cpp",
-            src_dir ++ "MachineIndependent/glslang_tab.cpp",
-            src_dir ++ "MachineIndependent/InfoSink.cpp",
-            src_dir ++ "MachineIndependent/Initialize.cpp",
-            src_dir ++ "MachineIndependent/Intermediate.cpp",
-            src_dir ++ "MachineIndependent/intermOut.cpp",
-            src_dir ++ "MachineIndependent/IntermTraverse.cpp",
-            src_dir ++ "MachineIndependent/iomapper.cpp",
-            src_dir ++ "MachineIndependent/limits.cpp",
-            src_dir ++ "MachineIndependent/linkValidate.cpp",
-            src_dir ++ "MachineIndependent/parseConst.cpp",
-            src_dir ++ "MachineIndependent/ParseContextBase.cpp",
-            src_dir ++ "MachineIndependent/ParseHelper.cpp",
-            src_dir ++ "MachineIndependent/PoolAlloc.cpp",
-            src_dir ++ "MachineIndependent/preprocessor/Pp.cpp",
-            src_dir ++ "MachineIndependent/preprocessor/PpAtom.cpp",
-            src_dir ++ "MachineIndependent/preprocessor/PpContext.cpp",
-            src_dir ++ "MachineIndependent/preprocessor/PpScanner.cpp",
-            src_dir ++ "MachineIndependent/preprocessor/PpTokens.cpp",
-            src_dir ++ "MachineIndependent/propagateNoContraction.cpp",
-            src_dir ++ "MachineIndependent/reflection.cpp",
-            src_dir ++ "MachineIndependent/RemoveTree.cpp",
-            src_dir ++ "MachineIndependent/Scan.cpp",
-            src_dir ++ "MachineIndependent/ShaderLang.cpp",
-            src_dir ++ "MachineIndependent/SpirvIntrinsics.cpp",
-            src_dir ++ "MachineIndependent/SymbolTable.cpp",
-            src_dir ++ "MachineIndependent/Versions.cpp",
+            src_dir ++ "glslang/MachineIndependent/attribute.cpp",
+            src_dir ++ "glslang/MachineIndependent/Constant.cpp",
+            src_dir ++ "glslang/MachineIndependent/glslang_tab.cpp",
+            src_dir ++ "glslang/MachineIndependent/InfoSink.cpp",
+            src_dir ++ "glslang/MachineIndependent/Initialize.cpp",
+            src_dir ++ "glslang/MachineIndependent/Intermediate.cpp",
+            src_dir ++ "glslang/MachineIndependent/intermOut.cpp",
+            src_dir ++ "glslang/MachineIndependent/IntermTraverse.cpp",
+            src_dir ++ "glslang/MachineIndependent/iomapper.cpp",
+            src_dir ++ "glslang/MachineIndependent/limits.cpp",
+            src_dir ++ "glslang/MachineIndependent/linkValidate.cpp",
+            src_dir ++ "glslang/MachineIndependent/parseConst.cpp",
+            src_dir ++ "glslang/MachineIndependent/ParseContextBase.cpp",
+            src_dir ++ "glslang/MachineIndependent/ParseHelper.cpp",
+            src_dir ++ "glslang/MachineIndependent/PoolAlloc.cpp",
+            src_dir ++ "glslang/MachineIndependent/preprocessor/Pp.cpp",
+            src_dir ++ "glslang/MachineIndependent/preprocessor/PpAtom.cpp",
+            src_dir ++ "glslang/MachineIndependent/preprocessor/PpContext.cpp",
+            src_dir ++ "glslang/MachineIndependent/preprocessor/PpScanner.cpp",
+            src_dir ++ "glslang/MachineIndependent/preprocessor/PpTokens.cpp",
+            src_dir ++ "glslang/MachineIndependent/propagateNoContraction.cpp",
+            src_dir ++ "glslang/MachineIndependent/reflection.cpp",
+            src_dir ++ "glslang/MachineIndependent/RemoveTree.cpp",
+            src_dir ++ "glslang/MachineIndependent/Scan.cpp",
+            src_dir ++ "glslang/MachineIndependent/ShaderLang.cpp",
+            src_dir ++ "glslang/MachineIndependent/SpirvIntrinsics.cpp",
+            src_dir ++ "glslang/MachineIndependent/SymbolTable.cpp",
+            src_dir ++ "glslang/MachineIndependent/Versions.cpp",
             // glslang - OSDependent
             if (target.result.os.tag == .windows)
-                "glslang/OSDependent/Windows/ossource.cpp"
+                src_dir ++ "glslang/OSDependent/Windows/ossource.cpp"
             else
-                "glslang/OSDependent/Unix/ossource.cpp",
+                src_dir ++ "glslang/OSDependent/Unix/ossource.cpp",
+            // glslang - HLSL
+            src_dir ++ "glslang/HLSL/hlslAttributes.cpp",
+            src_dir ++ "glslang/HLSL/hlslGrammar.cpp",
+            src_dir ++ "glslang/HLSL/hlslOpMap.cpp",
+            src_dir ++ "glslang/HLSL/hlslParseables.cpp",
+            src_dir ++ "glslang/HLSL/hlslParseHelper.cpp",
+            src_dir ++ "glslang/HLSL/hlslScanContext.cpp",
+            src_dir ++ "glslang/HLSL/hlslTokenStream.cpp",
             // glslang
             src_dir ++ "glslang/CInterface/glslang_c_interface.cpp",
             // SPIRV
@@ -98,24 +83,25 @@ pub fn addLibrary(
             src_dir ++ "SPIRV/SpvPostProcess.cpp",
             src_dir ++ "SPIRV/SpvTools.cpp",
             src_dir ++ "SPIRV/SPVRemapper.cpp",
+
             // StandAlone
-            src_dir ++ "StandAlone/StandAlone.cpp",
-            src_dir ++ "StandAlone/spirv-remap.cpp",
+            //src_dir ++ "StandAlone/StandAlone.cpp",
+            //src_dir ++ "StandAlone/spirv-remap.cpp",
         },
-        //.flags = &.{"-D_GLFW_WIN32"},
+        .flags = &.{ "-DENABLE_OPT=true", "-DENABLE_SPIRV=true", "-DENABLE_HLSL=1" },
     });
 
     spirv_headers_build.linkLibrary(b, glslang);
     spirv_tools_build.linkLibrary(b, glslang, spirv_tools);
 
-    return spirv_tools;
+    return glslang;
 }
 
 pub fn linkLibrary(
     b: *std.Build,
     exe: *std.Build.Step.Compile,
-    spirv_tools: *std.Build.Step.Compile,
+    glslang: *std.Build.Step.Compile,
 ) void {
-    exe.linkLibrary(spirv_tools);
-    exe.addIncludePath(b.path("vendor/spirv-tools/include/"));
+    exe.linkLibrary(glslang);
+    exe.addIncludePath(b.path("vendor/glslang/"));
 }
