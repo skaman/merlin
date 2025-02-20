@@ -4,3 +4,12 @@
 [submodule "vendor/vulkan-headers"]
 	path = vendor/vulkan-headers
 	url = https://github.com/KhronosGroup/Vulkan-Headers.git
+[submodule "vendor/spirv-headers"]
+	path = vendor/spirv-headers
+	url = https://github.com/KhronosGroup/SPIRV-Headers.git
+[submodule "vendor/spirv-tools"]
+	path = vendor/spirv-tools
+	url = https://github.com/KhronosGroup/SPIRV-Tools.git
+[submodule "vendor/glslang"]
+	path = vendor/glslang
+	url = https://github.com/KhronosGroup/glslang.git
