@@ -4,33 +4,7 @@ const builtin = @import("builtin");
 const c = @import("../c.zig").c;
 const z3dfx = @import("z3dfx.zig");
 
-fn logErr(
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    std.log.err("[z3dfx][vk] " ++ format, args);
-}
-
-fn logWarn(
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    std.log.warn("[z3dfx][vk] " ++ format, args);
-}
-
-fn logInfo(
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    std.log.info("[z3dfx][vk] " ++ format, args);
-}
-
-fn logDebug(
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    std.log.debug("[z3dfx][vk] " ++ format, args);
-}
+const log = std.log.scoped(.gfx_vk);
 
 fn debugCallback(
     message_severity: c.VkDebugUtilsMessageSeverityFlagBitsEXT,
@@ -46,13 +20,13 @@ fn debugCallback(
     }
 
     if (message_severity & c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT == c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-        logErr("{s}", .{p_callback_data.*.pMessage});
+        log.err("{s}", .{p_callback_data.*.pMessage});
     } else if (message_severity & c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT == c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        logWarn("{s}", .{p_callback_data.*.pMessage});
+        log.warn("{s}", .{p_callback_data.*.pMessage});
     } else if (message_severity & c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT == c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
-        logInfo("{s}", .{p_callback_data.*.pMessage});
+        log.info("{s}", .{p_callback_data.*.pMessage});
     } else if (message_severity & c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT == c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
-        logDebug("{s}", .{p_callback_data.*.pMessage});
+        log.debug("{s}", .{p_callback_data.*.pMessage});
     }
 
     return c.VK_FALSE;
@@ -89,79 +63,79 @@ fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void {
     return switch (result) {
         c.VK_SUCCESS => {},
         c.VK_TIMEOUT => {
-            logErr("{s}: timeout", .{message});
+            log.err("{s}: timeout", .{message});
             return error.VulkanTimeout;
         },
         c.VK_NOT_READY => {
-            logErr("{s}: not ready", .{message});
+            log.err("{s}: not ready", .{message});
             return error.VulkanNotReady;
         },
         c.VK_SUBOPTIMAL_KHR => {
-            logErr("{s}: suboptimal", .{message});
+            log.err("{s}: suboptimal", .{message});
             return error.VulkanSuboptimal;
         },
         c.VK_ERROR_OUT_OF_HOST_MEMORY => {
-            logErr("{s}: out of host memory", .{message});
+            log.err("{s}: out of host memory", .{message});
             return error.VulkanOutOfHostMemory;
         },
         c.VK_ERROR_OUT_OF_DEVICE_MEMORY => {
-            logErr("{s}: out of device memory", .{message});
+            log.err("{s}: out of device memory", .{message});
             return error.VulkanOutOfDeviceMemory;
         },
         c.VK_ERROR_INITIALIZATION_FAILED => {
-            logErr("{s}: initialization failed", .{message});
+            log.err("{s}: initialization failed", .{message});
             return error.VulkanInitializationFailed;
         },
         c.VK_ERROR_LAYER_NOT_PRESENT => {
-            logErr("{s}: layer not present", .{message});
+            log.err("{s}: layer not present", .{message});
             return error.VulkanLayerNotPresent;
         },
         c.VK_ERROR_EXTENSION_NOT_PRESENT => {
-            logErr("{s}: extension not present", .{message});
+            log.err("{s}: extension not present", .{message});
             return error.VulkanExtensionNotPresent;
         },
         c.VK_ERROR_FEATURE_NOT_PRESENT => {
-            logErr("{s}: feature not present", .{message});
+            log.err("{s}: feature not present", .{message});
             return error.VulkanFeatureNotPresent;
         },
         c.VK_ERROR_INCOMPATIBLE_DRIVER => {
-            logErr("{s}: incompatible driver", .{message});
+            log.err("{s}: incompatible driver", .{message});
             return error.VulkanIncompatibleDriver;
         },
         c.VK_ERROR_TOO_MANY_OBJECTS => {
-            logErr("{s}: too many objects", .{message});
+            log.err("{s}: too many objects", .{message});
             return error.VulkanTooManyObjects;
         },
         c.VK_ERROR_DEVICE_LOST => {
-            logErr("{s}: device lost", .{message});
+            log.err("{s}: device lost", .{message});
             return error.VulkanDeviceLost;
         },
         c.VK_ERROR_SURFACE_LOST_KHR => {
-            logErr("{s}: surface lost", .{message});
+            log.err("{s}: surface lost", .{message});
             return error.VulkanSurfaceLost;
         },
         c.VK_ERROR_NATIVE_WINDOW_IN_USE_KHR => {
-            logErr("{s}: native window in use", .{message});
+            log.err("{s}: native window in use", .{message});
             return error.VulkanNativeWindowInUse;
         },
         c.VK_ERROR_COMPRESSION_EXHAUSTED_EXT => {
-            logErr("{s}: compression exhausted", .{message});
+            log.err("{s}: compression exhausted", .{message});
             return error.VulkanCompressionExhausted;
         },
         c.VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR => {
-            logErr("{s}: invalid opaque capture address", .{message});
+            log.err("{s}: invalid opaque capture address", .{message});
             return error.VulkanInvalidOpaqueCaptureAddress;
         },
         c.VK_ERROR_INVALID_SHADER_NV => {
-            logErr("{s}: invalid shader", .{message});
+            log.err("{s}: invalid shader", .{message});
             return error.VulkanInvalidShader;
         },
         c.VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT => {
-            logErr("{s}: full screen exclusive mode lost", .{message});
+            log.err("{s}: full screen exclusive mode lost", .{message});
             return error.VulkanFullScreenExclusiveModeLost;
         },
         else => {
-            logErr("{s}: {d}", .{ message, result });
+            log.err("{s}: {d}", .{ message, result });
             return error.VulkanUnknownError;
         },
     };
@@ -192,7 +166,7 @@ const VulkanLibrary = struct {
             std.meta.Child(c.PFN_vkGetInstanceProcAddr),
             "vkGetInstanceProcAddr",
         ) orelse {
-            logErr("Failed to load vkGetInstanceProcAddr", .{});
+            log.err("Failed to load vkGetInstanceProcAddr", .{});
             return error.GetInstanceProcAddrNotFound;
         };
 
@@ -213,7 +187,7 @@ const VulkanLibrary = struct {
         for (LibraryNames) |library_name| {
             return std.DynLib.open(library_name) catch continue;
         }
-        logErr("Failed to load Vulkan library", .{});
+        log.err("Failed to load Vulkan library", .{});
         return error.LoadLibraryFailed;
     }
 
@@ -226,7 +200,7 @@ const VulkanLibrary = struct {
         if (self.get_instance_proc_addr(instance, name)) |proc| {
             return @ptrCast(proc);
         } else {
-            logErr("Failed to load Vulkan proc: {s}", .{name});
+            log.err("Failed to load Vulkan proc: {s}", .{name});
             return error.GetInstanceProcAddrFailed;
         }
     }
@@ -272,7 +246,7 @@ const VulkanLibrary = struct {
         );
         if (result == c.VK_INCOMPLETE) {
             // For vulkan documentation this is not an error. But in our case should never happen.
-            logWarn("Failed to enumerate Vulkan instance extension properties: incomplete", .{});
+            log.warn("Failed to enumerate Vulkan instance extension properties: incomplete", .{});
         } else {
             try checkVulkanError(
                 "Failed to enumerate Vulkan instance extension properties",
@@ -318,7 +292,7 @@ const VulkanLibrary = struct {
         );
         if (result == c.VK_INCOMPLETE) {
             // For vulkan documentation this is not an error. But in our case should never happen.
-            logWarn("Failed to enumerate Vulkan instance layer properties: incomplete", .{});
+            log.warn("Failed to enumerate Vulkan instance layer properties: incomplete", .{});
         } else {
             try checkVulkanError(
                 "Failed to enumerate Vulkan instance layer properties",
@@ -504,7 +478,7 @@ const VulkanInstance = struct {
                 }
             }
             if (!found) {
-                logErr(
+                log.err(
                     "Required instance extension not found: {s}",
                     .{required_extension},
                 );
@@ -536,7 +510,7 @@ const VulkanInstance = struct {
                 }
             }
             if (!found) {
-                logErr(
+                log.err(
                     "Required instance layer not found: {s}",
                     .{required_layer},
                 );
@@ -557,7 +531,7 @@ const VulkanInstance = struct {
         );
         if (result == c.VK_INCOMPLETE) {
             // For vulkan documentation this is not an error. But in our case should never happen.
-            logWarn("Failed to enumerate Vulkan physical devices: incomplete", .{});
+            log.warn("Failed to enumerate Vulkan physical devices: incomplete", .{});
         } else {
             try checkVulkanError(
                 "Failed to enumerate Vulkan physical devices",
@@ -690,7 +664,7 @@ const VulkanInstance = struct {
         );
         if (result == c.VK_INCOMPLETE) {
             // For vulkan documentation this is not an error. But in our case should never happen.
-            logWarn("Failed to get physical device surface formats: incomplete", .{});
+            log.warn("Failed to get physical device surface formats: incomplete", .{});
         } else {
             try checkVulkanError(
                 "Failed to get physical device surface formats",
@@ -746,7 +720,7 @@ const VulkanInstance = struct {
         );
         if (result == c.VK_INCOMPLETE) {
             // For vulkan documentation this is not an error. But in our case should never happen.
-            logWarn("Failed to get physical device surface present modes: incomplete", .{});
+            log.warn("Failed to get physical device surface present modes: incomplete", .{});
         } else {
             try checkVulkanError(
                 "Failed to get physical device surface present modes",
@@ -802,7 +776,7 @@ const VulkanInstance = struct {
         );
         if (result == c.VK_INCOMPLETE) {
             // For vulkan documentation this is not an error. But in our case should never happen.
-            logWarn("Failed to enumerate Vulkan device extension properties: incomplete", .{});
+            log.warn("Failed to enumerate Vulkan device extension properties: incomplete", .{});
         } else {
             try checkVulkanError(
                 "Failed to enumerate Vulkan device extension properties",
@@ -946,7 +920,7 @@ const VulkanDevice = struct {
         defer graphics_ctx.allocator.free(physical_devices);
 
         if (physical_devices.len == 0) {
-            logErr("No Vulkan physical devices found", .{});
+            log.err("No Vulkan physical devices found", .{});
             return error.NoPhysicalDevicesFound;
         }
 
@@ -970,22 +944,22 @@ const VulkanDevice = struct {
             var properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
             instance.getPhysicalDeviceProperties(physical_device, &properties);
 
-            logDebug("---------------------------------------------------------------", .{});
-            logDebug("  Physical device: {d}", .{index});
-            logDebug("             Name: {s}", .{properties.deviceName});
-            logDebug("      API version: {d}.{d}.{d}", .{
+            log.debug("---------------------------------------------------------------", .{});
+            log.debug("  Physical device: {d}", .{index});
+            log.debug("             Name: {s}", .{properties.deviceName});
+            log.debug("      API version: {d}.{d}.{d}", .{
                 c.VK_API_VERSION_MAJOR(properties.apiVersion),
                 c.VK_API_VERSION_MINOR(properties.apiVersion),
                 c.VK_API_VERSION_PATCH(properties.apiVersion),
             });
-            logDebug("      API variant: {d}", .{
+            log.debug("      API variant: {d}", .{
                 c.VK_API_VERSION_VARIANT(properties.apiVersion),
             });
-            logDebug("   Driver version: {x}", .{properties.driverVersion});
-            logDebug("        Vendor ID: {x}", .{properties.vendorID});
-            logDebug("        Device ID: {x}", .{properties.deviceID});
-            logDebug("             Type: {s}", .{getPhysicalDeviceTypeLabel(properties.deviceType)});
-            logDebug("            Score: {d}", .{score});
+            log.debug("   Driver version: {x}", .{properties.driverVersion});
+            log.debug("        Vendor ID: {x}", .{properties.vendorID});
+            log.debug("        Device ID: {x}", .{properties.deviceID});
+            log.debug("             Type: {s}", .{getPhysicalDeviceTypeLabel(properties.deviceType)});
+            log.debug("            Score: {d}", .{score});
 
             var memory_properties = std.mem.zeroes(
                 c.VkPhysicalDeviceMemoryProperties,
@@ -995,18 +969,18 @@ const VulkanDevice = struct {
                 &memory_properties,
             );
 
-            logDebug("Memory type count: {d}", .{memory_properties.memoryTypeCount});
+            log.debug("Memory type count: {d}", .{memory_properties.memoryTypeCount});
             for (0..memory_properties.memoryTypeCount) |mp_index| {
                 const memory_type = memory_properties.memoryTypes[mp_index];
-                logDebug(
+                log.debug(
                     "              {d:0>3}: flags 0x{x:0>8}, index {d}",
                     .{ mp_index, memory_type.propertyFlags, memory_type.heapIndex },
                 );
             }
-            logDebug("Memory heap count: {d}", .{memory_properties.memoryHeapCount});
+            log.debug("Memory heap count: {d}", .{memory_properties.memoryHeapCount});
             for (0..memory_properties.memoryHeapCount) |mh_index| {
                 const memory_heap = memory_properties.memoryHeaps[mh_index];
-                logDebug(
+                log.debug(
                     "              {d:0>3}: size {d}, flags 0x{x:0>8}",
                     .{ mh_index, std.fmt.fmtIntSizeBin(memory_heap.size), memory_heap.flags },
                 );
@@ -1021,12 +995,12 @@ const VulkanDevice = struct {
         }
 
         if (selected_physical_device == null) {
-            logErr("No suitable Vulkan physical devices found", .{});
+            log.err("No suitable Vulkan physical devices found", .{});
             return error.NoSuitablePhysicalDevicesFound;
         }
 
-        logDebug("---------------------------------------------------------------", .{});
-        logDebug(
+        log.debug("---------------------------------------------------------------", .{});
+        log.debug(
             "Using physical device {d}: {s}",
             .{ selected_physical_device_index, selected_physical_device_properties.deviceName },
         );
@@ -1246,7 +1220,7 @@ const VulkanDevice = struct {
                 }
             }
             if (!found) {
-                logErr(
+                log.err(
                     "Required device extension not found: {s}",
                     .{required_extension},
                 );
@@ -1350,7 +1324,7 @@ const VulkanDevice = struct {
         );
         if (result == c.VK_INCOMPLETE) {
             // For vulkan documentation this is not an error. But in our case should never happen.
-            logWarn("Failed to get swapchain images: incomplete", .{});
+            log.warn("Failed to get swapchain images: incomplete", .{});
         } else {
             try checkVulkanError(
                 "Failed to get swapchain images",
@@ -1900,14 +1874,14 @@ const VulkanSwapChain = struct {
         );
         errdefer device.destroySwapchainKHR(swap_chain);
 
-        logDebug("---------------------------------------------------------------", .{});
-        logDebug("Swap chain created", .{});
-        logDebug("       Image count: {d}", .{image_count});
-        logDebug("      Image format: {d}", .{surface_format.format});
-        logDebug(" Image color space: {d}", .{surface_format.colorSpace});
-        logDebug("      Image extent: {d}x{d}", .{ extent.width, extent.height });
-        logDebug("      Present mode: {d}", .{present_mode});
-        logDebug("---------------------------------------------------------------", .{});
+        log.debug("---------------------------------------------------------------", .{});
+        log.debug("Swap chain created", .{});
+        log.debug("       Image count: {d}", .{image_count});
+        log.debug("      Image format: {d}", .{surface_format.format});
+        log.debug(" Image color space: {d}", .{surface_format.colorSpace});
+        log.debug("      Image extent: {d}x{d}", .{ extent.width, extent.height });
+        log.debug("      Present mode: {d}", .{present_mode});
+        log.debug("---------------------------------------------------------------", .{});
 
         const swap_chain_images = try device.getSwapchainImagesKHRAlloc(
             allocator,
@@ -2702,7 +2676,7 @@ const VulkanContext = struct {
 
     fn deinit(self: *Self) void {
         self.device.waitIdle() catch {
-            logErr("Failed to wait for Vulkan device to become idle", .{});
+            log.err("Failed to wait for Vulkan device to become idle", .{});
         };
 
         for (0..MaxFramesInFlight) |i| {
@@ -2766,7 +2740,7 @@ const VulkanContext = struct {
 
     fn recreateSwapChain(self: *Self) !void {
         self.device.waitIdle() catch {
-            logErr("Failed to wait for Vulkan device to become idle", .{});
+            log.err("Failed to wait for Vulkan device to become idle", .{});
         };
 
         self.swap_chain.deinit();
@@ -2789,7 +2763,7 @@ var context: VulkanContext = undefined;
 
 pub const VulkanRenderer = struct {
     pub fn init(graphics_ctx: *const z3dfx.GraphicsContext) !VulkanRenderer {
-        logDebug("Initializing Vulkan renderer...", .{});
+        log.debug("Initializing Vulkan renderer...", .{});
 
         context = try .init(graphics_ctx);
 
@@ -2797,7 +2771,7 @@ pub const VulkanRenderer = struct {
     }
 
     pub fn deinit(_: *const VulkanRenderer) void {
-        logDebug("Deinitializing Vulkan renderer...", .{});
+        log.debug("Deinitializing Vulkan renderer...", .{});
 
         context.deinit();
     }
@@ -2831,7 +2805,7 @@ pub const VulkanRenderer = struct {
             &create_info,
             &context.shader_modules[handle],
         );
-        logDebug("Created Vulkan shader module: {d}", .{handle});
+        log.debug("Created Vulkan shader module: {d}", .{handle});
     }
 
     pub fn destroyShader(
@@ -2839,7 +2813,7 @@ pub const VulkanRenderer = struct {
         handle: z3dfx.ShaderHandle,
     ) void {
         context.device.destroyShaderModule(context.shader_modules[handle]);
-        logDebug("Destroyed Vulkan shader module: {d}", .{handle});
+        log.debug("Destroyed Vulkan shader module: {d}", .{handle});
     }
 
     pub fn createProgram(
@@ -2854,7 +2828,7 @@ pub const VulkanRenderer = struct {
             context.shader_modules[fragment_shader],
         );
 
-        logDebug("Created Vulkan program: {d}", .{handle});
+        log.debug("Created Vulkan program: {d}", .{handle});
     }
 
     pub fn destroyProgram(
@@ -2862,7 +2836,7 @@ pub const VulkanRenderer = struct {
         handle: z3dfx.ProgramHandle,
     ) void {
         context.programs[handle].deinit();
-        logDebug("Destroyed Vulkan program: {d}", .{handle});
+        log.debug("Destroyed Vulkan program: {d}", .{handle});
     }
 
     pub fn createVertexBuffer(
@@ -2995,7 +2969,7 @@ pub const VulkanRenderer = struct {
 
     pub fn bindProgram(self: *const VulkanRenderer, program: z3dfx.ProgramHandle) void {
         const pipeline = self.getPipeline(program) catch {
-            logErr("Failed to bind Vulkan program: {d}", .{program});
+            log.err("Failed to bind Vulkan program: {d}", .{program});
             return;
         };
         context.command_queue.bindPipeline(pipeline.handle, context.current_frame);

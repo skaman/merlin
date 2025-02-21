@@ -1,27 +1,18 @@
 .{
-    .name = "z3dfx",
+    .name = "glfw",
     .version = "0.0.0",
 
     .dependencies = .{
-        // See `zig fetch --save <url>` for a command-line interface for adding dependencies.
         .system_sdk = .{
             .url = "https://github.com/zig-gamedev/system_sdk/archive/refs/tags/v0.2.1.zip",
             .hash = "122071280f7f0852ef6d2cd74f7c6593511eb48ec3b1b88d1457cd2453eb8597d925",
-        },
-        .glfw = .{
-            .path = "vendor/glfw",
-        },
-        .vulkan_headers = .{
-            .path = "vendor/vulkan-headers",
-        },
-        .clap = .{
-            .path = "vendor/zig-clap",
         },
     },
 
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        "src",
+        "upstream",
+        "wayland",
     },
 }

@@ -1,28 +1,13 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const glfw_build = @import("vendor/glfw-build.zig");
 const glslang_build = @import("vendor/glslang-build.zig");
 const libshaderc_build = @import("vendor/shaderc-build.zig");
 const spirv_tools_build = @import("vendor/spirv-tools-build.zig");
-const vulkan_headers_build = @import("vendor/vulkan-headers-build.zig");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-
-    const options = .{
-        .enable_x11 = b.option(
-            bool,
-            "x11",
-            "Whether to build with X11 support (default: true)",
-        ) orelse true,
-        .enable_wayland = b.option(
-            bool,
-            "wayland",
-            "Whether to build with Wayland support (default: true)",
-        ) orelse true,
-    };
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -50,12 +35,14 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(shaderc_exe);
     shaderc_exe.linkLibC();
 
-    // VULKAN HEADERS
-    vulkan_headers_build.linkLibrary(b, exe);
+    const glfw = b.dependency("glfw", .{});
+    exe.linkLibrary(glfw.artifact("glfw"));
 
-    // GLFW
-    const glfw = glfw_build.addLibrary(b, target, optimize, options.enable_x11, options.enable_wayland);
-    glfw_build.linkLibrary(b, exe, glfw);
+    const vulkan_headers = b.dependency("vulkan_headers", .{});
+    exe.linkLibrary(vulkan_headers.artifact("vulkan_headers"));
+
+    //const glfw = glfw_build.addLibrary(b, target, optimize, options.enable_x11, options.enable_wayland);
+    //glfw_build.linkLibrary(b, exe, glfw);
 
     const spirv_tools = spirv_tools_build.addLibrary(b, target, optimize);
     spirv_tools_build.linkLibrary(b, shaderc_exe, spirv_tools);
