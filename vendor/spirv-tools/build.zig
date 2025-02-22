@@ -276,5 +276,8 @@ pub fn build(b: *std.Build) void {
     const spirv_headers = b.dependency("spirv_headers", .{});
     lib.linkLibrary(spirv_headers.artifact("spirv_headers"));
 
+    lib.addIncludePath(b.path("../spirv-headers/upstream/include"));
+    lib.addIncludePath(b.path("../spirv-headers/upstream/include/spirv/unified1/"));
+
     b.installArtifact(lib);
 }

@@ -36,5 +36,8 @@ pub fn build(b: *std.Build) void {
     const glslang = b.dependency("glslang", .{});
     lib.linkLibrary(glslang.artifact("glslang"));
 
+    lib.addIncludePath(b.path("../glslang/upstream/"));
+    lib.addIncludePath(b.path("../spirv-headers/upstream/include"));
+
     b.installArtifact(lib);
 }

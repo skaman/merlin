@@ -5,19 +5,44 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+    //--------------------------------------------------------------------------------------------------
+    // dependencies
+    //--------------------------------------------------------------------------------------------------
+    const glfw = b.dependency("glfw", .{});
+    const vulkan_headers = b.dependency("vulkan_headers", .{});
+    const libshaderc = b.dependency("libshaderc", .{});
+    const clap = b.dependency("clap", .{});
+
+    //--------------------------------------------------------------------------------------------------
+    // engine
+    //--------------------------------------------------------------------------------------------------
+    const engine_exe_mod = b.createModule(.{
+        .root_source_file = b.path("engine/src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const exe = b.addExecutable(.{
-        .name = "z3dfx",
-        .root_module = exe_mod,
+    const engine_exe = b.addExecutable(.{
+        .name = "engine",
+        .root_module = engine_exe_mod,
     });
-    b.installArtifact(exe);
-    exe.linkLibC();
+    b.installArtifact(engine_exe);
+    engine_exe.linkLibC();
+    engine_exe.linkLibrary(glfw.artifact("glfw"));
+    engine_exe.linkLibrary(vulkan_headers.artifact("vulkan_headers"));
 
+    const engine_run_cmd = b.addRunArtifact(engine_exe);
+    engine_run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        engine_run_cmd.addArgs(args);
+    }
+
+    const run_step = b.step("run_engine", "Run the engine");
+    run_step.dependOn(&engine_run_cmd.step);
+
+    //--------------------------------------------------------------------------------------------------
+    // shaderc
+    //--------------------------------------------------------------------------------------------------
     const shaderc_exe_mod = b.createModule(.{
         .root_source_file = b.path("shaderc/src/main.zig"),
         .target = target,
@@ -30,36 +55,8 @@ pub fn build(b: *std.Build) !void {
     });
     b.installArtifact(shaderc_exe);
     shaderc_exe.linkLibC();
-
-    const glfw = b.dependency("glfw", .{});
-    exe.linkLibrary(glfw.artifact("glfw"));
-
-    const vulkan_headers = b.dependency("vulkan_headers", .{});
-    exe.linkLibrary(vulkan_headers.artifact("vulkan_headers"));
-
-    //const glfw = glfw_build.addLibrary(b, target, optimize, options.enable_x11, options.enable_wayland);
-    //glfw_build.linkLibrary(b, exe, glfw);
-
-    //const spirv_tools = spirv_tools_build.addLibrary(b, target, optimize);
-    //spirv_tools_build.linkLibrary(b, shaderc_exe, spirv_tools);
-
-    //const glslang = glslang_build.addLibrary(b, target, optimize, spirv_tools);
-    //glslang_build.linkLibrary(b, shaderc_exe, glslang);
-
-    //const libshaderc = libshaderc_build.addLibrary(b, target, optimize, spirv_tools, glslang);
-    //libshaderc_build.linkLibrary(b, shaderc_exe, libshaderc);
-
-    const libshaderc = b.dependency("libshaderc", .{});
     shaderc_exe.linkLibrary(libshaderc.artifact("libshaderc"));
-
-    const clap = b.dependency("clap", .{});
     shaderc_exe.root_module.addImport("clap", clap.module("clap"));
-
-    const run_cmd = b.addRunArtifact(exe);
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
 
     const shaderc_run_cmd = b.addRunArtifact(shaderc_exe);
     shaderc_run_cmd.step.dependOn(b.getInstallStep());
@@ -67,12 +64,13 @@ pub fn build(b: *std.Build) !void {
         shaderc_run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
-
-    const shaderc_run_step = b.step("shaderc_run", "Run the shaderc app");
+    const shaderc_run_step = b.step("run_shaderc", "Run shaderc");
     shaderc_run_step.dependOn(&shaderc_run_cmd.step);
 
-    const check = b.step("check", "Check if z3dfx compiles");
-    check.dependOn(&exe.step);
+    //--------------------------------------------------------------------------------------------------
+    // checks
+    //--------------------------------------------------------------------------------------------------
+    const check = b.step("check", "Check if the projects compiles");
+    check.dependOn(&engine_exe.step);
+    check.dependOn(&shaderc_exe.step);
 }
