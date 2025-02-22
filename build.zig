@@ -1,10 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const glslang_build = @import("vendor/glslang-build.zig");
-const libshaderc_build = @import("vendor/shaderc-build.zig");
-const spirv_tools_build = @import("vendor/spirv-tools-build.zig");
-
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -44,14 +40,17 @@ pub fn build(b: *std.Build) !void {
     //const glfw = glfw_build.addLibrary(b, target, optimize, options.enable_x11, options.enable_wayland);
     //glfw_build.linkLibrary(b, exe, glfw);
 
-    const spirv_tools = spirv_tools_build.addLibrary(b, target, optimize);
-    spirv_tools_build.linkLibrary(b, shaderc_exe, spirv_tools);
+    //const spirv_tools = spirv_tools_build.addLibrary(b, target, optimize);
+    //spirv_tools_build.linkLibrary(b, shaderc_exe, spirv_tools);
 
-    const glslang = glslang_build.addLibrary(b, target, optimize, spirv_tools);
-    glslang_build.linkLibrary(b, shaderc_exe, glslang);
+    //const glslang = glslang_build.addLibrary(b, target, optimize, spirv_tools);
+    //glslang_build.linkLibrary(b, shaderc_exe, glslang);
 
-    const libshaderc = libshaderc_build.addLibrary(b, target, optimize, spirv_tools, glslang);
-    libshaderc_build.linkLibrary(b, shaderc_exe, libshaderc);
+    //const libshaderc = libshaderc_build.addLibrary(b, target, optimize, spirv_tools, glslang);
+    //libshaderc_build.linkLibrary(b, shaderc_exe, libshaderc);
+
+    const libshaderc = b.dependency("libshaderc", .{});
+    shaderc_exe.linkLibrary(libshaderc.artifact("libshaderc"));
 
     const clap = b.dependency("clap", .{});
     shaderc_exe.root_module.addImport("clap", clap.module("clap"));

@@ -1,47 +1,46 @@
 const std = @import("std");
 
-const spirv_headers_build = @import("spirv-headers-build.zig");
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-pub fn addLibrary(
-    b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-) *std.Build.Step.Compile {
-    const spirv_tools = b.addStaticLibrary(.{
-        .name = "spirv-tools",
+    _ = b.addModule("spirv_tools", .{});
+
+    const lib = b.addStaticLibrary(.{
+        .name = "spirv_tools",
         .target = target,
         .optimize = optimize,
     });
 
     const tag = target.result.os.tag;
     if (tag == .windows) {
-        spirv_tools.root_module.addCMacro("SPIRV_WINDOWS", "");
+        lib.root_module.addCMacro("SPIRV_WINDOWS", "");
     } else if (tag == .linux) {
-        spirv_tools.root_module.addCMacro("SPIRV_LINUX", "");
+        lib.root_module.addCMacro("SPIRV_LINUX", "");
     } else if (tag == .macos) {
-        spirv_tools.root_module.addCMacro("SPIRV_MAC", "");
+        lib.root_module.addCMacro("SPIRV_MAC", "");
     } else if (tag == .ios) {
-        spirv_tools.root_module.addCMacro("SPIRV_IOS", "");
+        lib.root_module.addCMacro("SPIRV_IOS", "");
     } else if (tag == .tvos) {
-        spirv_tools.root_module.addCMacro("SPIRV_TVOS", "");
+        lib.root_module.addCMacro("SPIRV_TVOS", "");
     } else if (tag == .freebsd) {
-        spirv_tools.root_module.addCMacro("SPIRV_FREEBSD", "");
+        lib.root_module.addCMacro("SPIRV_FREEBSD", "");
     } else if (tag == .openbsd) {
-        spirv_tools.root_module.addCMacro("SPIRV_OPENBSD", "");
+        lib.root_module.addCMacro("SPIRV_OPENBSD", "");
     } else if (tag == .fuchsia) {
-        spirv_tools.root_module.addCMacro("SPIRV_FUCHSIA", "");
+        lib.root_module.addCMacro("SPIRV_FUCHSIA", "");
     } else {
         std.log.err("Incompatible target platform.", .{});
         std.process.exit(1);
     }
 
-    spirv_tools.linkLibCpp();
-    spirv_tools.addIncludePath(b.path("vendor/spirv-tools"));
-    spirv_tools.addIncludePath(b.path("vendor/spirv-tools/include"));
-    spirv_tools.addIncludePath(b.path("vendor/spirv-tools-generated"));
+    lib.linkLibCpp();
+    lib.addIncludePath(b.path("upstream"));
+    lib.addIncludePath(b.path("upstream/include"));
+    lib.addIncludePath(b.path("generated"));
 
-    const src_dir = "vendor/spirv-tools/source/";
-    spirv_tools.addCSourceFiles(.{
+    const src_dir = "upstream/source/";
+    lib.addCSourceFiles(.{
         .files = &.{
             // opt
             src_dir ++ "opt/fix_func_call_arguments.cpp",
@@ -274,16 +273,8 @@ pub fn addLibrary(
         },
     });
 
-    spirv_headers_build.linkLibrary(b, spirv_tools);
+    const spirv_headers = b.dependency("spirv_headers", .{});
+    lib.linkLibrary(spirv_headers.artifact("spirv_headers"));
 
-    return spirv_tools;
-}
-
-pub fn linkLibrary(
-    b: *std.Build,
-    exe: *std.Build.Step.Compile,
-    spirv_tools: *std.Build.Step.Compile,
-) void {
-    exe.linkLibrary(spirv_tools);
-    exe.addIncludePath(b.path("vendor/spirv-tools/include/"));
+    b.installArtifact(lib);
 }

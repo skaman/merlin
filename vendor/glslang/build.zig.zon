@@ -1,0 +1,20 @@
+.{
+    .name = "spirv-tools",
+    .version = "0.0.0",
+
+    .dependencies = .{
+        .spirv_headers = .{
+            .path = "../spirv-headers",
+        },
+        .spirv_tools = .{
+            .path = "../spirv-tools",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "upstream",
+        "generated",
+    },
+}

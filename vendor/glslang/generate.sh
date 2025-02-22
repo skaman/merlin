@@ -3,32 +3,32 @@
 set -e
 
 echo "----------------------------------------------------------------------------------------------------"
-echo "Copying spirv-tools"
+echo "Copying glslang"
 echo "----------------------------------------------------------------------------------------------------"
 rm -rf tmp
 mkdir tmp
-cp -r spirv-tools tmp
-pushd tmp/spirv-tools
+cp -r upstream tmp
+pushd tmp/upstream
 
 echo "----------------------------------------------------------------------------------------------------"
 echo "Syncing git submodules"
 echo "----------------------------------------------------------------------------------------------------"
-python3 utils/git-sync-deps
+python3 ./update_glslang_sources.py
 
 echo "----------------------------------------------------------------------------------------------------"
 echo "Generating build files"
 echo "----------------------------------------------------------------------------------------------------"
 mkdir -p build && pushd build
-cmake -GNinja -DSPIRV_SKIP_TESTS=ON ..
+cmake -GNinja -DGLSLANG_TESTS=OFF ..
 ninja
 popd
 
 echo "----------------------------------------------------------------------------------------------------"
 echo "Copying generated headers"
 echo "----------------------------------------------------------------------------------------------------"
-rm -rf ../../spirv-tools-generated
-mkdir -p ../../spirv-tools-generated
-find build -name "*.inc" -exec cp -r '{}' ../../spirv-tools-generated/ \;
+rm -rf ../../generated
+mkdir -p ../../generated
+cp -r build/include/* ../../generated
 
 echo "----------------------------------------------------------------------------------------------------"
 echo "Cleaning up"

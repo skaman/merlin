@@ -14,6 +14,9 @@
         .vulkan_headers = .{
             .path = "vendor/vulkan-headers",
         },
+        .libshaderc = .{
+            .path = "vendor/shaderc",
+        },
         .clap = .{
             .path = "vendor/zig-clap",
         },

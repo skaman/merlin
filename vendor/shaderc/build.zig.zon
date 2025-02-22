@@ -1,0 +1,16 @@
+.{
+    .name = "spirv-tools",
+    .version = "0.0.0",
+
+    .dependencies = .{
+        .glslang = .{
+            .path = "../glslang",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "upstream",
+    },
+}
