@@ -30,7 +30,7 @@ pub const Instance = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        options: gfx.GraphicsOptions,
+        options: *const gfx.GraphicsOptions,
         library: *vk.Library,
         allocation_callbacks: ?*c.VkAllocationCallbacks,
     ) !Self {
@@ -64,7 +64,7 @@ pub const Instance = struct {
 
         var layers = try vk.prepareValidationLayers(
             allocator,
-            &options,
+            options,
         );
         defer layers.deinit();
 

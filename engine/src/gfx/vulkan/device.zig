@@ -63,15 +63,14 @@ pub const Device = struct {
     queue_family_indices: QueueFamilyIndices,
 
     pub fn init(
-        graphics_ctx: *const gfx.GraphicsContext,
+        allocator: std.mem.Allocator,
+        options: *const gfx.GraphicsOptions,
         library: *vk.Library,
         instance: *vk.Instance,
         surface: *const vk.Surface,
     ) !Self {
-        const physical_devices = try instance.enumeratePhysicalDevicesAlloc(
-            graphics_ctx.allocator,
-        );
-        defer graphics_ctx.allocator.free(physical_devices);
+        const physical_devices = try instance.enumeratePhysicalDevicesAlloc(allocator);
+        defer allocator.free(physical_devices);
 
         if (physical_devices.len == 0) {
             vk.log.err("No Vulkan physical devices found", .{});
@@ -88,7 +87,7 @@ pub const Device = struct {
         var selected_physical_device_properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
         for (physical_devices, 0..) |physical_device, index| {
             const score = try rateDeviceSuitability(
-                graphics_ctx.allocator,
+                allocator,
                 instance,
                 surface,
                 physical_device,
@@ -160,24 +159,20 @@ pub const Device = struct {
         );
 
         const queue_family_indices = try findQueueFamilies(
-            graphics_ctx.allocator,
+            allocator,
             instance,
             surface,
             selected_physical_device,
         );
 
-        var unique_queue_families = std.ArrayList(u32).init(
-            graphics_ctx.allocator,
-        );
+        var unique_queue_families = std.ArrayList(u32).init(allocator);
         defer unique_queue_families.deinit();
         try unique_queue_families.append(queue_family_indices.graphics_family.?);
         if (queue_family_indices.present_family != queue_family_indices.graphics_family) {
             try unique_queue_families.append(queue_family_indices.present_family.?);
         }
 
-        var device_queue_create_infos = std.ArrayList(c.VkDeviceQueueCreateInfo).init(
-            graphics_ctx.allocator,
-        );
+        var device_queue_create_infos = std.ArrayList(c.VkDeviceQueueCreateInfo).init(allocator);
         defer device_queue_create_infos.deinit();
 
         const queue_priorities = [_]f32{1.0};
@@ -199,8 +194,8 @@ pub const Device = struct {
         );
 
         const validation_layers = try vk.prepareValidationLayers(
-            graphics_ctx.allocator,
-            &graphics_ctx.options,
+            allocator,
+            options,
         );
         defer validation_layers.deinit();
 

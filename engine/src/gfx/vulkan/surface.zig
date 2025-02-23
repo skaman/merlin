@@ -15,7 +15,7 @@ pub const Surface = struct {
     instance: *const vk.Instance,
 
     pub fn init(
-        graphics_ctx: *const gfx.GraphicsContext,
+        options: *const gfx.GraphicsOptions,
         library: *vk.Library,
         instance: *const vk.Instance,
     ) !Self {
@@ -24,7 +24,7 @@ pub const Surface = struct {
             "Failed to create Vulkan surface",
             c.glfwCreateWindowSurface(
                 instance.handle,
-                graphics_ctx.options.window,
+                options.window,
                 instance.allocation_callbacks,
                 &surface,
             ),
