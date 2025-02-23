@@ -1,12 +1,16 @@
 const std = @import("std");
 
 const clap = @import("clap");
+const shared = @import("shared");
+
+const reflect = @import("reflect.zig");
 
 const c = @cImport({
     @cInclude("shaderc/shaderc.h");
+    @cInclude("spirv_reflect.h");
 });
 
-pub fn preprocessHeader(
+fn compileShader(
     allocator: std.mem.Allocator,
     filename: []const u8,
     kind: c.shaderc_shader_kind,
@@ -39,11 +43,11 @@ pub fn preprocessHeader(
         return error.CompilerError;
     }
 
-    const output = try allocator.alloc(u8, c.shaderc_result_get_length(result));
+    const size = c.shaderc_result_get_length(result);
+
+    const output = try allocator.alloc(u8, size);
     const bytes = c.shaderc_result_get_bytes(result);
-    //std.log.debug("Output: {d}\n", .{output.len});
-    //std.log.debug("Bytes: {d}\n", .{std.mem.len(bytes)});
-    @memcpy(output, bytes[0..output.len]);
+    @memcpy(output, bytes[0..size]);
     return output;
 }
 
@@ -54,11 +58,11 @@ pub fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     return try file.readToEndAlloc(allocator, 10 * 1024 * 1024);
 }
 
-pub fn saveFile(path: []const u8, data: []const u8) !void {
+pub fn saveFile(path: []const u8, shader_data: *shared.ShaderData) !void {
     var file = try std.fs.cwd().createFile(path, .{});
     defer file.close();
 
-    try file.writeAll(data);
+    try shader_data.write(file.writer());
 }
 
 const Params = clap.parseParamsComptime(
@@ -77,6 +81,21 @@ pub fn printHelp() !void {
         .{ .description_on_new_line = false, .spacing_between_parameters = 0 },
     );
 }
+
+const StageExtensionMapEntry = struct {
+    stage: shared.ShaderType,
+    extension: []const u8,
+};
+
+const StageExtensionMap = [_]StageExtensionMapEntry{
+    .{ .stage = .vertex, .extension = ".vert" },
+    .{ .stage = .fragment, .extension = ".frag" },
+};
+
+const StageMap = [@typeInfo(shared.ShaderType).@"enum".fields.len]c.shaderc_shader_kind{
+    c.shaderc_glsl_vertex_shader,
+    c.shaderc_glsl_fragment_shader,
+};
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -111,18 +130,44 @@ pub fn main() !void {
 
     std.log.info("Compiling {s}...", .{source_file.?});
 
+    var shader_type: ?shared.ShaderType = null;
+    for (StageExtensionMap) |map_entry| {
+        if (std.mem.endsWith(u8, source_file.?, map_entry.extension)) {
+            shader_type = map_entry.stage;
+            break;
+        }
+    }
+    if (shader_type == null) {
+        std.log.err("Unknown shader type", .{});
+        return error.UnknownShaderType;
+    }
+
     const file_content = try readFile(allocator, source_file.?);
     defer allocator.free(file_content);
 
-    const output = try preprocessHeader(
+    const data = try compileShader(
         allocator,
         source_file.?,
-        c.shaderc_glsl_fragment_shader,
+        StageMap[@intFromEnum(shader_type.?)],
         file_content,
     );
-    defer allocator.free(output);
+    defer allocator.free(data);
+
+    var shader_reflect = try reflect.ShaderReflect.init(data);
+    defer shader_reflect.deinit();
+
+    const input_attributes = try shader_reflect.getInputAttributes(allocator);
+    defer allocator.free(input_attributes);
+
+    var shader_data = try shared.ShaderData.init(
+        allocator,
+        shader_type.?,
+        data,
+        input_attributes,
+    );
+    defer shader_data.deinit();
 
     if (res.args.output) |s| {
-        try saveFile(s, output);
+        try saveFile(s, &shader_data);
     }
 }

@@ -1,8 +1,10 @@
 const std = @import("std");
 
+const shared = @import("shared");
+
 const c = @import("../c.zig").c;
 const noop = @import("noop.zig");
-const vulkan = @import("vulkan.zig");
+const vulkan = @import("vulkan/vulkan.zig");
 
 pub const GraphicsContext = struct {
     const Self = @This();
@@ -88,109 +90,24 @@ pub const Rect = struct {
     size: Size,
 };
 
-pub const Attribute = enum(u5) {
-    position,
-    normal,
-    tangent,
-    bitangent,
-    color_0,
-    color_1,
-    color_2,
-    color_3,
-    indices,
-    weight,
-    tex_coord_0,
-    tex_coord_1,
-    tex_coord_2,
-    tex_coord_3,
-    tex_coord_4,
-    tex_coord_5,
-    tex_coord_6,
-    tex_coord_7,
-};
-
-pub const AttributeType = enum(u3) {
-    uint_8,
-    uint_10,
-    int_16,
-    half,
-    float,
-
-    const SizeTable = [_][4]u8{
-        [_]u8{ 1, 2, 4, 4 }, // uint_8
-        [_]u8{ 4, 4, 4, 4 }, // uint_10
-        [_]u8{ 2, 4, 8, 8 }, // int_16
-        [_]u8{ 2, 4, 8, 8 }, // half
-        [_]u8{ 4, 8, 12, 16 }, // float
-    };
-
-    pub fn getSize(self: AttributeType, num: u3) u8 {
-        return SizeTable[@intFromEnum(self)][num];
-    }
-};
-
-pub const AttributeData = packed struct {
-    normalized: bool,
-    type: AttributeType,
-    num: u3,
-    as_int: bool,
-};
-
-pub const VertexLayout = struct {
-    stride: u16,
-    offsets: [@typeInfo(Attribute).@"enum".fields.len]u16,
-    attributes: [@typeInfo(Attribute).@"enum".fields.len]AttributeData,
-
-    pub fn init() VertexLayout {
-        var offsets: [@typeInfo(Attribute).@"enum".fields.len]u16 = undefined;
-        @memset(&offsets, 0);
-
-        var attributes: [@typeInfo(Attribute).@"enum".fields.len]AttributeData = undefined;
-        @memset(&attributes, .{ .normalized = false, .type = .uint_8, .num = 0, .as_int = false });
-
-        return .{
-            .stride = 0,
-            .offsets = offsets,
-            .attributes = attributes,
-        };
-    }
-
-    pub fn add(self: *VertexLayout, attribute: Attribute, num: u3, type_: AttributeType, normalized: bool, as_int: bool) void {
-        const index = @intFromEnum(attribute);
-        const size = type_.getSize(num);
-
-        self.attributes[index] = .{
-            .normalized = normalized,
-            .type = type_,
-            .num = num,
-            .as_int = as_int,
-        };
-        self.offsets[index] = self.stride;
-        self.stride += size;
-    }
-
-    pub fn skip(self: *VertexLayout, num: u8) void {
-        self.stride += num;
-    }
-};
-
 pub const Renderer = struct {
     const Self = @This();
     const VTab = struct {
         deinit: *const fn (*anyopaque) void,
         getSwapchainSize: *const fn (*anyopaque) Size,
         invalidateFramebuffer: *const fn (*anyopaque) void,
-        createShader: *const fn (*anyopaque, handle: ShaderHandle, []align(@alignOf(u32)) const u8) anyerror!void,
+        createShader: *const fn (*anyopaque, handle: ShaderHandle, *const shared.ShaderData) anyerror!void,
         destroyShader: *const fn (*anyopaque, handle: ShaderHandle) void,
         createProgram: *const fn (*anyopaque, handle: ProgramHandle, vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!void,
         destroyProgram: *const fn (*anyopaque, handle: ProgramHandle) void,
-        createVertexBuffer: *const fn (*anyopaque, handle: VertexBufferHandle, data: [*]const u8, size: u32, layout: VertexLayout) anyerror!void,
+        createVertexBuffer: *const fn (*anyopaque, handle: VertexBufferHandle, data: [*]const u8, size: u32, layout: shared.VertexLayout) anyerror!void,
         destroyVertexBuffer: *const fn (*anyopaque, handle: VertexBufferHandle) void,
         beginFrame: *const fn (*anyopaque) anyerror!bool,
         endFrame: *const fn (*anyopaque) anyerror!void,
         setViewport: *const fn (*anyopaque, viewport: Rect) void,
         setScissor: *const fn (*anyopaque, scissor: Rect) void,
         bindProgram: *const fn (*anyopaque, program: ProgramHandle) void,
+        bindVertexBuffer: *const fn (*anyopaque, vertex_buffer: VertexBufferHandle) void,
         draw: *const fn (*anyopaque, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void,
     };
 
@@ -212,7 +129,7 @@ pub const Renderer = struct {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.invalidateFramebuffer();
             }
-            fn createShader(ptr_: *anyopaque, handle: ShaderHandle, data: []align(@alignOf(u32)) const u8) anyerror!void {
+            fn createShader(ptr_: *anyopaque, handle: ShaderHandle, data: *const shared.ShaderData) anyerror!void {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 return self.createShader(handle, data);
             }
@@ -228,7 +145,7 @@ pub const Renderer = struct {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.destroyProgram(handle);
             }
-            fn createVertexBuffer(ptr_: *anyopaque, handle: VertexBufferHandle, data: [*]const u8, size: u32, layout: VertexLayout) anyerror!void {
+            fn createVertexBuffer(ptr_: *anyopaque, handle: VertexBufferHandle, data: [*]const u8, size: u32, layout: shared.VertexLayout) anyerror!void {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 return self.createVertexBuffer(handle, data, size, layout);
             }
@@ -256,6 +173,10 @@ pub const Renderer = struct {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.bindProgram(program);
             }
+            fn bindVertexBuffer(ptr_: *anyopaque, vertex_buffer: VertexBufferHandle) void {
+                const self: Ptr = @ptrCast(@alignCast(ptr_));
+                self.bindVertexBuffer(vertex_buffer);
+            }
             fn draw(ptr_: *anyopaque, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
                 const self: Ptr = @ptrCast(@alignCast(ptr_));
                 self.draw(vertex_count, instance_count, first_vertex, first_instance);
@@ -278,6 +199,7 @@ pub const Renderer = struct {
                 .setViewport = impl.setViewport,
                 .setScissor = impl.setScissor,
                 .bindProgram = impl.bindProgram,
+                .bindVertexBuffer = impl.bindVertexBuffer,
                 .draw = impl.draw,
             },
         };
@@ -295,7 +217,7 @@ pub const Renderer = struct {
         self.vtab.invalidateFramebuffer(self.ptr);
     }
 
-    fn createShader(self: *Self, handle: ShaderHandle, data: []align(@alignOf(u32)) const u8) !void {
+    fn createShader(self: *Self, handle: ShaderHandle, data: *const shared.ShaderData) !void {
         return self.vtab.createShader(self.ptr, handle, data);
     }
 
@@ -311,7 +233,7 @@ pub const Renderer = struct {
         self.vtab.destroyProgram(self.ptr, handle);
     }
 
-    fn createVertexBuffer(self: *Self, handle: VertexBufferHandle, data: [*]const u8, size: u32, layout: VertexLayout) !void {
+    fn createVertexBuffer(self: *Self, handle: VertexBufferHandle, data: [*]const u8, size: u32, layout: shared.VertexLayout) !void {
         return self.vtab.createVertexBuffer(self.ptr, handle, data, size, layout);
     }
 
@@ -337,6 +259,10 @@ pub const Renderer = struct {
 
     fn bindProgram(self: *Self, handle: ProgramHandle) void {
         self.vtab.bindProgram(self.ptr, handle);
+    }
+
+    fn bindVertexBuffer(self: *Self, handle: VertexBufferHandle) void {
+        self.vtab.bindVertexBuffer(self.ptr, handle);
     }
 
     fn draw(self: *Self, vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
@@ -403,7 +329,7 @@ pub fn invalidateFramebuffer() void {
     context.renderer.invalidateFramebuffer();
 }
 
-pub fn createShader(data: []align(@alignOf(u32)) const u8) !ShaderHandle {
+pub fn createShader(data: *const shared.ShaderData) !ShaderHandle {
     const handle = try context.shader_handles.alloc();
     errdefer context.shader_handles.free(handle);
 
@@ -411,15 +337,15 @@ pub fn createShader(data: []align(@alignOf(u32)) const u8) !ShaderHandle {
     return handle;
 }
 
-pub fn createShaderUnaligned(data: []const u8) !ShaderHandle {
-    const aligned_data = try context.arena_allocator.alignedAlloc(
-        u8,
-        @alignOf(u32),
-        data.len,
-    );
-    std.mem.copyForwards(u8, aligned_data, data);
-    return try createShader(aligned_data);
-}
+//pub fn createShaderUnaligned(data: []const u8) !ShaderHandle {
+//    const aligned_data = try context.arena_allocator.alignedAlloc(
+//        u8,
+//        @alignOf(u32),
+//        data.len,
+//    );
+//    std.mem.copyForwards(u8, aligned_data, data);
+//    return try createShader(aligned_data);
+//}
 
 pub fn destroyShader(handle: ShaderHandle) void {
     context.renderer.destroyShader(handle);
@@ -439,7 +365,7 @@ pub fn destroyProgram(handle: ProgramHandle) void {
     context.program_handles.free(handle);
 }
 
-pub fn createVertexBuffer(data: [*]const u8, size: u32, layout: VertexLayout) !VertexBufferHandle {
+pub fn createVertexBuffer(data: [*]const u8, size: u32, layout: shared.VertexLayout) !VertexBufferHandle {
     const handle = try context.vertex_buffer_handles.alloc();
     errdefer context.vertex_buffer_handles.free(handle);
 
@@ -472,6 +398,10 @@ pub fn bindProgram(handle: ProgramHandle) void {
     context.renderer.bindProgram(handle);
 }
 
+pub fn bindVertexBuffer(handle: VertexBufferHandle) void {
+    context.renderer.bindVertexBuffer(handle);
+}
+
 pub fn draw(vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
     context.renderer.draw(vertex_count, instance_count, first_vertex, first_instance);
 }
@@ -485,7 +415,7 @@ fn createRenderer(
             return Renderer.init(noop_renderer);
         },
         RendererType.vulkan => {
-            const vulkan_renderer = try graphics_ctx.allocator.create(vulkan.VulkanRenderer);
+            const vulkan_renderer = try graphics_ctx.allocator.create(vulkan.Renderer);
             vulkan_renderer.* = try .init(graphics_ctx);
             return Renderer.init(vulkan_renderer);
         },

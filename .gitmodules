@@ -19,3 +19,9 @@
 [submodule "vendor/shaderc/upstream"]
 	path = vendor/shaderc/upstream
 	url = https://github.com/google/shaderc.git
+[submodule "vendor/spirv-reflect/upstream"]
+	path = vendor/spirv-reflect/upstream
+	url = https://github.com/KhronosGroup/SPIRV-Reflect.git
+[submodule "vendor/vulkan-utility-libraries/upstream"]
+	path = vendor/vulkan-utility-libraries/upstream
+	url = https://github.com/KhronosGroup/Vulkan-Utility-Libraries.git

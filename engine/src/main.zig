@@ -1,17 +1,19 @@
 const std = @import("std");
 
-const c = @import("c.zig").c;
-const z3dfx = @import("renderer/z3dfx.zig");
+const shared = @import("shared");
 
-const frag_shader_code = @embedFile("frag.spv");
-const vert_shader_code = @embedFile("vert.spv");
+const c = @import("c.zig").c;
+const gfx = @import("gfx/gfx.zig");
+
+const frag_shader_code = @embedFile("shader.frag.z3sh");
+const vert_shader_code = @embedFile("shader.vert.z3sh");
 
 pub fn glfwErrorCallback(_: c_int, description: [*c]const u8) callconv(.c) void {
     std.log.err("{s}", .{description});
 }
 
 pub fn glfwFramebufferSizeCallback(_: ?*c.GLFWwindow, _: c_int, _: c_int) callconv(.c) void {
-    z3dfx.invalidateFramebuffer();
+    gfx.invalidateFramebuffer();
 }
 
 pub fn main() !void {
@@ -45,7 +47,7 @@ pub fn main() !void {
     defer arena.deinit();
     const arena_allocator = arena.allocator();
 
-    try z3dfx.init(
+    try gfx.init(
         allocator,
         arena_allocator,
         .{
@@ -55,57 +57,80 @@ pub fn main() !void {
             .enable_vulkan_debug = true,
         },
     );
-    defer z3dfx.deinit();
+    defer gfx.deinit();
 
-    const vert_shader_handle = try z3dfx.createShaderUnaligned(vert_shader_code);
-    defer z3dfx.destroyShader(vert_shader_handle);
+    // VERTEX SHADER
+    var vert_shader_stream = std.io.fixedBufferStream(vert_shader_code);
+    var vert_shader_data = try shared.ShaderData.read(allocator, vert_shader_stream.reader());
+    defer vert_shader_data.deinit();
 
-    const frag_shader_handle = try z3dfx.createShaderUnaligned(frag_shader_code);
-    defer z3dfx.destroyShader(frag_shader_handle);
+    const vert_shader_handle = try gfx.createShader(&vert_shader_data);
+    defer gfx.destroyShader(vert_shader_handle);
 
-    const program_handle = try z3dfx.createProgram(vert_shader_handle, frag_shader_handle);
-    defer z3dfx.destroyProgram(program_handle);
+    // FRAGMENT SHADER
+    var frag_shader_stream = std.io.fixedBufferStream(frag_shader_code);
+    var frag_shader_data = try shared.ShaderData.read(allocator, frag_shader_stream.reader());
+    defer frag_shader_data.deinit();
 
-    var vertex_layout = z3dfx.VertexLayout.init();
+    const frag_shader_handle = try gfx.createShader(&frag_shader_data);
+    defer gfx.destroyShader(frag_shader_handle);
+
+    const program_handle = try gfx.createProgram(vert_shader_handle, frag_shader_handle);
+    defer gfx.destroyProgram(program_handle);
+
+    var vertex_layout = shared.VertexLayout.init();
     vertex_layout.add(.position, 2, .float, false, false);
     vertex_layout.add(.color_0, 3, .float, false, false);
 
-    const Vector2 = @Vector(2, f32);
-    const Vector3 = @Vector(3, f32);
-    const Vertex = packed struct {
-        position: Vector2,
-        color_0: Vector3,
+    //const Vector2 align(1) = @Vector(2, f32);
+    //const Vector3 align(1) = @Vector(3, f32);
+    //const Vertex align(1) = packed struct {
+    //    position: Vector2,
+    //    color_0: Vector3,
+
+    //    comptime {
+    //        std.debug.assert(@sizeOf(Vector2) == 8);
+    //        std.debug.assert(@sizeOf(Vector3) == 16);
+    //        std.debug.assert(@sizeOf(@This()) == 32);
+    //    }
+    //};
+
+    //var vertices align(1) = [_]Vertex{
+    //    .{ .position = [_]f32{ 0.0, -0.5 }, .color_0 = [_]f32{ 1.0, 0.0, 0.0 } },
+    //    .{ .position = [_]f32{ 0.5, 0.5 }, .color_0 = [_]f32{ 0.0, 1.0, 0.0 } },
+    //    .{ .position = [_]f32{ -0.5, 0.5 }, .color_0 = [_]f32{ 0.0, 0.0, 1.0 } },
+    //};
+
+    const vertices = [_][5]f32{
+        [_]f32{ 0.0, -0.5, 1.0, 0.0, 0.0 },
+        [_]f32{ 0.5, 0.5, 0.0, 1.0, 0.0 },
+        [_]f32{ -0.5, 0.5, 0.0, 0.0, 1.0 },
     };
 
-    var vertices = [_]Vertex{
-        .{ .position = [_]f32{ 0.0, -0.5 }, .color_0 = [_]f32{ 1.0, 0.0, 0.0 } },
-        .{ .position = [_]f32{ 0.5, 0.5 }, .color_0 = [_]f32{ 0.0, 1.0, 0.0 } },
-        .{ .position = [_]f32{ -0.5, 0.5 }, .color_0 = [_]f32{ 0.0, 0.0, 1.0 } },
-    };
-
-    const vertex_buffer_handle = try z3dfx.createVertexBuffer(
-        @ptrCast(&vertices),
-        vertices.len * @sizeOf(Vertex),
+    const vertex_buffer_handle = try gfx.createVertexBuffer(
+        std.mem.sliceAsBytes(&vertices).ptr,
+        vertices.len * @sizeOf(@TypeOf(vertices)),
         vertex_layout,
     );
-    defer z3dfx.destroyVertexBuffer(vertex_buffer_handle);
+    defer gfx.destroyVertexBuffer(vertex_buffer_handle);
 
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
         c.glfwPollEvents();
-        const result = z3dfx.beginFrame() catch |err| {
+        const result = gfx.beginFrame() catch |err| {
             std.log.err("Failed to begin frame: {}", .{err});
             continue;
         };
         if (!result) continue;
 
-        const swapchain_size = z3dfx.getSwapchainSize();
+        const swapchain_size = gfx.getSwapchainSize();
 
-        z3dfx.setViewport(.{ .position = .{ .x = 0, .y = 0 }, .size = swapchain_size });
-        z3dfx.setScissor(.{ .position = .{ .x = 0, .y = 0 }, .size = swapchain_size });
-        z3dfx.bindProgram(program_handle);
-        z3dfx.draw(3, 1, 0, 0);
+        gfx.setViewport(.{ .position = .{ .x = 0, .y = 0 }, .size = swapchain_size });
+        gfx.setScissor(.{ .position = .{ .x = 0, .y = 0 }, .size = swapchain_size });
+        gfx.bindProgram(program_handle);
+        gfx.bindVertexBuffer(vertex_buffer_handle);
+        gfx.draw(3, 1, 0, 0);
 
-        z3dfx.endFrame() catch |err| {
+        gfx.endFrame() catch |err| {
             std.log.err("Failed to end frame: {}", .{err});
         };
 
