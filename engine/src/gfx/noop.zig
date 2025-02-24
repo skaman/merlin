@@ -16,6 +16,8 @@ pub fn createProgram(_: gfx.ProgramHandle, _: gfx.ShaderHandle, _: gfx.ShaderHan
 pub fn destroyProgram(_: gfx.ProgramHandle) void {}
 pub fn createVertexBuffer(_: gfx.VertexBufferHandle, _: [*]const u8, _: u32, _: shared.VertexLayout) !void {}
 pub fn destroyVertexBuffer(_: gfx.VertexBufferHandle) void {}
+pub fn createIndexBuffer(_: gfx.IndexBufferHandle, _: [*]const u8, _: u32) !void {}
+pub fn destroyIndexBuffer(_: gfx.IndexBufferHandle) void {}
 pub fn beginFrame() !bool {
     return true;
 }
@@ -24,4 +26,6 @@ pub fn setViewport(_: gfx.Rect) void {}
 pub fn setScissor(_: gfx.Rect) void {}
 pub fn bindProgram(_: gfx.ProgramHandle) void {}
 pub fn bindVertexBuffer(_: gfx.VertexBufferHandle) void {}
+pub fn bindIndexBuffer(_: gfx.IndexBufferHandle) void {}
 pub fn draw(_: u32, _: u32, _: u32, _: u32) void {}
+pub fn drawIndexed(_: u32, _: u32, _: u32, _: i32, _: u32) void {}

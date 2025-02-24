@@ -39,7 +39,9 @@ pub const Device = struct {
         CmdSetScissor: std.meta.Child(c.PFN_vkCmdSetScissor) = undefined,
         CmdBindPipeline: std.meta.Child(c.PFN_vkCmdBindPipeline) = undefined,
         CmdBindVertexBuffers: std.meta.Child(c.PFN_vkCmdBindVertexBuffers) = undefined,
+        CmdBindIndexBuffer: std.meta.Child(c.PFN_vkCmdBindIndexBuffer) = undefined,
         CmdDraw: std.meta.Child(c.PFN_vkCmdDraw) = undefined,
+        CmdDrawIndexed: std.meta.Child(c.PFN_vkCmdDrawIndexed) = undefined,
         CmdCopyBuffer: std.meta.Child(c.PFN_vkCmdCopyBuffer) = undefined,
         CreateSemaphore: std.meta.Child(c.PFN_vkCreateSemaphore) = undefined,
         DestroySemaphore: std.meta.Child(c.PFN_vkDestroySemaphore) = undefined,
@@ -880,6 +882,21 @@ pub const Device = struct {
         );
     }
 
+    pub fn cmdBindIndexBuffer(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        buffer: c.VkBuffer,
+        offset: c.VkDeviceSize,
+        index_type: c.VkIndexType,
+    ) void {
+        self.dispatch.CmdBindIndexBuffer(
+            command_buffer,
+            buffer,
+            offset,
+            index_type,
+        );
+    }
+
     pub fn cmdDraw(
         self: *const Self,
         command_buffer: c.VkCommandBuffer,
@@ -893,6 +910,25 @@ pub const Device = struct {
             vertex_count,
             instance_count,
             first_vertex,
+            first_instance,
+        );
+    }
+
+    pub fn cmdDrawIndexed(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        vertex_offset: i32,
+        first_instance: u32,
+    ) void {
+        self.dispatch.CmdDrawIndexed(
+            command_buffer,
+            index_count,
+            instance_count,
+            first_index,
+            vertex_offset,
             first_instance,
         );
     }

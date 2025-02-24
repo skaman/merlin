@@ -82,29 +82,16 @@ pub fn main() !void {
     vertex_layout.add(.position, 2, .float, false, false);
     vertex_layout.add(.color_0, 3, .float, false, false);
 
-    //const Vector2 align(1) = @Vector(2, f32);
-    //const Vector3 align(1) = @Vector(3, f32);
-    //const Vertex align(1) = packed struct {
-    //    position: Vector2,
-    //    color_0: Vector3,
-
-    //    comptime {
-    //        std.debug.assert(@sizeOf(Vector2) == 8);
-    //        std.debug.assert(@sizeOf(Vector3) == 16);
-    //        std.debug.assert(@sizeOf(@This()) == 32);
-    //    }
-    //};
-
-    //var vertices align(1) = [_]Vertex{
-    //    .{ .position = [_]f32{ 0.0, -0.5 }, .color_0 = [_]f32{ 1.0, 0.0, 0.0 } },
-    //    .{ .position = [_]f32{ 0.5, 0.5 }, .color_0 = [_]f32{ 0.0, 1.0, 0.0 } },
-    //    .{ .position = [_]f32{ -0.5, 0.5 }, .color_0 = [_]f32{ 0.0, 0.0, 1.0 } },
-    //};
-
     const vertices = [_][5]f32{
-        [_]f32{ 0.0, -0.5, 1.0, 0.0, 0.0 },
-        [_]f32{ 0.5, 0.5, 0.0, 1.0, 0.0 },
-        [_]f32{ -0.5, 0.5, 0.0, 0.0, 1.0 },
+        [_]f32{ -0.5, -0.5, 1.0, 0.0, 0.0 },
+        [_]f32{ 0.5, -0.5, 0.0, 1.0, 0.0 },
+        [_]f32{ 0.5, 0.5, 0.0, 0.0, 1.0 },
+        [_]f32{ -0.5, 0.5, 1.0, 1.0, 1.0 },
+    };
+
+    const indices = [_]u16{
+        0, 1, 2,
+        2, 3, 0,
     };
 
     const vertex_buffer_handle = try gfx.createVertexBuffer(
@@ -113,6 +100,12 @@ pub fn main() !void {
         vertex_layout,
     );
     defer gfx.destroyVertexBuffer(vertex_buffer_handle);
+
+    const index_buffer_handle = try gfx.createIndexBuffer(
+        std.mem.sliceAsBytes(&indices).ptr,
+        indices.len * @sizeOf(@TypeOf(indices)),
+    );
+    defer gfx.destroyIndexBuffer(index_buffer_handle);
 
     while (c.glfwWindowShouldClose(window) == c.GLFW_FALSE) {
         c.glfwPollEvents();
@@ -128,7 +121,8 @@ pub fn main() !void {
         gfx.setScissor(.{ .position = .{ .x = 0, .y = 0 }, .size = swapchain_size });
         gfx.bindProgram(program_handle);
         gfx.bindVertexBuffer(vertex_buffer_handle);
-        gfx.draw(3, 1, 0, 0);
+        gfx.bindIndexBuffer(index_buffer_handle);
+        gfx.drawIndexed(6, 1, 0, 0, 0);
 
         gfx.endFrame() catch |err| {
             std.log.err("Failed to end frame: {}", .{err});

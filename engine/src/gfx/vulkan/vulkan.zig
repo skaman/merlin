@@ -8,6 +8,7 @@ const gfx = @import("../gfx.zig");
 pub const Buffer = @import("buffer.zig").Buffer;
 pub const CommandBuffers = @import("command_buffers.zig").CommandBuffers;
 pub const Device = @import("device.zig").Device;
+pub const IndexBuffer = @import("index_buffer.zig").IndexBuffer;
 pub const Instance = @import("instance.zig").Instance;
 pub const Library = @import("library.zig").Library;
 pub const Pipeline = @import("pipeline.zig").Pipeline;
@@ -46,9 +47,12 @@ var g_shader_modules: [gfx.MaxShaderHandles]Shader = undefined;
 var g_programs: [gfx.MaxProgramHandles]Program = undefined;
 var g_pipelines: std.AutoHashMap(PipelineKey, Pipeline) = undefined;
 var g_vertex_buffers: [gfx.MaxVertexBufferHandles]VertexBuffer = undefined;
+var g_index_buffers: [gfx.MaxIndexBufferHandles]IndexBuffer = undefined;
 
 var g_vertex_buffers_to_destroy: [gfx.MaxProgramHandles]VertexBuffer = undefined;
 var g_vertex_buffers_to_destroy_count: u32 = 0;
+var g_index_buffers_to_destroy: [gfx.MaxProgramHandles]IndexBuffer = undefined;
+var g_index_buffers_to_destroy_count: u32 = 0;
 
 var g_image_available_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
 var g_render_finished_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
@@ -58,6 +62,7 @@ var g_current_image_index: u32 = 0;
 var g_current_frame: u32 = 0;
 var g_current_program: ?gfx.ProgramHandle = null;
 var g_current_vertex_buffer: ?gfx.VertexBufferHandle = null;
+var g_current_index_buffer: ?gfx.IndexBufferHandle = null;
 
 var g_framebuffer_invalidated: bool = false;
 
@@ -136,11 +141,16 @@ fn setupDebugMessenger(options: *const gfx.GraphicsOptions, instance: *Instance)
     return debug_messenger;
 }
 
-fn cleanUpVertexBuffers() void {
+fn cleanUpBuffers() void {
     for (0..g_vertex_buffers_to_destroy_count) |i| {
         g_vertex_buffers_to_destroy[i].deinit();
     }
     g_vertex_buffers_to_destroy_count = 0;
+
+    for (0..g_index_buffers_to_destroy_count) |i| {
+        g_index_buffers_to_destroy[i].deinit();
+    }
+    g_index_buffers_to_destroy_count = 0;
 }
 
 fn recreateSwapChain() !void {
@@ -334,7 +344,7 @@ pub fn deinit() void {
         log.err("Failed to wait for Vulkan device to become idle", .{});
     };
 
-    cleanUpVertexBuffers();
+    cleanUpBuffers();
 
     for (0..MaxFramesInFlight) |i| {
         g_device.destroySemaphore(g_image_available_semaphores[i]);
@@ -447,6 +457,30 @@ pub fn destroyVertexBuffer(
     log.debug("Destroyed Vulkan vertex buffer: {d}", .{handle});
 }
 
+pub fn createIndexBuffer(
+    handle: gfx.IndexBufferHandle,
+    data: [*]const u8,
+    size: u32,
+) !void {
+    g_index_buffers[handle] = try IndexBuffer.init(
+        g_device,
+        g_transfer_queue,
+        g_device.queue_family_indices.transfer_family.?,
+        data,
+        size,
+    );
+
+    log.debug("Created Vulkan index buffer: {d}", .{handle});
+}
+
+pub fn destroyIndexBuffer(
+    handle: gfx.IndexBufferHandle,
+) void {
+    g_index_buffers_to_destroy[g_index_buffers_to_destroy_count] = g_index_buffers[handle];
+    g_index_buffers_to_destroy_count += 1;
+    log.debug("Destroyed Vulkan index buffer: {d}", .{handle});
+}
+
 pub fn beginFrame() !bool {
     try g_device.waitForFences(
         1,
@@ -469,7 +503,7 @@ pub fn beginFrame() !bool {
     try g_device.resetFences(1, &g_in_flight_fences[g_current_frame]);
 
     try g_command_buffers.reset(g_current_frame);
-    cleanUpVertexBuffers();
+    cleanUpBuffers();
     try g_command_buffers.begin(g_current_frame, false);
 
     g_command_buffers.beginRenderPass(
@@ -571,6 +605,10 @@ pub fn bindVertexBuffer(vertex_buffer: gfx.VertexBufferHandle) void {
     g_current_vertex_buffer = vertex_buffer;
 }
 
+pub fn bindIndexBuffer(index_buffer: gfx.IndexBufferHandle) void {
+    g_current_index_buffer = index_buffer;
+}
+
 pub fn draw(
     vertex_count: u32,
     instance_count: u32,
@@ -599,6 +637,48 @@ pub fn draw(
         vertex_count,
         instance_count,
         first_vertex,
+        first_instance,
+    );
+}
+
+pub fn drawIndexed(
+    index_count: u32,
+    instance_count: u32,
+    first_index: u32,
+    vertex_offset: i32,
+    first_instance: u32,
+) void {
+    std.debug.assert(g_current_program != null);
+    std.debug.assert(g_current_vertex_buffer != null);
+    std.debug.assert(g_current_index_buffer != null);
+
+    const vertex_buffer = &g_vertex_buffers[g_current_vertex_buffer.?];
+    const pipeline = getPipeline(g_current_program.?, &vertex_buffer.layout) catch {
+        log.err("Failed to bind Vulkan program: {d}", .{g_current_program.?});
+        return;
+    };
+    g_command_buffers.bindPipeline(g_current_frame, pipeline.handle);
+
+    var offsets = [_]c.VkDeviceSize{0};
+    g_command_buffers.bindVertexBuffer(
+        g_current_frame,
+        vertex_buffer.buffer.handle,
+        @ptrCast(&offsets),
+    );
+
+    g_command_buffers.bindIndexBuffer(
+        g_current_frame,
+        g_index_buffers[g_current_index_buffer.?].buffer.handle,
+        0,
+        c.VK_INDEX_TYPE_UINT16,
+    );
+
+    g_command_buffers.drawIndexed(
+        g_current_frame,
+        index_count,
+        instance_count,
+        first_index,
+        vertex_offset,
         first_instance,
     );
 }

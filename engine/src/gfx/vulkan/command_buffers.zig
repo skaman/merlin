@@ -166,6 +166,21 @@ pub const CommandBuffers = struct {
         );
     }
 
+    pub fn bindIndexBuffer(
+        self: *Self,
+        index: u32,
+        buffer: c.VkBuffer,
+        offset: c.VkDeviceSize,
+        index_type: c.VkIndexType,
+    ) void {
+        self.device.cmdBindIndexBuffer(
+            self.handles[index],
+            buffer,
+            offset,
+            index_type,
+        );
+    }
+
     pub fn draw(
         self: *Self,
         index: u32,
@@ -179,6 +194,25 @@ pub const CommandBuffers = struct {
             vertex_count,
             instance_count,
             first_vertex,
+            first_instance,
+        );
+    }
+
+    pub fn drawIndexed(
+        self: *Self,
+        index: u32,
+        index_count: u32,
+        instance_count: u32,
+        first_index: u32,
+        vertex_offset: i32,
+        first_instance: u32,
+    ) void {
+        self.device.cmdDrawIndexed(
+            self.handles[index],
+            index_count,
+            instance_count,
+            first_index,
+            vertex_offset,
             first_instance,
         );
     }

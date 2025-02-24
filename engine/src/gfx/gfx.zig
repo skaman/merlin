@@ -30,10 +30,12 @@ pub const RendererType = enum {
 pub const ShaderHandle = u16;
 pub const ProgramHandle = u16;
 pub const VertexBufferHandle = u16;
+pub const IndexBufferHandle = u16;
 
 pub const MaxShaderHandles = 512;
 pub const MaxProgramHandles = 512;
 pub const MaxVertexBufferHandles = 512;
+pub const MaxIndexBufferHandles = 512;
 
 fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
     return struct {
@@ -97,13 +99,17 @@ const RendererVTab = struct {
     destroyProgram: *const fn (handle: ProgramHandle) void,
     createVertexBuffer: *const fn (handle: VertexBufferHandle, data: [*]const u8, size: u32, layout: shared.VertexLayout) anyerror!void,
     destroyVertexBuffer: *const fn (handle: VertexBufferHandle) void,
+    createIndexBuffer: *const fn (handle: IndexBufferHandle, data: [*]const u8, size: u32) anyerror!void,
+    destroyIndexBuffer: *const fn (handle: IndexBufferHandle) void,
     beginFrame: *const fn () anyerror!bool,
     endFrame: *const fn () anyerror!void,
     setViewport: *const fn (viewport: Rect) void,
     setScissor: *const fn (scissor: Rect) void,
     bindProgram: *const fn (program: ProgramHandle) void,
     bindVertexBuffer: *const fn (vertex_buffer: VertexBufferHandle) void,
+    bindIndexBuffer: *const fn (index_buffer: IndexBufferHandle) void,
     draw: *const fn (vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void,
+    drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32) void,
 };
 
 var g_allocator: std.mem.Allocator = undefined;
@@ -113,6 +119,7 @@ var g_renderer_type: RendererType = undefined;
 var g_shader_handles: HandlePool(ShaderHandle, MaxShaderHandles) = .init();
 var g_program_handles: HandlePool(ProgramHandle, MaxProgramHandles) = .init();
 var g_vertex_buffer_handles: HandlePool(VertexBufferHandle, MaxVertexBufferHandles) = .init();
+var g_index_buffer_handles: HandlePool(IndexBufferHandle, MaxIndexBufferHandles) = .init();
 
 var g_renderer_v_tab: RendererVTab = undefined;
 
@@ -132,13 +139,17 @@ fn getRendererVTab(
                 .destroyProgram = noop.destroyProgram,
                 .createVertexBuffer = noop.createVertexBuffer,
                 .destroyVertexBuffer = noop.destroyVertexBuffer,
+                .createIndexBuffer = noop.createIndexBuffer,
+                .destroyIndexBuffer = noop.destroyIndexBuffer,
                 .beginFrame = noop.beginFrame,
                 .endFrame = noop.endFrame,
                 .setViewport = noop.setViewport,
                 .setScissor = noop.setScissor,
                 .bindProgram = noop.bindProgram,
                 .bindVertexBuffer = noop.bindVertexBuffer,
+                .bindIndexBuffer = noop.bindIndexBuffer,
                 .draw = noop.draw,
+                .drawIndexed = noop.drawIndexed,
             };
         },
         RendererType.vulkan => {
@@ -153,13 +164,17 @@ fn getRendererVTab(
                 .destroyProgram = vulkan.destroyProgram,
                 .createVertexBuffer = vulkan.createVertexBuffer,
                 .destroyVertexBuffer = vulkan.destroyVertexBuffer,
+                .createIndexBuffer = vulkan.createIndexBuffer,
+                .destroyIndexBuffer = vulkan.destroyIndexBuffer,
                 .beginFrame = vulkan.beginFrame,
                 .endFrame = vulkan.endFrame,
                 .setViewport = vulkan.setViewport,
                 .setScissor = vulkan.setScissor,
                 .bindProgram = vulkan.bindProgram,
                 .bindVertexBuffer = vulkan.bindVertexBuffer,
+                .bindIndexBuffer = vulkan.bindIndexBuffer,
                 .draw = vulkan.draw,
+                .drawIndexed = vulkan.drawIndexed,
             };
         },
     }
@@ -236,6 +251,19 @@ pub fn destroyProgram(handle: ProgramHandle) void {
     g_program_handles.free(handle);
 }
 
+pub fn createIndexBuffer(data: [*]const u8, size: u32) !IndexBufferHandle {
+    const handle = try g_index_buffer_handles.alloc();
+    errdefer g_index_buffer_handles.free(handle);
+
+    try g_renderer_v_tab.createIndexBuffer(handle, data, size);
+    return handle;
+}
+
+pub fn destroyIndexBuffer(handle: IndexBufferHandle) void {
+    g_renderer_v_tab.destroyIndexBuffer(handle);
+    g_index_buffer_handles.free(handle);
+}
+
 pub fn createVertexBuffer(data: [*]const u8, size: u32, layout: shared.VertexLayout) !VertexBufferHandle {
     const handle = try g_vertex_buffer_handles.alloc();
     errdefer g_vertex_buffer_handles.free(handle);
@@ -273,6 +301,14 @@ pub fn bindVertexBuffer(handle: VertexBufferHandle) void {
     g_renderer_v_tab.bindVertexBuffer(handle);
 }
 
+pub fn bindIndexBuffer(handle: IndexBufferHandle) void {
+    g_renderer_v_tab.bindIndexBuffer(handle);
+}
+
 pub fn draw(vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
     g_renderer_v_tab.draw(vertex_count, instance_count, first_vertex, first_instance);
+}
+
+pub fn drawIndexed(index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32) void {
+    g_renderer_v_tab.drawIndexed(index_count, instance_count, first_index, vertex_offset, first_instance);
 }
