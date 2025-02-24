@@ -14,6 +14,7 @@ pub fn build(b: *std.Build) !void {
     const libshaderc = b.dependency("libshaderc", .{});
     const spirv_reflect = b.dependency("spirv_reflect", .{});
     const clap = b.dependency("clap", .{});
+    const zmath = b.dependency("zmath", .{});
 
     //--------------------------------------------------------------------------------------------------
     // shared
@@ -52,6 +53,7 @@ pub fn build(b: *std.Build) !void {
     engine_exe.linkLibrary(vulkan_utility_libraries.artifact("vulkan_utility_libraries"));
     engine_exe.addIncludePath(b.path("vendor/vulkan-utility-libraries/upstream/include"));
     engine_exe.root_module.addImport("shared", shared_lib_mod);
+    engine_exe.root_module.addImport("zmath", zmath.module("root"));
 
     const engine_run_cmd = b.addRunArtifact(engine_exe);
     engine_run_cmd.step.dependOn(b.getInstallStep());

@@ -16,7 +16,7 @@ pub fn createProgram(_: gfx.ProgramHandle, _: gfx.ShaderHandle, _: gfx.ShaderHan
 pub fn destroyProgram(_: gfx.ProgramHandle) void {}
 pub fn createVertexBuffer(_: gfx.VertexBufferHandle, _: [*]const u8, _: u32, _: shared.VertexLayout) !void {}
 pub fn destroyVertexBuffer(_: gfx.VertexBufferHandle) void {}
-pub fn createIndexBuffer(_: gfx.IndexBufferHandle, _: [*]const u8, _: u32) !void {}
+pub fn createIndexBuffer(_: gfx.IndexBufferHandle, _: [*]const u8, _: u32, _: gfx.IndexType) !void {}
 pub fn destroyIndexBuffer(_: gfx.IndexBufferHandle) void {}
 pub fn beginFrame() !bool {
     return true;

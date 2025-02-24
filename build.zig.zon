@@ -26,6 +26,9 @@
         .clap = .{
             .path = "vendor/zig-clap",
         },
+        .zmath = .{
+            .path = "vendor/zmath",
+        },
     },
 
     .paths = .{

@@ -104,6 +104,7 @@ pub fn main() !void {
     const index_buffer_handle = try gfx.createIndexBuffer(
         std.mem.sliceAsBytes(&indices).ptr,
         indices.len * @sizeOf(@TypeOf(indices)),
+        .u16,
     );
     defer gfx.destroyIndexBuffer(index_buffer_handle);
 

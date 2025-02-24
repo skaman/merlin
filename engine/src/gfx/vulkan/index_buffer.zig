@@ -10,6 +10,7 @@ pub const IndexBuffer = struct {
     const Self = @This();
 
     buffer: vk.Buffer,
+    index_type: gfx.IndexType,
 
     pub fn init(
         device: *const vk.Device,
@@ -17,6 +18,7 @@ pub const IndexBuffer = struct {
         queue_family_index: u32,
         data: [*]const u8,
         size: u32,
+        index_type: gfx.IndexType,
     ) !Self {
         var staging_buffer = try vk.Buffer.init(
             device,
@@ -55,6 +57,7 @@ pub const IndexBuffer = struct {
 
         return .{
             .buffer = buffer,
+            .index_type = index_type,
         };
     }
 

@@ -76,7 +76,7 @@ pub const Pipeline = struct {
         );
 
         var attribute_descriptions: [MaxVertexAttributes]c.VkVertexInputAttributeDescription = undefined;
-        var attribute_index: u32 = 0;
+        var attribute_count: u32 = 0;
         for (0..program.vertex_shader.input_attribute_count) |i| {
             const attribute = program.vertex_shader.input_attributes[i];
             if (attribute == null) {
@@ -92,14 +92,14 @@ pub const Pipeline = struct {
             std.debug.assert(attribute_data.num > 0);
             std.debug.assert(attribute_data.num <= AttributeType.len);
 
-            attribute_descriptions[attribute_index] = .{
+            attribute_descriptions[attribute_count] = .{
                 .location = @intCast(i),
                 .binding = 0,
                 .format = AttributeType[@intFromEnum(attribute_data.type)][@intCast(attribute_data.num - 1)][@intFromBool(attribute_data.normalized)],
                 .offset = vertex_layout.offsets[@intFromEnum(attribute.?)],
             };
 
-            attribute_index += 1;
+            attribute_count += 1;
         }
 
         const vertex_input_info = std.mem.zeroInit(
@@ -108,7 +108,7 @@ pub const Pipeline = struct {
                 .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
                 .vertexBindingDescriptionCount = 1,
                 .pVertexBindingDescriptions = &binding_description,
-                .vertexAttributeDescriptionCount = attribute_index,
+                .vertexAttributeDescriptionCount = attribute_count,
                 .pVertexAttributeDescriptions = &attribute_descriptions,
             },
         );
@@ -234,6 +234,27 @@ pub const Pipeline = struct {
 
         vk.log.debug("---------------------------------------------------------------", .{});
         vk.log.debug("Pipeline created", .{});
+        vk.log.debug(
+            "  Binding Description 0: binding={d}, stride={d}, inputRate={s}",
+            .{
+                binding_description.binding,
+                binding_description.stride,
+                c.string_VkVertexInputRate(binding_description.inputRate),
+            },
+        );
+        for (0..attribute_count) |index| {
+            const attribute = attribute_descriptions[index];
+            vk.log.debug(
+                "Attribute Description {d}: location={d}, binding={d}, format={s}, offset={d}",
+                .{
+                    index,
+                    attribute.location,
+                    attribute.binding,
+                    c.string_VkFormat(attribute.format),
+                    attribute.offset,
+                },
+            );
+        }
         // TODO: dump pipeline_create_info
         vk.log.debug("---------------------------------------------------------------", .{});
 

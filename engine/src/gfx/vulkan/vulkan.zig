@@ -461,6 +461,7 @@ pub fn createIndexBuffer(
     handle: gfx.IndexBufferHandle,
     data: [*]const u8,
     size: u32,
+    index_type: gfx.IndexType,
 ) !void {
     g_index_buffers[handle] = try IndexBuffer.init(
         g_device,
@@ -468,6 +469,7 @@ pub fn createIndexBuffer(
         g_device.queue_family_indices.transfer_family.?,
         data,
         size,
+        index_type,
     );
 
     log.debug("Created Vulkan index buffer: {d}", .{handle});
@@ -666,11 +668,17 @@ pub fn drawIndexed(
         @ptrCast(&offsets),
     );
 
+    const index_type: c_uint = switch (g_index_buffers[g_current_index_buffer.?].index_type) {
+        gfx.IndexType.u8 => c.VK_INDEX_TYPE_UINT8_EXT,
+        gfx.IndexType.u16 => c.VK_INDEX_TYPE_UINT16,
+        gfx.IndexType.u32 => c.VK_INDEX_TYPE_UINT32,
+    };
+
     g_command_buffers.bindIndexBuffer(
         g_current_frame,
         g_index_buffers[g_current_index_buffer.?].buffer.handle,
         0,
-        c.VK_INDEX_TYPE_UINT16,
+        index_type,
     );
 
     g_command_buffers.drawIndexed(

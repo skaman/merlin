@@ -88,6 +88,12 @@ pub const Rect = struct {
     size: Size,
 };
 
+pub const IndexType = enum {
+    u8,
+    u16,
+    u32,
+};
+
 const RendererVTab = struct {
     init: *const fn (graphics_ctx: *const GraphicsContext) anyerror!void,
     deinit: *const fn () void,
@@ -99,7 +105,7 @@ const RendererVTab = struct {
     destroyProgram: *const fn (handle: ProgramHandle) void,
     createVertexBuffer: *const fn (handle: VertexBufferHandle, data: [*]const u8, size: u32, layout: shared.VertexLayout) anyerror!void,
     destroyVertexBuffer: *const fn (handle: VertexBufferHandle) void,
-    createIndexBuffer: *const fn (handle: IndexBufferHandle, data: [*]const u8, size: u32) anyerror!void,
+    createIndexBuffer: *const fn (handle: IndexBufferHandle, data: [*]const u8, size: u32, index_type: IndexType) anyerror!void,
     destroyIndexBuffer: *const fn (handle: IndexBufferHandle) void,
     beginFrame: *const fn () anyerror!bool,
     endFrame: *const fn () anyerror!void,
@@ -251,19 +257,6 @@ pub fn destroyProgram(handle: ProgramHandle) void {
     g_program_handles.free(handle);
 }
 
-pub fn createIndexBuffer(data: [*]const u8, size: u32) !IndexBufferHandle {
-    const handle = try g_index_buffer_handles.alloc();
-    errdefer g_index_buffer_handles.free(handle);
-
-    try g_renderer_v_tab.createIndexBuffer(handle, data, size);
-    return handle;
-}
-
-pub fn destroyIndexBuffer(handle: IndexBufferHandle) void {
-    g_renderer_v_tab.destroyIndexBuffer(handle);
-    g_index_buffer_handles.free(handle);
-}
-
 pub fn createVertexBuffer(data: [*]const u8, size: u32, layout: shared.VertexLayout) !VertexBufferHandle {
     const handle = try g_vertex_buffer_handles.alloc();
     errdefer g_vertex_buffer_handles.free(handle);
@@ -275,6 +268,19 @@ pub fn createVertexBuffer(data: [*]const u8, size: u32, layout: shared.VertexLay
 pub fn destroyVertexBuffer(handle: VertexBufferHandle) void {
     g_renderer_v_tab.destroyVertexBuffer(handle);
     g_vertex_buffer_handles.free(handle);
+}
+
+pub fn createIndexBuffer(data: [*]const u8, size: u32, index_type: IndexType) !IndexBufferHandle {
+    const handle = try g_index_buffer_handles.alloc();
+    errdefer g_index_buffer_handles.free(handle);
+
+    try g_renderer_v_tab.createIndexBuffer(handle, data, size, index_type);
+    return handle;
+}
+
+pub fn destroyIndexBuffer(handle: IndexBufferHandle) void {
+    g_renderer_v_tab.destroyIndexBuffer(handle);
+    g_index_buffer_handles.free(handle);
 }
 
 pub fn beginFrame() !bool {
