@@ -6,7 +6,7 @@ const shared = @import("shared");
 const c = @import("../../c.zig").c;
 const gfx = @import("../gfx.zig");
 pub const Buffer = @import("buffer.zig").Buffer;
-pub const CommandQueue = @import("command_queue.zig").CommandQueue;
+pub const CommandBuffers = @import("command_buffers.zig").CommandBuffers;
 pub const Device = @import("device.zig").Device;
 pub const Instance = @import("instance.zig").Instance;
 pub const Library = @import("library.zig").Library;
@@ -35,10 +35,11 @@ var g_instance: *Instance = undefined;
 var g_device: *Device = undefined;
 var g_graphics_queue: c.VkQueue = undefined;
 var g_present_queue: c.VkQueue = undefined;
+var g_transfer_queue: c.VkQueue = undefined;
 var g_surface: *Surface = undefined;
 var g_swap_chain: *SwapChain = undefined;
 var g_main_render_pass: *RenderPass = undefined;
-var g_command_queue: *CommandQueue = undefined;
+var g_command_buffers: *CommandBuffers = undefined;
 var g_debug_messenger: ?c.VkDebugUtilsMessengerEXT = null;
 
 var g_shader_modules: [gfx.MaxShaderHandles]Shader = undefined;
@@ -102,95 +103,12 @@ pub fn prepareValidationLayers(
     return layers;
 }
 
-pub fn getPhysicalDeviceTypeLabel(device_type: c.VkPhysicalDeviceType) []const u8 {
-    return switch (device_type) {
-        c.VK_PHYSICAL_DEVICE_TYPE_OTHER => "Other",
-        c.VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU => "Integrated GPU",
-        c.VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU => "Discrete GPU",
-        c.VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU => "Virtual GPU",
-        c.VK_PHYSICAL_DEVICE_TYPE_CPU => "CPU",
-        else => unreachable,
-    };
-}
-
 pub fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void {
     return switch (result) {
         c.VK_SUCCESS => {},
-        c.VK_TIMEOUT => {
-            log.err("{s}: timeout", .{message});
-            return error.VulkanTimeout;
-        },
-        c.VK_NOT_READY => {
-            log.err("{s}: not ready", .{message});
-            return error.VulkanNotReady;
-        },
-        c.VK_SUBOPTIMAL_KHR => {
-            log.err("{s}: suboptimal", .{message});
-            return error.VulkanSuboptimal;
-        },
-        c.VK_ERROR_OUT_OF_HOST_MEMORY => {
-            log.err("{s}: out of host memory", .{message});
-            return error.VulkanOutOfHostMemory;
-        },
-        c.VK_ERROR_OUT_OF_DEVICE_MEMORY => {
-            log.err("{s}: out of device memory", .{message});
-            return error.VulkanOutOfDeviceMemory;
-        },
-        c.VK_ERROR_INITIALIZATION_FAILED => {
-            log.err("{s}: initialization failed", .{message});
-            return error.VulkanInitializationFailed;
-        },
-        c.VK_ERROR_LAYER_NOT_PRESENT => {
-            log.err("{s}: layer not present", .{message});
-            return error.VulkanLayerNotPresent;
-        },
-        c.VK_ERROR_EXTENSION_NOT_PRESENT => {
-            log.err("{s}: extension not present", .{message});
-            return error.VulkanExtensionNotPresent;
-        },
-        c.VK_ERROR_FEATURE_NOT_PRESENT => {
-            log.err("{s}: feature not present", .{message});
-            return error.VulkanFeatureNotPresent;
-        },
-        c.VK_ERROR_INCOMPATIBLE_DRIVER => {
-            log.err("{s}: incompatible driver", .{message});
-            return error.VulkanIncompatibleDriver;
-        },
-        c.VK_ERROR_TOO_MANY_OBJECTS => {
-            log.err("{s}: too many objects", .{message});
-            return error.VulkanTooManyObjects;
-        },
-        c.VK_ERROR_DEVICE_LOST => {
-            log.err("{s}: device lost", .{message});
-            return error.VulkanDeviceLost;
-        },
-        c.VK_ERROR_SURFACE_LOST_KHR => {
-            log.err("{s}: surface lost", .{message});
-            return error.VulkanSurfaceLost;
-        },
-        c.VK_ERROR_NATIVE_WINDOW_IN_USE_KHR => {
-            log.err("{s}: native window in use", .{message});
-            return error.VulkanNativeWindowInUse;
-        },
-        c.VK_ERROR_COMPRESSION_EXHAUSTED_EXT => {
-            log.err("{s}: compression exhausted", .{message});
-            return error.VulkanCompressionExhausted;
-        },
-        c.VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS_KHR => {
-            log.err("{s}: invalid opaque capture address", .{message});
-            return error.VulkanInvalidOpaqueCaptureAddress;
-        },
-        c.VK_ERROR_INVALID_SHADER_NV => {
-            log.err("{s}: invalid shader", .{message});
-            return error.VulkanInvalidShader;
-        },
-        c.VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT => {
-            log.err("{s}: full screen exclusive mode lost", .{message});
-            return error.VulkanFullScreenExclusiveModeLost;
-        },
         else => {
-            log.err("{s}: {d}", .{ message, result });
-            return error.VulkanUnknownError;
+            log.err("{s}: {s}", .{ message, c.string_VkResult(result) });
+            return error.VulkanError;
         },
     };
 }
@@ -226,6 +144,14 @@ fn cleanUpVertexBuffers() void {
 }
 
 fn recreateSwapChain() !void {
+    var width: c_int = 0;
+    var height: c_int = 0;
+    c.glfwGetFramebufferSize(g_options.window, &width, &height);
+    while (width == 0 or height == 0) {
+        c.glfwGetFramebufferSize(g_options.window, &width, &height);
+        c.glfwWaitEvents();
+    }
+
     g_device.waitIdle() catch {
         log.err("Failed to wait for Vulkan device to become idle", .{});
     };
@@ -327,6 +253,12 @@ pub fn init(graphics_ctx: *const gfx.GraphicsContext) !void {
         &g_present_queue,
     );
 
+    g_device.getDeviceQueue(
+        g_device.queue_family_indices.transfer_family.?,
+        0,
+        &g_transfer_queue,
+    );
+
     g_swap_chain = try g_allocator.create(SwapChain);
     errdefer g_allocator.destroy(g_swap_chain);
 
@@ -350,11 +282,15 @@ pub fn init(graphics_ctx: *const gfx.GraphicsContext) !void {
 
     try g_swap_chain.createFrameBuffers(g_main_render_pass);
 
-    g_command_queue = try g_allocator.create(CommandQueue);
-    errdefer g_allocator.destroy(g_command_queue);
+    g_command_buffers = try g_allocator.create(CommandBuffers);
+    errdefer g_allocator.destroy(g_command_buffers);
 
-    g_command_queue.* = try CommandQueue.init(&g_library, g_device);
-    errdefer g_command_queue.deinit();
+    g_command_buffers.* = try CommandBuffers.init(
+        g_device,
+        MaxFramesInFlight,
+        g_device.queue_family_indices.graphics_family.?,
+    );
+    errdefer g_command_buffers.deinit();
 
     const semaphore_create_info = std.mem.zeroInit(
         c.VkSemaphoreCreateInfo,
@@ -412,8 +348,8 @@ pub fn deinit() void {
     }
     g_pipelines.deinit();
 
-    g_command_queue.deinit();
-    g_allocator.destroy(g_command_queue);
+    g_command_buffers.deinit();
+    g_allocator.destroy(g_command_buffers);
 
     g_main_render_pass.deinit();
     g_allocator.destroy(g_main_render_pass);
@@ -493,6 +429,8 @@ pub fn createVertexBuffer(
 ) !void {
     g_vertex_buffers[handle] = try VertexBuffer.init(
         g_device,
+        g_transfer_queue,
+        g_device.queue_family_indices.transfer_family.?,
         layout,
         data,
         size,
@@ -530,23 +468,23 @@ pub fn beginFrame() !bool {
 
     try g_device.resetFences(1, &g_in_flight_fences[g_current_frame]);
 
-    try g_command_queue.reset(g_current_frame);
+    try g_command_buffers.reset(g_current_frame);
     cleanUpVertexBuffers();
-    try g_command_queue.begin(g_current_frame);
+    try g_command_buffers.begin(g_current_frame, false);
 
-    g_command_queue.beginRenderPass(
+    g_command_buffers.beginRenderPass(
+        g_current_frame,
         g_main_render_pass.handle,
         g_swap_chain.frame_buffers.?[g_current_image_index],
         g_swap_chain.extent,
-        g_current_frame,
     );
 
     return true;
 }
 
 pub fn endFrame() !void {
-    g_command_queue.endRenderPass(g_current_frame);
-    try g_command_queue.end(g_current_frame);
+    g_command_buffers.endRenderPass(g_current_frame);
+    try g_command_buffers.end(g_current_frame);
 
     const wait_stages = [_]c.VkPipelineStageFlags{c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     const wait_semaphores = [_]c.VkSemaphore{g_image_available_semaphores[g_current_frame]};
@@ -559,7 +497,7 @@ pub fn endFrame() !void {
             .pWaitSemaphores = &wait_semaphores,
             .pWaitDstStageMask = &wait_stages,
             .commandBufferCount = 1,
-            .pCommandBuffers = &g_command_queue.command_buffers[g_current_frame],
+            .pCommandBuffers = &g_command_buffers.handles[g_current_frame],
             .signalSemaphoreCount = 1,
             .pSignalSemaphores = &signal_semaphores,
         },
@@ -605,7 +543,7 @@ pub fn setViewport(viewport: gfx.Rect) void {
             .maxDepth = 1,
         },
     );
-    g_command_queue.setViewport(vk_viewport, g_current_frame);
+    g_command_buffers.setViewport(g_current_frame, vk_viewport);
 }
 
 pub fn setScissor(scissor: gfx.Rect) void {
@@ -622,7 +560,7 @@ pub fn setScissor(scissor: gfx.Rect) void {
             },
         },
     );
-    g_command_queue.setScissor(vk_scissor, g_current_frame);
+    g_command_buffers.setScissor(g_current_frame, vk_scissor);
 }
 
 pub fn bindProgram(program: gfx.ProgramHandle) void {
@@ -647,19 +585,20 @@ pub fn draw(
         log.err("Failed to bind Vulkan program: {d}", .{g_current_program.?});
         return;
     };
-    g_command_queue.bindPipeline(pipeline.handle, g_current_frame);
+    g_command_buffers.bindPipeline(g_current_frame, pipeline.handle);
 
-    g_command_queue.bindVertexBuffer(
-        vertex_buffer.buffer.handle,
-        0,
+    var offsets = [_]c.VkDeviceSize{0};
+    g_command_buffers.bindVertexBuffer(
         g_current_frame,
+        vertex_buffer.buffer.handle,
+        @ptrCast(&offsets),
     );
 
-    g_command_queue.draw(
+    g_command_buffers.draw(
+        g_current_frame,
         vertex_count,
         instance_count,
         first_vertex,
         first_instance,
-        g_current_frame,
     );
 }

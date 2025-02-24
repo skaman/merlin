@@ -12,10 +12,6 @@ pub const GraphicsContext = struct {
     allocator: std.mem.Allocator,
     arena_allocator: std.mem.Allocator,
     options: GraphicsOptions,
-
-    pub fn deinit(self: *const Self) void {
-        _ = self;
-    }
 };
 
 pub const GraphicsOptions = struct {

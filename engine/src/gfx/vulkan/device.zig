@@ -11,6 +11,7 @@ pub const Device = struct {
         GetDeviceQueue: std.meta.Child(c.PFN_vkGetDeviceQueue) = undefined,
         QueueSubmit: std.meta.Child(c.PFN_vkQueueSubmit) = undefined,
         QueuePresentKHR: std.meta.Child(c.PFN_vkQueuePresentKHR) = undefined,
+        QueueWaitIdle: std.meta.Child(c.PFN_vkQueueWaitIdle) = undefined,
         CreateSwapchainKHR: std.meta.Child(c.PFN_vkCreateSwapchainKHR) = undefined,
         DestroySwapchainKHR: std.meta.Child(c.PFN_vkDestroySwapchainKHR) = undefined,
         GetSwapchainImagesKHR: std.meta.Child(c.PFN_vkGetSwapchainImagesKHR) = undefined,
@@ -29,6 +30,17 @@ pub const Device = struct {
         CreateCommandPool: std.meta.Child(c.PFN_vkCreateCommandPool) = undefined,
         DestroyCommandPool: std.meta.Child(c.PFN_vkDestroyCommandPool) = undefined,
         AllocateCommandBuffers: std.meta.Child(c.PFN_vkAllocateCommandBuffers) = undefined,
+        BeginCommandBuffer: std.meta.Child(c.PFN_vkBeginCommandBuffer) = undefined,
+        EndCommandBuffer: std.meta.Child(c.PFN_vkEndCommandBuffer) = undefined,
+        ResetCommandBuffer: std.meta.Child(c.PFN_vkResetCommandBuffer) = undefined,
+        CmdBeginRenderPass: std.meta.Child(c.PFN_vkCmdBeginRenderPass) = undefined,
+        CmdEndRenderPass: std.meta.Child(c.PFN_vkCmdEndRenderPass) = undefined,
+        CmdSetViewport: std.meta.Child(c.PFN_vkCmdSetViewport) = undefined,
+        CmdSetScissor: std.meta.Child(c.PFN_vkCmdSetScissor) = undefined,
+        CmdBindPipeline: std.meta.Child(c.PFN_vkCmdBindPipeline) = undefined,
+        CmdBindVertexBuffers: std.meta.Child(c.PFN_vkCmdBindVertexBuffers) = undefined,
+        CmdDraw: std.meta.Child(c.PFN_vkCmdDraw) = undefined,
+        CmdCopyBuffer: std.meta.Child(c.PFN_vkCmdCopyBuffer) = undefined,
         CreateSemaphore: std.meta.Child(c.PFN_vkCreateSemaphore) = undefined,
         DestroySemaphore: std.meta.Child(c.PFN_vkDestroySemaphore) = undefined,
         CreateFence: std.meta.Child(c.PFN_vkCreateFence) = undefined,
@@ -50,9 +62,12 @@ pub const Device = struct {
     const QueueFamilyIndices = struct {
         graphics_family: ?u32 = null,
         present_family: ?u32 = null,
+        transfer_family: ?u32 = null,
 
         fn isComplete(self: QueueFamilyIndices) bool {
-            return self.graphics_family != null and self.present_family != null;
+            return self.graphics_family != null and
+                self.present_family != null and
+                self.transfer_family != null;
         }
     };
 
@@ -111,7 +126,7 @@ pub const Device = struct {
             vk.log.debug("   Driver version: {x}", .{properties.driverVersion});
             vk.log.debug("        Vendor ID: {x}", .{properties.vendorID});
             vk.log.debug("        Device ID: {x}", .{properties.deviceID});
-            vk.log.debug("             Type: {s}", .{vk.getPhysicalDeviceTypeLabel(properties.deviceType)});
+            vk.log.debug("             Type: {s}", .{c.string_VkPhysicalDeviceType(properties.deviceType)});
             vk.log.debug("            Score: {d}", .{score});
 
             var memory_properties = std.mem.zeroes(
@@ -153,10 +168,6 @@ pub const Device = struct {
         }
 
         vk.log.debug("---------------------------------------------------------------", .{});
-        vk.log.debug(
-            "Using physical device {d}: {s}",
-            .{ selected_physical_device_index, selected_physical_device_properties.deviceName },
-        );
 
         const queue_family_indices = try findQueueFamilies(
             allocator,
@@ -165,23 +176,31 @@ pub const Device = struct {
             selected_physical_device,
         );
 
-        var unique_queue_families = std.ArrayList(u32).init(allocator);
+        var unique_queue_families = std.AutoHashMap(u32, void).init(allocator);
         defer unique_queue_families.deinit();
-        try unique_queue_families.append(queue_family_indices.graphics_family.?);
-        if (queue_family_indices.present_family != queue_family_indices.graphics_family) {
-            try unique_queue_families.append(queue_family_indices.present_family.?);
-        }
+        try unique_queue_families.put(queue_family_indices.graphics_family.?, void{});
+        try unique_queue_families.put(queue_family_indices.present_family.?, void{});
+        try unique_queue_families.put(queue_family_indices.transfer_family.?, void{});
+
+        vk.log.debug("Using physical device: {s} ({d})", .{
+            selected_physical_device_properties.deviceName,
+            selected_physical_device_index,
+        });
+        vk.log.debug("Graphics queue family: {d}", .{queue_family_indices.graphics_family.?});
+        vk.log.debug(" Present queue family: {d}", .{queue_family_indices.present_family.?});
+        vk.log.debug(" Transer queue family: {d}", .{queue_family_indices.transfer_family.?});
 
         var device_queue_create_infos = std.ArrayList(c.VkDeviceQueueCreateInfo).init(allocator);
         defer device_queue_create_infos.deinit();
 
         const queue_priorities = [_]f32{1.0};
-        for (unique_queue_families.items) |queue_family| {
+        var unique_queue_iterator = unique_queue_families.keyIterator();
+        while (unique_queue_iterator.next()) |queue_family| {
             const device_queue_create_info = std.mem.zeroInit(
                 c.VkDeviceQueueCreateInfo,
                 .{
                     .sType = c.VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
-                    .queueFamilyIndex = queue_family,
+                    .queueFamilyIndex = queue_family.*,
                     .queueCount = queue_priorities.len,
                     .pQueuePriorities = &queue_priorities,
                 },
@@ -320,24 +339,41 @@ pub const Device = struct {
         defer allocator.free(queue_families);
 
         for (queue_families, 0..) |queue_family, index| {
-            if (queue_family.queueFlags & c.VK_QUEUE_GRAPHICS_BIT != 0) {
-                queue_family_indices.graphics_family = @intCast(index);
+            if (queue_family_indices.graphics_family == null) {
+                if (queue_family.queueFlags & c.VK_QUEUE_GRAPHICS_BIT != 0) {
+                    queue_family_indices.graphics_family = @intCast(index);
+                }
             }
 
-            var present_support: c.VkBool32 = 0;
-            try instance.getPhysicalDeviceSurfaceSupportKHR(
-                physical_device,
-                @intCast(index),
-                surface.handle,
-                &present_support,
-            );
-            if (present_support != 0) {
-                queue_family_indices.present_family = @intCast(index);
+            if (queue_family_indices.transfer_family == null) {
+                if (queue_family.queueFlags & c.VK_QUEUE_TRANSFER_BIT != 0 and
+                    queue_family.queueFlags & c.VK_QUEUE_GRAPHICS_BIT == 0 and
+                    queue_family.queueFlags & c.VK_QUEUE_COMPUTE_BIT == 0)
+                {
+                    queue_family_indices.transfer_family = @intCast(index);
+                }
+            }
+
+            if (queue_family_indices.present_family == null) {
+                var present_support: c.VkBool32 = 0;
+                try instance.getPhysicalDeviceSurfaceSupportKHR(
+                    physical_device,
+                    @intCast(index),
+                    surface.handle,
+                    &present_support,
+                );
+                if (present_support != 0) {
+                    queue_family_indices.present_family = @intCast(index);
+                }
             }
 
             if (queue_family_indices.isComplete()) {
                 break;
             }
+        }
+
+        if (queue_family_indices.transfer_family == null) {
+            queue_family_indices.transfer_family = queue_family_indices.graphics_family;
         }
 
         return queue_family_indices;
@@ -430,6 +466,16 @@ pub const Device = struct {
         try vk.checkVulkanError("Failed to present Vulkan queue", result);
 
         return result;
+    }
+
+    pub fn queueWaitIdle(
+        self: *const Self,
+        queue: c.VkQueue,
+    ) !void {
+        try vk.checkVulkanError(
+            "Failed to wait for Vulkan queue",
+            self.dispatch.QueueWaitIdle(queue),
+        );
     }
 
     pub fn createSwapchainKHR(
@@ -713,6 +759,158 @@ pub const Device = struct {
                 allocate_info,
                 command_buffers,
             ),
+        );
+    }
+
+    pub fn beginCommandBuffer(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        begin_info: *const c.VkCommandBufferBeginInfo,
+    ) !void {
+        try vk.checkVulkanError(
+            "Failed to begin Vulkan command buffer",
+            self.dispatch.BeginCommandBuffer(
+                command_buffer,
+                begin_info,
+            ),
+        );
+    }
+
+    pub fn endCommandBuffer(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+    ) !void {
+        try vk.checkVulkanError(
+            "Failed to end Vulkan command buffer",
+            self.dispatch.EndCommandBuffer(command_buffer),
+        );
+    }
+
+    pub fn resetCommandBuffer(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        flags: c.VkCommandBufferResetFlags,
+    ) !void {
+        try vk.checkVulkanError(
+            "Failed to reset Vulkan command buffer",
+            self.dispatch.ResetCommandBuffer(
+                command_buffer,
+                flags,
+            ),
+        );
+    }
+
+    pub fn cmdBeginRenderPass(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        begin_info: *const c.VkRenderPassBeginInfo,
+        contents: c.VkSubpassContents,
+    ) !void {
+        self.dispatch.CmdBeginRenderPass(
+            command_buffer,
+            begin_info,
+            contents,
+        );
+    }
+
+    pub fn cmdEndRenderPass(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+    ) void {
+        self.dispatch.CmdEndRenderPass(command_buffer);
+    }
+
+    pub fn cmdSetViewport(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        first_viewport: u32,
+        viewport_count: u32,
+        viewports: [*c]const c.VkViewport,
+    ) void {
+        self.dispatch.CmdSetViewport(
+            command_buffer,
+            first_viewport,
+            viewport_count,
+            viewports,
+        );
+    }
+
+    pub fn cmdSetScissor(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        first_scissor: u32,
+        scissor_count: u32,
+        scissors: [*c]const c.VkRect2D,
+    ) void {
+        self.dispatch.CmdSetScissor(
+            command_buffer,
+            first_scissor,
+            scissor_count,
+            scissors,
+        );
+    }
+
+    pub fn cmdBindPipeline(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        pipeline_bind_point: c.VkPipelineBindPoint,
+        pipeline: c.VkPipeline,
+    ) void {
+        self.dispatch.CmdBindPipeline(
+            command_buffer,
+            pipeline_bind_point,
+            pipeline,
+        );
+    }
+
+    pub fn cmdBindVertexBuffers(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        first_binding: u32,
+        binding_count: u32,
+        buffers: [*c]const c.VkBuffer,
+        offsets: [*c]c.VkDeviceSize,
+    ) void {
+        self.dispatch.CmdBindVertexBuffers(
+            command_buffer,
+            first_binding,
+            binding_count,
+            buffers,
+            offsets,
+        );
+    }
+
+    pub fn cmdDraw(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        vertex_count: u32,
+        instance_count: u32,
+        first_vertex: u32,
+        first_instance: u32,
+    ) void {
+        self.dispatch.CmdDraw(
+            command_buffer,
+            vertex_count,
+            instance_count,
+            first_vertex,
+            first_instance,
+        );
+    }
+
+    pub fn cmdCopyBuffer(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        src_buffer: c.VkBuffer,
+        dst_buffer: c.VkBuffer,
+        region_count: u32,
+        regions: [*c]const c.VkBufferCopy,
+    ) void {
+        self.dispatch.CmdCopyBuffer(
+            command_buffer,
+            src_buffer,
+            dst_buffer,
+            region_count,
+            regions,
         );
     }
 

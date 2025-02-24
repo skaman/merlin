@@ -9,13 +9,13 @@ pub const Buffer = struct {
 
     device: *const vk.Device,
     handle: c.VkBuffer,
-    device_memory: c.VkDeviceMemory,
+    memory: c.VkDeviceMemory,
 
     pub fn init(
         device: *const vk.Device,
         size: c.VkDeviceSize,
         usage: c.VkBufferUsageFlags,
-        data: ?[*]const u8,
+        property_flags: c.VkMemoryPropertyFlags,
     ) !Self {
         const buffer_info = std.mem.zeroInit(
             c.VkBufferCreateInfo,
@@ -40,30 +40,74 @@ pub const Buffer = struct {
         const memory = try allocateMemory(
             device,
             &requirements,
-            c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            property_flags,
         );
         errdefer device.freeMemory(memory);
 
         try device.bindBufferMemory(handle, memory, 0);
 
-        if (data) |data_value| {
-            var mapped_data: [*c]u8 = undefined;
-            try device.mapMemory(memory, 0, size, 0, @ptrCast(&mapped_data));
-            defer device.unmapMemory(memory);
-
-            @memcpy(mapped_data[0..size], data_value[0..size]);
-        }
-
         return .{
             .device = device,
             .handle = handle,
-            .device_memory = memory,
+            .memory = memory,
         };
     }
 
     pub fn deinit(self: *Self) void {
         self.device.destroyBuffer(self.handle);
-        self.device.freeMemory(self.device_memory);
+        self.device.freeMemory(self.memory);
+    }
+
+    pub fn copyFromBuffer(
+        self: *Self,
+        queue: c.VkQueue,
+        queue_family_index: u32,
+        src_buffer: c.VkBuffer,
+        size: c.VkDeviceSize,
+    ) !void {
+        var command_buffer = try vk.CommandBuffers.init(
+            self.device,
+            1,
+            queue_family_index,
+        );
+        defer command_buffer.deinit();
+
+        try command_buffer.begin(0, true);
+
+        const copy_region = std.mem.zeroInit(
+            c.VkBufferCopy,
+            .{
+                .srcOffset = 0,
+                .dstOffset = 0,
+                .size = size,
+            },
+        );
+        command_buffer.copyBuffer(
+            0,
+            src_buffer,
+            self.handle,
+            1,
+            &copy_region,
+        );
+
+        try command_buffer.end(0);
+
+        const submit_info = std.mem.zeroInit(
+            c.VkSubmitInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                .commandBufferCount = 1,
+                .pCommandBuffers = &command_buffer.handles[0],
+            },
+        );
+        try self.device.queueSubmit(
+            queue,
+            1,
+            &submit_info,
+            null,
+        );
+
+        try self.device.queueWaitIdle(queue);
     }
 
     fn findMemoryTypeIndex(
