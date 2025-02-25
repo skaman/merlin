@@ -1,0 +1,25 @@
+.{
+    .name = "merlin-shaderc",
+    .version = "0.0.0",
+
+    .dependencies = .{
+        .merlin_core_layer = .{
+            .path = "../merlin-core-layer",
+        },
+        .libshaderc = .{
+            .path = "../vendor/shaderc",
+        },
+        .spirv_reflect = .{
+            .path = "../vendor/spirv-reflect",
+        },
+        .clap = .{
+            .path = "../vendor/zig-clap",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

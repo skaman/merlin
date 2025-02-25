@@ -1,0 +1,115 @@
+const std = @import("std");
+
+const mcl = @import("merlin_core_layer");
+const gfx = mcl.gfx;
+const zm = mcl.zmath;
+const platform = mcl.platform;
+
+const frag_shader_code = @embedFile("shader.frag.z3sh");
+const vert_shader_code = @embedFile("shader.vert.z3sh");
+
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+
+    try platform.init(.{ .type = .glfw });
+
+    const window_handle = try platform.createWindow(.{ .width = 800, .height = 600, .title = "Example 1" });
+    defer platform.destroyWindow(window_handle);
+
+    try gfx.init(
+        allocator,
+        arena_allocator,
+        .{
+            .renderer_type = .vulkan,
+            .app_name = "TEST APP",
+            .window_handle = window_handle,
+            .enable_vulkan_debug = true,
+        },
+    );
+    defer gfx.deinit();
+
+    const vert_shader_handle = try gfx.createShaderFromMemory(vert_shader_code);
+    defer gfx.destroyShader(vert_shader_handle);
+
+    const frag_shader_handle = try gfx.createShaderFromMemory(frag_shader_code);
+    defer gfx.destroyShader(frag_shader_handle);
+
+    const program_handle = try gfx.createProgram(vert_shader_handle, frag_shader_handle);
+    defer gfx.destroyProgram(program_handle);
+
+    var vertex_layout = gfx.VertexLayout.init();
+    vertex_layout.add(.position, 2, .float, false, false);
+    vertex_layout.add(.color_0, 3, .float, false, false);
+
+    const vertices = [_][5]f32{
+        [_]f32{ -0.5, -0.5, 1.0, 0.0, 0.0 },
+        [_]f32{ 0.5, -0.5, 0.0, 1.0, 0.0 },
+        [_]f32{ 0.5, 0.5, 0.0, 0.0, 1.0 },
+        [_]f32{ -0.5, 0.5, 1.0, 1.0, 1.0 },
+    };
+
+    const indices = [_]u16{
+        0, 1, 2,
+        2, 3, 0,
+    };
+
+    const vertex_buffer_handle = try gfx.createVertexBuffer(
+        std.mem.sliceAsBytes(&vertices).ptr,
+        vertices.len * @sizeOf(@TypeOf(vertices)),
+        vertex_layout,
+    );
+    defer gfx.destroyVertexBuffer(vertex_buffer_handle);
+
+    const index_buffer_handle = try gfx.createIndexBuffer(
+        std.mem.sliceAsBytes(&indices).ptr,
+        indices.len * @sizeOf(@TypeOf(indices)),
+        .u16,
+    );
+    defer gfx.destroyIndexBuffer(index_buffer_handle);
+
+    while (!platform.shouldCloseWindow(window_handle)) {
+        platform.pollEvents();
+
+        const result = gfx.beginFrame() catch |err| {
+            std.log.err("Failed to begin frame: {}", .{err});
+            continue;
+        };
+        if (!result) continue;
+
+        const swapchain_size = gfx.getSwapchainSize();
+
+        const aspect_ratio = swapchain_size.width / swapchain_size.height;
+        const object_to_world = zm.rotationY(0);
+        const world_to_view = zm.lookAtRh(
+            zm.f32x4(3.0, 3.0, 3.0, 1.0), // eye position
+            zm.f32x4(0.0, 0.0, 0.0, 1.0), // focus point
+            zm.f32x4(0.0, 1.0, 0.0, 0.0), // up direction ('w' coord is zero because this is a vector not a point)
+        );
+        const view_to_clip = zm.perspectiveFovRh(0.25 * std.math.pi, aspect_ratio, 0.1, 20.0);
+
+        const object_to_view = zm.mul(object_to_world, world_to_view);
+        const object_to_clip = zm.mul(object_to_view, view_to_clip);
+        _ = object_to_clip;
+
+        gfx.setViewport(.{ .position = .{ .x = 0, .y = 0 }, .size = swapchain_size });
+        gfx.setScissor(.{ .position = .{ .x = 0, .y = 0 }, .size = swapchain_size });
+        gfx.bindProgram(program_handle);
+        gfx.bindVertexBuffer(vertex_buffer_handle);
+        gfx.bindIndexBuffer(index_buffer_handle);
+        gfx.drawIndexed(6, 1, 0, 0, 0);
+
+        gfx.endFrame() catch |err| {
+            std.log.err("Failed to end frame: {}", .{err});
+        };
+
+        _ = arena.reset(.retain_capacity);
+
+        //break;
+    }
+}
