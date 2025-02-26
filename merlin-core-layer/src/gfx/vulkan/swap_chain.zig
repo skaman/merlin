@@ -72,7 +72,6 @@ pub const nSwapChain = struct {
         instance: *vk.Instance,
         device: *const vk.Device,
         surface: *const vk.Surface,
-        window_handle: platform.WindowHandle,
     ) !Self {
         var swap_chain_support = try SwapChainSupportDetails.init(
             allocator,
@@ -87,8 +86,7 @@ pub const nSwapChain = struct {
 
         var window_width: c_int = undefined;
         var window_height: c_int = undefined;
-        glfw.glfwGetFramebufferSize(
-            window_handle,
+        glfw.glfwGetDefaultFramebufferSize(
             &window_width,
             &window_height,
         );

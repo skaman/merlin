@@ -5,8 +5,20 @@ const gfx = mcl.gfx;
 const zm = mcl.zmath;
 const platform = mcl.platform;
 
-const frag_shader_code = @embedFile("shader.frag.z3sh");
-const vert_shader_code = @embedFile("shader.vert.z3sh");
+const frag_shader_code = @embedFile("shader.frag.bin");
+const vert_shader_code = @embedFile("shader.vert.bin");
+
+const Vertices = [_][5]f32{
+    [_]f32{ -0.5, -0.5, 1.0, 0.0, 0.0 },
+    [_]f32{ 0.5, -0.5, 0.0, 1.0, 0.0 },
+    [_]f32{ 0.5, 0.5, 0.0, 0.0, 1.0 },
+    [_]f32{ -0.5, 0.5, 1.0, 1.0, 1.0 },
+};
+
+const Indices = [_]u16{
+    0, 1, 2,
+    2, 3, 0,
+};
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -17,22 +29,15 @@ pub fn main() !void {
     defer arena.deinit();
     const arena_allocator = arena.allocator();
 
-    try platform.init(.{ .type = .glfw });
-
-    const window_handle = try platform.createWindow(.{ .width = 800, .height = 600, .title = "Example 1" });
-    defer platform.destroyWindow(window_handle);
-
-    try gfx.init(
+    try mcl.init(
         allocator,
         arena_allocator,
         .{
-            .renderer_type = .vulkan,
-            .app_name = "TEST APP",
-            .window_handle = window_handle,
+            .window_title = "Example 1",
             .enable_vulkan_debug = true,
         },
     );
-    defer gfx.deinit();
+    defer mcl.deinit();
 
     const vert_shader_handle = try gfx.createShaderFromMemory(vert_shader_code);
     defer gfx.destroyShader(vert_shader_handle);
@@ -47,33 +52,21 @@ pub fn main() !void {
     vertex_layout.add(.position, 2, .float, false, false);
     vertex_layout.add(.color_0, 3, .float, false, false);
 
-    const vertices = [_][5]f32{
-        [_]f32{ -0.5, -0.5, 1.0, 0.0, 0.0 },
-        [_]f32{ 0.5, -0.5, 0.0, 1.0, 0.0 },
-        [_]f32{ 0.5, 0.5, 0.0, 0.0, 1.0 },
-        [_]f32{ -0.5, 0.5, 1.0, 1.0, 1.0 },
-    };
-
-    const indices = [_]u16{
-        0, 1, 2,
-        2, 3, 0,
-    };
-
     const vertex_buffer_handle = try gfx.createVertexBuffer(
-        std.mem.sliceAsBytes(&vertices).ptr,
-        vertices.len * @sizeOf(@TypeOf(vertices)),
+        std.mem.sliceAsBytes(&Vertices).ptr,
+        Vertices.len * @sizeOf(@TypeOf(Vertices)),
         vertex_layout,
     );
     defer gfx.destroyVertexBuffer(vertex_buffer_handle);
 
     const index_buffer_handle = try gfx.createIndexBuffer(
-        std.mem.sliceAsBytes(&indices).ptr,
-        indices.len * @sizeOf(@TypeOf(indices)),
+        std.mem.sliceAsBytes(&Indices).ptr,
+        Indices.len * @sizeOf(@TypeOf(Indices)),
         .u16,
     );
     defer gfx.destroyIndexBuffer(index_buffer_handle);
 
-    while (!platform.shouldCloseWindow(window_handle)) {
+    while (!platform.shouldCloseDefaultWindow()) {
         platform.pollEvents();
 
         const result = gfx.beginFrame() catch |err| {

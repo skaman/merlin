@@ -144,7 +144,7 @@ pub fn main() !void {
         return printHelp();
     }
 
-    std.log.info("Compiling {s}...", .{source_file.?});
+    //std.log.info("Compiling {s}...", .{source_file.?});
 
     var shader_type: ?gfx.ShaderType = null;
     for (StageExtensionMap) |map_entry| {

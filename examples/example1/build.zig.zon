@@ -6,6 +6,9 @@
         .merlin_core_layer = .{
             .path = "../../merlin-core-layer",
         },
+        .merlin_shaderc = .{
+            .path = "../../merlin-shaderc",
+        },
     },
 
     .paths = .{

@@ -16,16 +16,14 @@ pub const Surface = struct {
     instance: *const vk.Instance,
 
     pub fn init(
-        options: *const gfx.GraphicsOptions,
         library: *vk.Library,
         instance: *const vk.Instance,
     ) !Self {
         var surface: c.VkSurfaceKHR = undefined;
         try vk.checkVulkanError(
             "Failed to create Vulkan surface",
-            glfw.glfwCreateWindowSurface(
+            glfw.glfwCreateDefaultWindowSurface(
                 instance.handle,
-                options.window_handle,
                 instance.allocation_callbacks,
                 &surface,
             ),

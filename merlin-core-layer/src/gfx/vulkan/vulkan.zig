@@ -152,9 +152,9 @@ fn cleanUpBuffers() void {
 fn recreateSwapChain() !void {
     var width: c_int = 0;
     var height: c_int = 0;
-    glfw.glfwGetFramebufferSize(g_options.window_handle, &width, &height);
+    glfw.glfwGetDefaultFramebufferSize(&width, &height);
     while (width == 0 or height == 0) {
-        glfw.glfwGetFramebufferSize(g_options.window_handle, &width, &height);
+        glfw.glfwGetDefaultFramebufferSize(&width, &height);
         c.glfwWaitEvents();
     }
 
@@ -171,7 +171,6 @@ fn recreateSwapChain() !void {
         g_instance,
         g_device,
         g_surface,
-        g_options.window_handle,
     );
 
     try g_swap_chain.createFrameBuffers(g_main_render_pass);
@@ -201,7 +200,7 @@ fn getPipeline(
 }
 
 pub fn init(graphics_ctx: *const gfx.GraphicsContext) !void {
-    log.debug("Initializing Vulkan renderer...", .{});
+    log.debug("Initializing Vulkan renderer", .{});
 
     g_allocator = graphics_ctx.allocator;
     g_options = graphics_ctx.options;
@@ -229,7 +228,6 @@ pub fn init(graphics_ctx: *const gfx.GraphicsContext) !void {
     errdefer g_allocator.destroy(g_surface);
 
     g_surface.* = try Surface.init(
-        &g_options,
         &g_library,
         g_instance,
     );
@@ -273,7 +271,6 @@ pub fn init(graphics_ctx: *const gfx.GraphicsContext) !void {
         g_instance,
         g_device,
         g_surface,
-        g_options.window_handle,
     );
     errdefer g_swap_chain.deinit();
 
@@ -334,7 +331,7 @@ pub fn init(graphics_ctx: *const gfx.GraphicsContext) !void {
 }
 
 pub fn deinit() void {
-    log.debug("Deinitializing Vulkan renderer...", .{});
+    log.debug("Deinitializing Vulkan renderer", .{});
 
     g_device.waitIdle() catch {
         log.err("Failed to wait for Vulkan device to become idle", .{});

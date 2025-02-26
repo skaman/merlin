@@ -78,9 +78,9 @@ pub const Instance = struct {
             c.VkApplicationInfo,
             .{
                 .sType = c.VK_STRUCTURE_TYPE_APPLICATION_INFO,
-                .pApplicationName = "z3dfx",
+                .pApplicationName = "merlin",
                 .applicationVersion = c.VK_MAKE_VERSION(1, 0, 0),
-                .pEngineName = "z3dfx",
+                .pEngineName = "merlin",
                 .engineVersion = c.VK_MAKE_VERSION(1, 0, 0),
                 .apiVersion = c.VK_API_VERSION_1_3,
             },

@@ -5,6 +5,8 @@ const utils = @import("../utils.zig");
 const noop = @import("noop.zig");
 const vulkan = @import("vulkan/vulkan.zig");
 
+pub const log = std.log.scoped(.gfx);
+
 pub const GraphicsContext = struct {
     const Self = @This();
 
@@ -15,8 +17,7 @@ pub const GraphicsContext = struct {
 
 pub const GraphicsOptions = struct {
     renderer_type: RendererType,
-    app_name: [:0]const u8,
-    window_handle: platform.WindowHandle,
+    app_name: []const u8,
 
     enable_vulkan_debug: bool = false,
 };
@@ -250,7 +251,7 @@ pub fn init(
     arena_allocator: std.mem.Allocator,
     options: GraphicsOptions,
 ) !void {
-    std.log.debug("Initializing renderer", .{});
+    log.debug("Initializing renderer", .{});
 
     const graphics_context = GraphicsContext{
         .allocator = allocator,
@@ -268,7 +269,7 @@ pub fn init(
 }
 
 pub fn deinit() void {
-    std.log.debug("Deinitializing renderer", .{});
+    log.debug("Deinitializing renderer", .{});
     g_renderer_v_tab.deinit();
 }
 

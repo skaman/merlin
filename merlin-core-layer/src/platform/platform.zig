@@ -4,6 +4,8 @@ const utils = @import("../utils.zig");
 const glfw = @import("glfw.zig");
 const noop = @import("noop.zig");
 
+pub const log = std.log.scoped(.gfx);
+
 const Type = enum {
     noop,
     glfw,
@@ -11,6 +13,7 @@ const Type = enum {
 
 pub const Options = struct {
     type: Type,
+    window: WindowOptions,
 };
 
 pub const WindowOptions = struct {
@@ -20,10 +23,11 @@ pub const WindowOptions = struct {
 };
 
 const VTab = struct {
-    init: *const fn () anyerror!void,
+    init: *const fn (allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
     createWindow: *const fn (handle: WindowHandle, options: *const WindowOptions) anyerror!void,
     destroyWindow: *const fn (handle: WindowHandle) void,
+    shouldCloseDefaultWindow: *const fn () bool,
     shouldCloseWindow: *const fn (handle: WindowHandle) bool,
     pollEvents: *const fn () void,
 };
@@ -44,6 +48,7 @@ fn getVTab(
             .deinit = noop.deinit,
             .createWindow = noop.createWindow,
             .destroyWindow = noop.destroyWindow,
+            .shouldCloseDefaultWindow = noop.shouldCloseDefaultWindow,
             .shouldCloseWindow = noop.shouldCloseWindow,
             .pollEvents = noop.pollEvents,
         },
@@ -52,6 +57,7 @@ fn getVTab(
             .deinit = glfw.deinit,
             .createWindow = glfw.createWindow,
             .destroyWindow = glfw.destroyWindow,
+            .shouldCloseDefaultWindow = glfw.shouldCloseDefaultWindow,
             .shouldCloseWindow = glfw.shouldCloseWindow,
             .pollEvents = glfw.pollEvents,
         },
@@ -59,16 +65,18 @@ fn getVTab(
 }
 
 pub fn init(
+    allocator: std.mem.Allocator,
+    arena_allocator: std.mem.Allocator,
     options: Options,
 ) !void {
-    std.log.debug("Initializing platform", .{});
+    log.debug("Initializing platform", .{});
 
     g_platform_v_tab = try getVTab(options.type);
-    try g_platform_v_tab.init();
+    try g_platform_v_tab.init(allocator, arena_allocator, &options);
 }
 
 pub fn deinit() void {
-    std.log.debug("Deinitializing platform", .{});
+    log.debug("Deinitializing platform", .{});
     g_platform_v_tab.deinit();
 }
 
@@ -87,6 +95,10 @@ pub fn destroyWindow(
 ) void {
     g_platform_v_tab.destroyWindow(handle);
     g_window_handles.free(handle);
+}
+
+pub fn shouldCloseDefaultWindow() bool {
+    return g_platform_v_tab.shouldCloseDefaultWindow();
 }
 
 pub fn shouldCloseWindow(
