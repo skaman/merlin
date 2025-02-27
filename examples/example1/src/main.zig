@@ -21,17 +21,7 @@ const Indices = [_]u16{
 };
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const arena_allocator = arena.allocator();
-
     try mcl.init(
-        allocator,
-        arena_allocator,
         .{
             .window_title = "Example 1",
             .enable_vulkan_debug = true,
@@ -103,8 +93,6 @@ pub fn main() !void {
         gfx.endFrame() catch |err| {
             std.log.err("Failed to end frame: {}", .{err});
         };
-
-        _ = arena.reset(.retain_capacity);
 
         //break;
     }

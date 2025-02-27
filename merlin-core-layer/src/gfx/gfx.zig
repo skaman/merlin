@@ -175,8 +175,12 @@ const VTab = struct {
     drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32) void,
 };
 
+var g_gpa: std.heap.GeneralPurposeAllocator(.{}) = undefined;
 var g_allocator: std.mem.Allocator = undefined;
+
+var g_arena: std.heap.ArenaAllocator = undefined;
 var g_arena_allocator: std.mem.Allocator = undefined;
+
 var g_renderer_type: RendererType = undefined;
 
 var g_shader_handles: utils.HandlePool(ShaderHandle, MaxShaderHandles) = .init();
@@ -244,24 +248,33 @@ fn getVTab(
 }
 
 pub fn init(
-    allocator: std.mem.Allocator,
-    arena_allocator: std.mem.Allocator,
     options: Options,
 ) !void {
     log.debug("Initializing renderer", .{});
 
     g_v_tab = try getVTab(options.renderer_type);
 
-    try g_v_tab.init(allocator, &options);
+    g_gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    errdefer _ = g_gpa.deinit();
+    g_allocator = g_gpa.allocator();
 
-    g_allocator = allocator;
-    g_arena_allocator = arena_allocator;
+    g_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    errdefer g_arena.deinit();
+    g_arena_allocator = g_arena.allocator();
+
+    try g_v_tab.init(g_allocator, &options);
+    errdefer g_v_tab.deinit();
+
     g_renderer_type = options.renderer_type;
 }
 
 pub fn deinit() void {
     log.debug("Deinitializing renderer", .{});
+
     g_v_tab.deinit();
+
+    g_arena.deinit();
+    _ = g_gpa.deinit();
 }
 
 pub fn getSwapchainSize() Size {
@@ -380,7 +393,9 @@ pub fn beginFrame() !bool {
 }
 
 pub fn endFrame() !void {
-    return g_v_tab.endFrame();
+    const result = g_v_tab.endFrame();
+    _ = g_arena.reset(.retain_capacity);
+    return result;
 }
 
 pub fn setViewport(viewport: Rect) void {

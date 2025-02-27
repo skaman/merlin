@@ -14,13 +14,9 @@ pub const Options = struct {
 };
 
 pub fn init(
-    allocator: std.mem.Allocator,
-    arena_allocator: std.mem.Allocator,
     options: Options,
 ) !void {
     try platform.init(
-        allocator,
-        arena_allocator,
         .{
             .type = .glfw,
             .window = .{
@@ -35,14 +31,12 @@ pub fn init(
     const framebuffer_size = platform.getDefaultWindowFramebufferSize();
 
     try gfx.init(
-        allocator,
-        arena_allocator,
         .{
             .renderer_type = .vulkan,
             .app_name = options.app_name,
             .window_type = platform.getNativeWindowHandleType(),
             .window = platform.getNativeDefaultWindowHandle(),
-            .display = platform.getNativeDefaultDisplayHandle(),
+            .display = platform.getNativeDisplayHandle(),
             .framebuffer_width = framebuffer_size[0],
             .framebuffer_height = framebuffer_size[1],
             .enable_vulkan_debug = options.enable_vulkan_debug,
