@@ -22,14 +22,24 @@ pub const WindowOptions = struct {
     title: []const u8,
 };
 
+pub const NativeWindowHandleType = enum(u8) {
+    default, //  Platform default handle type (X11 on Linux).
+    wayland,
+};
+
 const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
     createWindow: *const fn (handle: WindowHandle, options: *const WindowOptions) anyerror!void,
     destroyWindow: *const fn (handle: WindowHandle) void,
+    getDefaultWindowFramebufferSize: *const fn () [2]u32,
+    getWindowFramebufferSize: *const fn (handle: WindowHandle) [2]u32,
     shouldCloseDefaultWindow: *const fn () bool,
     shouldCloseWindow: *const fn (handle: WindowHandle) bool,
     pollEvents: *const fn () void,
+    getNativeWindowHandleType: *const fn () NativeWindowHandleType,
+    getNativeDefaultWindowHandle: *const fn () ?*anyopaque,
+    getNativeDefaultDisplayHandle: *const fn () ?*anyopaque,
 };
 
 pub const WindowHandle = u16;
@@ -48,18 +58,28 @@ fn getVTab(
             .deinit = noop.deinit,
             .createWindow = noop.createWindow,
             .destroyWindow = noop.destroyWindow,
+            .getDefaultWindowFramebufferSize = noop.getDefaultWindowFramebufferSize,
+            .getWindowFramebufferSize = noop.getWindowFramebufferSize,
             .shouldCloseDefaultWindow = noop.shouldCloseDefaultWindow,
             .shouldCloseWindow = noop.shouldCloseWindow,
             .pollEvents = noop.pollEvents,
+            .getNativeWindowHandleType = noop.getNativeWindowHandleType,
+            .getNativeDefaultWindowHandle = noop.getNativeDefaultWindowHandle,
+            .getNativeDefaultDisplayHandle = noop.getNativeDefaultDisplayHandle,
         },
         Type.glfw => return VTab{
             .init = glfw.init,
             .deinit = glfw.deinit,
             .createWindow = glfw.createWindow,
             .destroyWindow = glfw.destroyWindow,
+            .getDefaultWindowFramebufferSize = glfw.getDefaultWindowFramebufferSize,
+            .getWindowFramebufferSize = glfw.getWindowFramebufferSize,
             .shouldCloseDefaultWindow = glfw.shouldCloseDefaultWindow,
             .shouldCloseWindow = glfw.shouldCloseWindow,
             .pollEvents = glfw.pollEvents,
+            .getNativeWindowHandleType = glfw.getNativeWindowHandleType,
+            .getNativeDefaultWindowHandle = glfw.getNativeDefaultWindowHandle,
+            .getNativeDefaultDisplayHandle = glfw.getNativeDefaultDisplayHandle,
         },
     }
 }
@@ -97,6 +117,16 @@ pub fn destroyWindow(
     g_window_handles.free(handle);
 }
 
+pub fn getDefaultWindowFramebufferSize() [2]u32 {
+    return g_platform_v_tab.getDefaultWindowFramebufferSize();
+}
+
+pub fn getWindowFramebufferSize(
+    handle: WindowHandle,
+) [2]u32 {
+    return g_platform_v_tab.getWindowFramebufferSize(handle);
+}
+
 pub fn shouldCloseDefaultWindow() bool {
     return g_platform_v_tab.shouldCloseDefaultWindow();
 }
@@ -109,4 +139,16 @@ pub fn shouldCloseWindow(
 
 pub fn pollEvents() void {
     g_platform_v_tab.pollEvents();
+}
+
+pub fn getNativeWindowHandleType() NativeWindowHandleType {
+    return g_platform_v_tab.getNativeWindowHandleType();
+}
+
+pub fn getNativeDefaultWindowHandle() ?*anyopaque {
+    return g_platform_v_tab.getNativeDefaultWindowHandle();
+}
+
+pub fn getNativeDefaultDisplayHandle() ?*anyopaque {
+    return g_platform_v_tab.getNativeDefaultDisplayHandle();
 }

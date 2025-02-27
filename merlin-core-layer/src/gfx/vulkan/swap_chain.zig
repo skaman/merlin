@@ -1,7 +1,6 @@
 const std = @import("std");
 
 const c = @import("../../c.zig").c;
-const glfw = @import("../../platform/glfw.zig");
 const platform = @import("../../platform/platform.zig");
 const gfx = @import("../gfx.zig");
 const vk = @import("vulkan.zig");
@@ -55,7 +54,7 @@ pub const SwapChainSupportDetails = struct {
     }
 };
 
-pub const nSwapChain = struct {
+pub const SwapChain = struct {
     const Self = @This();
 
     allocator: std.mem.Allocator,
@@ -72,6 +71,8 @@ pub const nSwapChain = struct {
         instance: *vk.Instance,
         device: *const vk.Device,
         surface: *const vk.Surface,
+        width: u32,
+        height: u32,
     ) !Self {
         var swap_chain_support = try SwapChainSupportDetails.init(
             allocator,
@@ -84,16 +85,10 @@ pub const nSwapChain = struct {
         const surface_format = chooseSwapSurfaceFormat(swap_chain_support.formats);
         const present_mode = chooseSwapPresentMode(swap_chain_support.present_modes);
 
-        var window_width: c_int = undefined;
-        var window_height: c_int = undefined;
-        glfw.glfwGetDefaultFramebufferSize(
-            &window_width,
-            &window_height,
-        );
         const extent = chooseSwapExtent(
             &swap_chain_support.capabilities,
-            @intCast(window_width),
-            @intCast(window_height),
+            width,
+            height,
         );
 
         var image_count = swap_chain_support.capabilities.minImageCount + 1;

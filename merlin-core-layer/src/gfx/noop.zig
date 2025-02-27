@@ -2,12 +2,12 @@ const std = @import("std");
 
 const gfx = @import("gfx.zig");
 
-pub fn init(_: *const gfx.GraphicsContext) !void {}
+pub fn init(_: std.mem.Allocator, _: *const gfx.Options) !void {}
 pub fn deinit() void {}
 pub fn getSwapchainSize() gfx.Size {
     return .{ .width = 0, .height = 0 };
 }
-pub fn invalidateFramebuffer() void {}
+pub fn setViewSize(_: u32, _: u32) void {}
 pub fn createShader(_: gfx.ShaderHandle, _: []align(@alignOf(u32)) const u8, _: []?gfx.Attribute) !void {}
 pub fn destroyShader(_: gfx.ShaderHandle) void {}
 pub fn createProgram(_: gfx.ProgramHandle, _: gfx.ShaderHandle, _: gfx.ShaderHandle) !void {}

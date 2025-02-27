@@ -1,7 +1,7 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const c = @import("../c.zig").c;
-const gfx = @import("../gfx/gfx.zig");
 const platform = @import("platform.zig");
 
 var g_allocator: std.mem.Allocator = undefined;
@@ -11,37 +11,6 @@ var g_default_window: *c.GLFWwindow = undefined;
 
 fn glfwErrorCallback(_: c_int, description: [*c]const u8) callconv(.c) void {
     std.log.err("{s}", .{description});
-}
-
-fn glfwFramebufferSizeCallback(_: ?*c.GLFWwindow, _: c_int, _: c_int) callconv(.c) void {
-    gfx.invalidateFramebuffer();
-}
-
-pub fn glfwCreateWindowSurface(
-    instance: c.VkInstance,
-    window_handle: platform.WindowHandle,
-    allocator: [*c]const c.VkAllocationCallbacks,
-    surface: [*c]c.VkSurfaceKHR,
-) c.VkResult {
-    const window = g_windows[window_handle];
-    return c.glfwCreateWindowSurface(instance, window, allocator, surface);
-}
-
-pub fn glfwCreateDefaultWindowSurface(
-    instance: c.VkInstance,
-    allocator: [*c]const c.VkAllocationCallbacks,
-    surface: [*c]c.VkSurfaceKHR,
-) c.VkResult {
-    return c.glfwCreateWindowSurface(instance, g_default_window, allocator, surface);
-}
-
-pub fn glfwGetFramebufferSize(window_handle: platform.WindowHandle, width: *c_int, height: *c_int) void {
-    const window = g_windows[window_handle];
-    c.glfwGetFramebufferSize(window, width, height);
-}
-
-pub fn glfwGetDefaultFramebufferSize(width: *c_int, height: *c_int) void {
-    c.glfwGetFramebufferSize(g_default_window, width, height);
 }
 
 pub fn init(
@@ -67,7 +36,7 @@ pub fn init(
     ) orelse return error.WindowInitFailed;
     errdefer c.glfwDestroyWindow(g_default_window);
 
-    _ = c.glfwSetFramebufferSizeCallback(g_default_window, &glfwFramebufferSizeCallback);
+    //_ = c.glfwSetFramebufferSizeCallback(g_default_window, &glfwFramebufferSizeCallback);
 }
 
 pub fn deinit() void {
@@ -79,18 +48,32 @@ pub fn createWindow(handle: platform.WindowHandle, options: *const platform.Wind
     const window = c.glfwCreateWindow(
         @intCast(options.width),
         @intCast(options.height),
-        try g_arena_allocator.dupeZ(u8, options.window.title),
+        try g_arena_allocator.dupeZ(u8, options.title),
         null,
         null,
     ) orelse return error.WindowInitFailed;
 
-    _ = c.glfwSetFramebufferSizeCallback(window, &glfwFramebufferSizeCallback);
+    //_ = c.glfwSetFramebufferSizeCallback(window, &glfwFramebufferSizeCallback);
 
     g_windows[handle] = window;
 }
 
 pub fn destroyWindow(handle: platform.WindowHandle) void {
     c.glfwDestroyWindow(g_windows[handle]);
+}
+
+pub fn getDefaultWindowFramebufferSize() [2]u32 {
+    var width: c_int = undefined;
+    var height: c_int = undefined;
+    c.glfwGetFramebufferSize(g_default_window, &width, &height);
+    return .{ @intCast(width), @intCast(height) };
+}
+
+pub fn getWindowFramebufferSize(handle: platform.WindowHandle) [2]u32 {
+    var width: c_int = undefined;
+    var height: c_int = undefined;
+    c.glfwGetFramebufferSize(g_windows[handle], &width, &height);
+    return .{ @intCast(width), @intCast(height) };
 }
 
 pub fn shouldCloseDefaultWindow() bool {
@@ -103,4 +86,33 @@ pub fn shouldCloseWindow(handle: platform.WindowHandle) bool {
 
 pub fn pollEvents() void {
     c.glfwPollEvents();
+}
+
+pub fn getNativeWindowHandleType() platform.NativeWindowHandleType {
+    if (builtin.os.tag == .linux) {
+        if (c.glfwGetPlatform() == c.GLFW_PLATFORM_WAYLAND)
+            return .wayland;
+    }
+
+    return .default;
+}
+pub fn getNativeDefaultWindowHandle() ?*anyopaque {
+    switch (builtin.os.tag) {
+        .linux => {
+            if (c.glfwGetPlatform() == c.GLFW_PLATFORM_WAYLAND)
+                return c.glfwGetWaylandWindow(g_default_window);
+            return @ptrFromInt(c.glfwGetX11Window(g_default_window));
+        },
+        .windows => return c.glfwGetWin32Window(g_default_window),
+        .macos => return c.glfwGetCocoaWindow(g_default_window),
+        else => @compileError("Unsupported OS"),
+    }
+}
+pub fn getNativeDefaultDisplayHandle() ?*anyopaque {
+    if (builtin.os.tag == .linux) {
+        if (c.glfwGetPlatform() == c.GLFW_PLATFORM_WAYLAND)
+            return c.glfwGetWaylandDisplay();
+        return c.glfwGetX11Display();
+    }
+    return null;
 }

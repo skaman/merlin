@@ -30,26 +30,32 @@ pub const Instance = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        options: *const gfx.GraphicsOptions,
+        options: *const gfx.Options,
         library: *vk.Library,
         allocation_callbacks: ?*c.VkAllocationCallbacks,
     ) !Self {
         var extensions = std.ArrayList([*:0]const u8).init(allocator);
         defer extensions.deinit();
 
-        var glfw_extension_count: u32 = 0;
-        const glfw_extensions = c.glfwGetRequiredInstanceExtensions(
-            &glfw_extension_count,
-        );
-        for (0..glfw_extension_count) |index| {
-            try extensions.append(glfw_extensions[index]);
-        }
-
+        try extensions.append(c.VK_KHR_SURFACE_EXTENSION_NAME);
         switch (builtin.target.os.tag) {
-            .macos, .ios, .tvos => {
-                try extensions.append(c.VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+            .windows => {
+                try extensions.append(c.VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
             },
-            else => {},
+            .linux => {
+                if (options.window_type == .wayland) {
+                    try extensions.append(c.VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
+                } else {
+                    try extensions.append(c.VK_KHR_XCB_SURFACE_EXTENSION_NAME);
+                }
+            },
+            .macos => {
+                try extensions.append(c.VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+                try extensions.append(c.VK_MVK_MACOS_SURFACE_EXTENSION_NAME);
+            },
+            else => {
+                @compileError("Unsupported OS");
+            },
         }
 
         if (options.enable_vulkan_debug) {

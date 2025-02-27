@@ -30,4 +30,23 @@ pub fn build(b: *std.Build) !void {
     merlin_core_layer.linkLibrary(vulkan_utility_libraries.artifact("vulkan_utility_libraries"));
     merlin_core_layer.addIncludePath(b.path("../vendor/vulkan-utility-libraries/upstream/include"));
     merlin_core_layer.root_module.addImport("zmath", zmath.module("root"));
+
+    switch (builtin.target.os.tag) {
+        .windows => {
+            merlin_core_layer_mod.addCMacro("GLFW_EXPOSE_NATIVE_WIN32", "");
+            merlin_core_layer_mod.addCMacro("VK_USE_PLATFORM_WIN32_KHR", "");
+        },
+        .linux => {
+            merlin_core_layer_mod.addCMacro("GLFW_EXPOSE_NATIVE_X11", "");
+            merlin_core_layer_mod.addCMacro("GLFW_EXPOSE_NATIVE_WAYLAND", "");
+            merlin_core_layer_mod.addCMacro("VK_USE_PLATFORM_XCB_KHR", "");
+            merlin_core_layer_mod.addCMacro("VK_USE_PLATFORM_XLIB_KHR", "");
+            merlin_core_layer_mod.addCMacro("VK_USE_PLATFORM_WAYLAND_KHR", "");
+        },
+        .macos => {
+            merlin_core_layer_mod.addCMacro("GLFW_EXPOSE_NATIVE_COCOA", "");
+            merlin_core_layer_mod.addCMacro("VK_USE_PLATFORM_MACOS_MVK", "");
+        },
+        else => @compileError("Unsupported OS"),
+    }
 }

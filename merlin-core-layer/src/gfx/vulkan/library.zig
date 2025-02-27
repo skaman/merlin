@@ -52,7 +52,7 @@ pub const Library = struct {
         return error.LoadLibraryFailed;
     }
 
-    fn get_proc(
+    pub fn get_proc(
         self: Self,
         comptime PFN: type,
         instance: c.VkInstance,

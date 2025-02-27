@@ -81,7 +81,7 @@ pub const Device = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        options: *const gfx.GraphicsOptions,
+        options: *const gfx.Options,
         library: *vk.Library,
         instance: *vk.Instance,
         surface: *const vk.Surface,

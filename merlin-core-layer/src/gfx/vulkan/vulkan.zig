@@ -2,7 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const c = @import("../../c.zig").c;
-const glfw = @import("../../platform/glfw.zig");
 const gfx = @import("../gfx.zig");
 pub const Buffer = @import("buffer.zig").Buffer;
 pub const CommandBuffers = @import("command_buffers.zig").CommandBuffers;
@@ -15,7 +14,7 @@ pub const Program = @import("program.zig").Program;
 pub const RenderPass = @import("render_pass.zig").RenderPass;
 pub const Shader = @import("shader.zig").Shader;
 pub const Surface = @import("surface.zig").Surface;
-pub const SwapChain = @import("swap_chain.zig").nSwapChain;
+pub const SwapChain = @import("swap_chain.zig").SwapChain;
 pub const SwapChainSupportDetails = @import("swap_chain.zig").SwapChainSupportDetails;
 pub const VertexBuffer = @import("vertex_buffer.zig").VertexBuffer;
 
@@ -29,7 +28,7 @@ const PipelineKey = struct {
 };
 
 var g_allocator: std.mem.Allocator = undefined;
-var g_options: gfx.GraphicsOptions = undefined;
+var g_options: gfx.Options = undefined;
 var g_library: Library = undefined;
 var g_instance: *Instance = undefined;
 var g_device: *Device = undefined;
@@ -63,6 +62,8 @@ var g_current_program: ?gfx.ProgramHandle = null;
 var g_current_vertex_buffer: ?gfx.VertexBufferHandle = null;
 var g_current_index_buffer: ?gfx.IndexBufferHandle = null;
 
+var g_framebuffer_width: u32 = 0;
+var g_framebuffer_height: u32 = 0;
 var g_framebuffer_invalidated: bool = false;
 
 pub fn debugCallback(
@@ -93,7 +94,7 @@ pub fn debugCallback(
 
 pub fn prepareValidationLayers(
     allocator: std.mem.Allocator,
-    options: *const gfx.GraphicsOptions,
+    options: *const gfx.Options,
 ) !std.ArrayList([*:0]const u8) {
     var layers = std.ArrayList([*:0]const u8).init(
         allocator,
@@ -114,7 +115,7 @@ pub fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void 
     }
 }
 
-fn setupDebugMessenger(options: *const gfx.GraphicsOptions, instance: *Instance) !?c.VkDebugUtilsMessengerEXT {
+fn setupDebugMessenger(options: *const gfx.Options, instance: *Instance) !?c.VkDebugUtilsMessengerEXT {
     if (!options.enable_vulkan_debug) {
         return null;
     }
@@ -150,12 +151,9 @@ fn cleanUpBuffers() void {
 }
 
 fn recreateSwapChain() !void {
-    var width: c_int = 0;
-    var height: c_int = 0;
-    glfw.glfwGetDefaultFramebufferSize(&width, &height);
-    while (width == 0 or height == 0) {
-        glfw.glfwGetDefaultFramebufferSize(&width, &height);
-        c.glfwWaitEvents();
+    if (g_framebuffer_width == 0 or g_framebuffer_height == 0) {
+        g_framebuffer_invalidated = true;
+        return;
     }
 
     g_device.waitIdle() catch {
@@ -171,6 +169,8 @@ fn recreateSwapChain() !void {
         g_instance,
         g_device,
         g_surface,
+        g_framebuffer_width,
+        g_framebuffer_height,
     );
 
     try g_swap_chain.createFrameBuffers(g_main_render_pass);
@@ -199,11 +199,13 @@ fn getPipeline(
     return pipeline.?;
 }
 
-pub fn init(graphics_ctx: *const gfx.GraphicsContext) !void {
+pub fn init(allocator: std.mem.Allocator, options: *const gfx.Options) !void {
     log.debug("Initializing Vulkan renderer", .{});
 
-    g_allocator = graphics_ctx.allocator;
-    g_options = graphics_ctx.options;
+    g_allocator = allocator;
+    g_options = options.*;
+    g_framebuffer_width = options.framebuffer_width;
+    g_framebuffer_height = options.framebuffer_height;
 
     g_library = try Library.init();
     errdefer g_library.deinit();
@@ -230,6 +232,7 @@ pub fn init(graphics_ctx: *const gfx.GraphicsContext) !void {
     g_surface.* = try Surface.init(
         &g_library,
         g_instance,
+        &g_options,
     );
     errdefer g_surface.deinit();
 
@@ -271,6 +274,8 @@ pub fn init(graphics_ctx: *const gfx.GraphicsContext) !void {
         g_instance,
         g_device,
         g_surface,
+        g_framebuffer_width,
+        g_framebuffer_height,
     );
     errdefer g_swap_chain.deinit();
 
@@ -382,8 +387,12 @@ pub fn getSwapchainSize() gfx.Size {
     };
 }
 
-pub fn invalidateFramebuffer() void {
-    g_framebuffer_invalidated = true;
+pub fn setViewSize(width: u32, height: u32) void {
+    if (g_framebuffer_width != width or g_framebuffer_height != height) {
+        g_framebuffer_width = width;
+        g_framebuffer_height = height;
+        g_framebuffer_invalidated = true;
+    }
 }
 
 pub fn createShader(

@@ -69,6 +69,9 @@ pub fn main() !void {
     while (!platform.shouldCloseDefaultWindow()) {
         platform.pollEvents();
 
+        const window_size = platform.getDefaultWindowFramebufferSize();
+        gfx.setViewSize(window_size[0], window_size[1]);
+
         const result = gfx.beginFrame() catch |err| {
             std.log.err("Failed to begin frame: {}", .{err});
             continue;

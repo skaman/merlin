@@ -7,17 +7,14 @@ const vulkan = @import("vulkan/vulkan.zig");
 
 pub const log = std.log.scoped(.gfx);
 
-pub const GraphicsContext = struct {
-    const Self = @This();
-
-    allocator: std.mem.Allocator,
-    arena_allocator: std.mem.Allocator,
-    options: GraphicsOptions,
-};
-
-pub const GraphicsOptions = struct {
+pub const Options = struct {
     renderer_type: RendererType,
     app_name: []const u8,
+    window_type: platform.NativeWindowHandleType,
+    window: ?*anyopaque,
+    display: ?*anyopaque,
+    framebuffer_width: u32,
+    framebuffer_height: u32,
 
     enable_vulkan_debug: bool = false,
 };
@@ -154,11 +151,11 @@ pub const MaxProgramHandles = 512;
 pub const MaxVertexBufferHandles = 512;
 pub const MaxIndexBufferHandles = 512;
 
-const RendererVTab = struct {
-    init: *const fn (graphics_ctx: *const GraphicsContext) anyerror!void,
+const VTab = struct {
+    init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
     getSwapchainSize: *const fn () Size,
-    invalidateFramebuffer: *const fn () void,
+    setViewSize: *const fn (width: u32, height: u32) void,
     createShader: *const fn (handle: ShaderHandle, data: []align(@alignOf(u32)) const u8, input_attributes: []?Attribute) anyerror!void,
     destroyShader: *const fn (handle: ShaderHandle) void,
     createProgram: *const fn (handle: ProgramHandle, vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!void,
@@ -187,18 +184,18 @@ var g_program_handles: utils.HandlePool(ProgramHandle, MaxProgramHandles) = .ini
 var g_vertex_buffer_handles: utils.HandlePool(VertexBufferHandle, MaxVertexBufferHandles) = .init();
 var g_index_buffer_handles: utils.HandlePool(IndexBufferHandle, MaxIndexBufferHandles) = .init();
 
-var g_renderer_v_tab: RendererVTab = undefined;
+var g_v_tab: VTab = undefined;
 
-fn getRendererVTab(
+fn getVTab(
     renderer_type: RendererType,
-) !RendererVTab {
+) !VTab {
     switch (renderer_type) {
         RendererType.noop => {
-            return RendererVTab{
+            return VTab{
                 .init = noop.init,
                 .deinit = noop.deinit,
                 .getSwapchainSize = noop.getSwapchainSize,
-                .invalidateFramebuffer = noop.invalidateFramebuffer,
+                .setViewSize = noop.setViewSize,
                 .createShader = noop.createShader,
                 .destroyShader = noop.destroyShader,
                 .createProgram = noop.createProgram,
@@ -219,11 +216,11 @@ fn getRendererVTab(
             };
         },
         RendererType.vulkan => {
-            return RendererVTab{
+            return VTab{
                 .init = vulkan.init,
                 .deinit = vulkan.deinit,
                 .getSwapchainSize = vulkan.getSwapchainSize,
-                .invalidateFramebuffer = vulkan.invalidateFramebuffer,
+                .setViewSize = vulkan.setViewSize,
                 .createShader = vulkan.createShader,
                 .destroyShader = vulkan.destroyShader,
                 .createProgram = vulkan.createProgram,
@@ -249,19 +246,13 @@ fn getRendererVTab(
 pub fn init(
     allocator: std.mem.Allocator,
     arena_allocator: std.mem.Allocator,
-    options: GraphicsOptions,
+    options: Options,
 ) !void {
     log.debug("Initializing renderer", .{});
 
-    const graphics_context = GraphicsContext{
-        .allocator = allocator,
-        .arena_allocator = arena_allocator,
-        .options = options,
-    };
+    g_v_tab = try getVTab(options.renderer_type);
 
-    g_renderer_v_tab = try getRendererVTab(options.renderer_type);
-
-    try g_renderer_v_tab.init(&graphics_context);
+    try g_v_tab.init(allocator, &options);
 
     g_allocator = allocator;
     g_arena_allocator = arena_allocator;
@@ -270,15 +261,15 @@ pub fn init(
 
 pub fn deinit() void {
     log.debug("Deinitializing renderer", .{});
-    g_renderer_v_tab.deinit();
+    g_v_tab.deinit();
 }
 
 pub fn getSwapchainSize() Size {
-    return g_renderer_v_tab.getSwapchainSize();
+    return g_v_tab.getSwapchainSize();
 }
 
-pub fn invalidateFramebuffer() void {
-    g_renderer_v_tab.invalidateFramebuffer();
+pub fn setViewSize(width: u32, height: u32) void {
+    g_v_tab.setViewSize(width, height);
 }
 
 pub fn createShader(reader: anytype) !ShaderHandle {
@@ -331,7 +322,7 @@ pub fn createShader(reader: anytype) !ShaderHandle {
     const handle = try g_shader_handles.alloc();
     errdefer g_shader_handles.free(handle);
 
-    try g_renderer_v_tab.createShader(handle, shader_data, input_attributes);
+    try g_v_tab.createShader(handle, shader_data, input_attributes);
     return handle;
 }
 
@@ -341,7 +332,7 @@ pub fn createShaderFromMemory(data: []const u8) !ShaderHandle {
 }
 
 pub fn destroyShader(handle: ShaderHandle) void {
-    g_renderer_v_tab.destroyShader(handle);
+    g_v_tab.destroyShader(handle);
     g_shader_handles.free(handle);
 }
 
@@ -349,12 +340,12 @@ pub fn createProgram(vertex_shader: ShaderHandle, fragment_shader: ShaderHandle)
     const handle = try g_program_handles.alloc();
     errdefer g_program_handles.free(handle);
 
-    try g_renderer_v_tab.createProgram(handle, vertex_shader, fragment_shader);
+    try g_v_tab.createProgram(handle, vertex_shader, fragment_shader);
     return handle;
 }
 
 pub fn destroyProgram(handle: ProgramHandle) void {
-    g_renderer_v_tab.destroyProgram(handle);
+    g_v_tab.destroyProgram(handle);
     g_program_handles.free(handle);
 }
 
@@ -362,12 +353,12 @@ pub fn createVertexBuffer(data: [*]const u8, size: u32, layout: VertexLayout) !V
     const handle = try g_vertex_buffer_handles.alloc();
     errdefer g_vertex_buffer_handles.free(handle);
 
-    try g_renderer_v_tab.createVertexBuffer(handle, data, size, layout);
+    try g_v_tab.createVertexBuffer(handle, data, size, layout);
     return handle;
 }
 
 pub fn destroyVertexBuffer(handle: VertexBufferHandle) void {
-    g_renderer_v_tab.destroyVertexBuffer(handle);
+    g_v_tab.destroyVertexBuffer(handle);
     g_vertex_buffer_handles.free(handle);
 }
 
@@ -375,47 +366,47 @@ pub fn createIndexBuffer(data: [*]const u8, size: u32, index_type: IndexType) !I
     const handle = try g_index_buffer_handles.alloc();
     errdefer g_index_buffer_handles.free(handle);
 
-    try g_renderer_v_tab.createIndexBuffer(handle, data, size, index_type);
+    try g_v_tab.createIndexBuffer(handle, data, size, index_type);
     return handle;
 }
 
 pub fn destroyIndexBuffer(handle: IndexBufferHandle) void {
-    g_renderer_v_tab.destroyIndexBuffer(handle);
+    g_v_tab.destroyIndexBuffer(handle);
     g_index_buffer_handles.free(handle);
 }
 
 pub fn beginFrame() !bool {
-    return g_renderer_v_tab.beginFrame();
+    return g_v_tab.beginFrame();
 }
 
 pub fn endFrame() !void {
-    return g_renderer_v_tab.endFrame();
+    return g_v_tab.endFrame();
 }
 
 pub fn setViewport(viewport: Rect) void {
-    g_renderer_v_tab.setViewport(viewport);
+    g_v_tab.setViewport(viewport);
 }
 
 pub fn setScissor(scissor: Rect) void {
-    g_renderer_v_tab.setScissor(scissor);
+    g_v_tab.setScissor(scissor);
 }
 
 pub fn bindProgram(handle: ProgramHandle) void {
-    g_renderer_v_tab.bindProgram(handle);
+    g_v_tab.bindProgram(handle);
 }
 
 pub fn bindVertexBuffer(handle: VertexBufferHandle) void {
-    g_renderer_v_tab.bindVertexBuffer(handle);
+    g_v_tab.bindVertexBuffer(handle);
 }
 
 pub fn bindIndexBuffer(handle: IndexBufferHandle) void {
-    g_renderer_v_tab.bindIndexBuffer(handle);
+    g_v_tab.bindIndexBuffer(handle);
 }
 
 pub fn draw(vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void {
-    g_renderer_v_tab.draw(vertex_count, instance_count, first_vertex, first_instance);
+    g_v_tab.draw(vertex_count, instance_count, first_vertex, first_instance);
 }
 
 pub fn drawIndexed(index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32) void {
-    g_renderer_v_tab.drawIndexed(index_count, instance_count, first_index, vertex_offset, first_instance);
+    g_v_tab.drawIndexed(index_count, instance_count, first_index, vertex_offset, first_instance);
 }
