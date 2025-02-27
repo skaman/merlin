@@ -90,5 +90,7 @@ pub fn build(b: *std.Build) void {
     const spirv_tools = b.dependency("spirv_tools", .{});
     lib.linkLibrary(spirv_tools.artifact("spirv_tools"));
 
+    lib.addIncludePath(b.path("../spirv-tools/upstream/include"));
+
     b.installArtifact(lib);
 }
