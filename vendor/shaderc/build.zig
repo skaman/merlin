@@ -38,6 +38,7 @@ pub fn build(b: *std.Build) void {
 
     lib.addIncludePath(b.path("../glslang/upstream/"));
     lib.addIncludePath(b.path("../spirv-headers/upstream/include"));
+    lib.addIncludePath(b.path("../spirv-tools/upstream/include"));
 
     b.installArtifact(lib);
 }
