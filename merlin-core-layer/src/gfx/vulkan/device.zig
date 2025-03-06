@@ -40,6 +40,7 @@ pub const Device = struct {
         CmdBindPipeline: std.meta.Child(c.PFN_vkCmdBindPipeline) = undefined,
         CmdBindVertexBuffers: std.meta.Child(c.PFN_vkCmdBindVertexBuffers) = undefined,
         CmdBindIndexBuffer: std.meta.Child(c.PFN_vkCmdBindIndexBuffer) = undefined,
+        CmdBindDescriptorSets: std.meta.Child(c.PFN_vkCmdBindDescriptorSets) = undefined,
         CmdDraw: std.meta.Child(c.PFN_vkCmdDraw) = undefined,
         CmdDrawIndexed: std.meta.Child(c.PFN_vkCmdDrawIndexed) = undefined,
         CmdCopyBuffer: std.meta.Child(c.PFN_vkCmdCopyBuffer) = undefined,
@@ -60,6 +61,13 @@ pub const Device = struct {
         BindBufferMemory: std.meta.Child(c.PFN_vkBindBufferMemory) = undefined,
         MapMemory: std.meta.Child(c.PFN_vkMapMemory) = undefined,
         UnmapMemory: std.meta.Child(c.PFN_vkUnmapMemory) = undefined,
+        CreateDescriptorPool: std.meta.Child(c.PFN_vkCreateDescriptorPool) = undefined,
+        DestroyDescriptorPool: std.meta.Child(c.PFN_vkDestroyDescriptorPool) = undefined,
+        AllocateDescriptorSets: std.meta.Child(c.PFN_vkAllocateDescriptorSets) = undefined,
+        UpdateDescriptorSets: std.meta.Child(c.PFN_vkUpdateDescriptorSets) = undefined,
+        FreeDescriptorSets: std.meta.Child(c.PFN_vkFreeDescriptorSets) = undefined,
+        CreateDescriptorSetLayout: std.meta.Child(c.PFN_vkCreateDescriptorSetLayout) = undefined,
+        DestroyDescriptorSetLayout: std.meta.Child(c.PFN_vkDestroyDescriptorSetLayout) = undefined,
     };
     const QueueFamilyIndices = struct {
         graphics_family: ?u32 = null,
@@ -114,22 +122,20 @@ pub const Device = struct {
             var properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
             instance.getPhysicalDeviceProperties(physical_device, &properties);
 
-            vk.log.debug("---------------------------------------------------------------", .{});
-            vk.log.debug("  Physical device: {d}", .{index});
-            vk.log.debug("             Name: {s}", .{properties.deviceName});
-            vk.log.debug("      API version: {d}.{d}.{d}", .{
+            vk.log.debug("Physical device {s} ({d}):", .{ properties.deviceName, index });
+            vk.log.debug("  - API version: {d}.{d}.{d}", .{
                 c.VK_API_VERSION_MAJOR(properties.apiVersion),
                 c.VK_API_VERSION_MINOR(properties.apiVersion),
                 c.VK_API_VERSION_PATCH(properties.apiVersion),
             });
-            vk.log.debug("      API variant: {d}", .{
+            vk.log.debug("  - API variant: {d}", .{
                 c.VK_API_VERSION_VARIANT(properties.apiVersion),
             });
-            vk.log.debug("   Driver version: {x}", .{properties.driverVersion});
-            vk.log.debug("        Vendor ID: {x}", .{properties.vendorID});
-            vk.log.debug("        Device ID: {x}", .{properties.deviceID});
-            vk.log.debug("             Type: {s}", .{c.string_VkPhysicalDeviceType(properties.deviceType)});
-            vk.log.debug("            Score: {d}", .{score});
+            vk.log.debug("  - Driver version: {x}", .{properties.driverVersion});
+            vk.log.debug("  - Vendor ID: {x}", .{properties.vendorID});
+            vk.log.debug("  - Device ID: {x}", .{properties.deviceID});
+            vk.log.debug("  - Type: {s}", .{c.string_VkPhysicalDeviceType(properties.deviceType)});
+            vk.log.debug("  - Score: {d}", .{score});
 
             var memory_properties = std.mem.zeroes(
                 c.VkPhysicalDeviceMemoryProperties,
@@ -139,19 +145,19 @@ pub const Device = struct {
                 &memory_properties,
             );
 
-            vk.log.debug("Memory type count: {d}", .{memory_properties.memoryTypeCount});
+            vk.log.debug("  - Memory type count: {d}", .{memory_properties.memoryTypeCount});
             for (0..memory_properties.memoryTypeCount) |mp_index| {
                 const memory_type = memory_properties.memoryTypes[mp_index];
                 vk.log.debug(
-                    "              {d:0>3}: flags 0x{x:0>8}, index {d}",
+                    "    {d:0>3}: flags 0x{x:0>8}, index {d}",
                     .{ mp_index, memory_type.propertyFlags, memory_type.heapIndex },
                 );
             }
-            vk.log.debug("Memory heap count: {d}", .{memory_properties.memoryHeapCount});
+            vk.log.debug("  - Memory heap count: {d}", .{memory_properties.memoryHeapCount});
             for (0..memory_properties.memoryHeapCount) |mh_index| {
                 const memory_heap = memory_properties.memoryHeaps[mh_index];
                 vk.log.debug(
-                    "              {d:0>3}: size {d}, flags 0x{x:0>8}",
+                    "    {d:0>3}: size {d}, flags 0x{x:0>8}",
                     .{ mh_index, std.fmt.fmtIntSizeBin(memory_heap.size), memory_heap.flags },
                 );
             }
@@ -169,8 +175,6 @@ pub const Device = struct {
             return error.NoSuitablePhysicalDevicesFound;
         }
 
-        vk.log.debug("---------------------------------------------------------------", .{});
-
         const queue_family_indices = try findQueueFamilies(
             allocator,
             instance,
@@ -184,13 +188,13 @@ pub const Device = struct {
         try unique_queue_families.put(queue_family_indices.present_family.?, void{});
         try unique_queue_families.put(queue_family_indices.transfer_family.?, void{});
 
-        vk.log.debug("Using physical device: {s} ({d})", .{
+        vk.log.debug("Using physical device {s} ({d}):", .{
             selected_physical_device_properties.deviceName,
             selected_physical_device_index,
         });
-        vk.log.debug("Graphics queue family: {d}", .{queue_family_indices.graphics_family.?});
-        vk.log.debug(" Present queue family: {d}", .{queue_family_indices.present_family.?});
-        vk.log.debug(" Transer queue family: {d}", .{queue_family_indices.transfer_family.?});
+        vk.log.debug("  - Graphics queue family: {d}", .{queue_family_indices.graphics_family.?});
+        vk.log.debug("  - Present queue family: {d}", .{queue_family_indices.present_family.?});
+        vk.log.debug("  - Transer queue family: {d}", .{queue_family_indices.transfer_family.?});
 
         var device_queue_create_infos = std.ArrayList(c.VkDeviceQueueCreateInfo).init(allocator);
         defer device_queue_create_infos.deinit();
@@ -264,6 +268,8 @@ pub const Device = struct {
         physical_device: c.VkPhysicalDevice,
         required_extensions: []const [*:0]const u8,
     ) !u32 {
+        std.debug.assert(physical_device != null);
+
         var properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
         var features = std.mem.zeroes(c.VkPhysicalDeviceFeatures);
         var queue_family_properties = std.ArrayList(c.VkQueueFamilyProperties).init(
@@ -332,6 +338,8 @@ pub const Device = struct {
         surface: *const vk.Surface,
         physical_device: c.VkPhysicalDevice,
     ) !QueueFamilyIndices {
+        std.debug.assert(physical_device != null);
+
         var queue_family_indices = QueueFamilyIndices{};
 
         const queue_families = try instance.getPhysicalDeviceQueueFamilyPropertiesAlloc(
@@ -387,6 +395,8 @@ pub const Device = struct {
         physical_device: c.VkPhysicalDevice,
         required_extensions: []const [*:0]const u8,
     ) !bool {
+        std.debug.assert(physical_device != null);
+
         const available_extensions = try instance.enumerateDeviceExtensionPropertiesAlloc(
             allocator,
             physical_device,
@@ -439,6 +449,9 @@ pub const Device = struct {
         submits: [*c]const c.VkSubmitInfo,
         fence: c.VkFence,
     ) !void {
+        std.debug.assert(queue != null);
+        std.debug.assert(submits != null);
+
         try vk.checkVulkanError(
             "Failed to submit Vulkan queue",
             self.dispatch.QueueSubmit(
@@ -455,6 +468,8 @@ pub const Device = struct {
         queue: c.VkQueue,
         present_info: *const c.VkPresentInfoKHR,
     ) !c.VkResult {
+        std.debug.assert(queue != null);
+
         const result = self.dispatch.QueuePresentKHR(
             queue,
             present_info,
@@ -474,6 +489,8 @@ pub const Device = struct {
         self: *const Self,
         queue: c.VkQueue,
     ) !void {
+        std.debug.assert(queue != null);
+
         try vk.checkVulkanError(
             "Failed to wait for Vulkan queue",
             self.dispatch.QueueWaitIdle(queue),
@@ -500,6 +517,8 @@ pub const Device = struct {
         self: *const Self,
         swapchain: c.VkSwapchainKHR,
     ) void {
+        std.debug.assert(swapchain != null);
+
         self.dispatch.DestroySwapchainKHR(
             self.device,
             swapchain,
@@ -513,6 +532,8 @@ pub const Device = struct {
         count: *u32,
         images: [*c]c.VkImage,
     ) !void {
+        std.debug.assert(swapchain != null);
+
         const result = self.dispatch.GetSwapchainImagesKHR(
             self.device,
             swapchain,
@@ -535,6 +556,8 @@ pub const Device = struct {
         allocator: std.mem.Allocator,
         swapchain: c.VkSwapchainKHR,
     ) ![]c.VkImage {
+        std.debug.assert(swapchain != null);
+
         var count: u32 = undefined;
         try self.getSwapchainImagesKHR(
             swapchain,
@@ -576,6 +599,8 @@ pub const Device = struct {
         self: *const Self,
         image_view: c.VkImageView,
     ) void {
+        std.debug.assert(image_view != null);
+
         self.dispatch.DestroyImageView(
             self.device,
             image_view,
@@ -603,6 +628,8 @@ pub const Device = struct {
         self: *const Self,
         shader_module: c.VkShaderModule,
     ) void {
+        std.debug.assert(shader_module != null);
+
         self.dispatch.DestroyShaderModule(
             self.device,
             shader_module,
@@ -634,6 +661,8 @@ pub const Device = struct {
         self: *const Self,
         pipeline: c.VkPipeline,
     ) void {
+        std.debug.assert(pipeline != null);
+
         self.dispatch.DestroyPipeline(
             self.device,
             pipeline,
@@ -661,6 +690,8 @@ pub const Device = struct {
         self: *const Self,
         pipeline_layout: c.VkPipelineLayout,
     ) void {
+        std.debug.assert(pipeline_layout != null);
+
         self.dispatch.DestroyPipelineLayout(
             self.device,
             pipeline_layout,
@@ -688,6 +719,8 @@ pub const Device = struct {
         self: *const Self,
         render_pass: c.VkRenderPass,
     ) void {
+        std.debug.assert(render_pass != null);
+
         self.dispatch.DestroyRenderPass(
             self.device,
             render_pass,
@@ -715,6 +748,8 @@ pub const Device = struct {
         self: *const Self,
         frame_buffer: c.VkFramebuffer,
     ) void {
+        std.debug.assert(frame_buffer != null);
+
         self.dispatch.DestroyFramebuffer(
             self.device,
             frame_buffer,
@@ -742,6 +777,8 @@ pub const Device = struct {
         self: *const Self,
         command_pool: c.VkCommandPool,
     ) void {
+        std.debug.assert(command_pool != null);
+
         self.dispatch.DestroyCommandPool(
             self.device,
             command_pool,
@@ -769,6 +806,8 @@ pub const Device = struct {
         command_buffer: c.VkCommandBuffer,
         begin_info: *const c.VkCommandBufferBeginInfo,
     ) !void {
+        std.debug.assert(command_buffer != null);
+
         try vk.checkVulkanError(
             "Failed to begin Vulkan command buffer",
             self.dispatch.BeginCommandBuffer(
@@ -782,6 +821,8 @@ pub const Device = struct {
         self: *const Self,
         command_buffer: c.VkCommandBuffer,
     ) !void {
+        std.debug.assert(command_buffer != null);
+
         try vk.checkVulkanError(
             "Failed to end Vulkan command buffer",
             self.dispatch.EndCommandBuffer(command_buffer),
@@ -793,6 +834,8 @@ pub const Device = struct {
         command_buffer: c.VkCommandBuffer,
         flags: c.VkCommandBufferResetFlags,
     ) !void {
+        std.debug.assert(command_buffer != null);
+
         try vk.checkVulkanError(
             "Failed to reset Vulkan command buffer",
             self.dispatch.ResetCommandBuffer(
@@ -808,6 +851,8 @@ pub const Device = struct {
         begin_info: *const c.VkRenderPassBeginInfo,
         contents: c.VkSubpassContents,
     ) !void {
+        std.debug.assert(command_buffer != null);
+
         self.dispatch.CmdBeginRenderPass(
             command_buffer,
             begin_info,
@@ -819,6 +864,8 @@ pub const Device = struct {
         self: *const Self,
         command_buffer: c.VkCommandBuffer,
     ) void {
+        std.debug.assert(command_buffer != null);
+
         self.dispatch.CmdEndRenderPass(command_buffer);
     }
 
@@ -829,6 +876,8 @@ pub const Device = struct {
         viewport_count: u32,
         viewports: [*c]const c.VkViewport,
     ) void {
+        std.debug.assert(command_buffer != null);
+
         self.dispatch.CmdSetViewport(
             command_buffer,
             first_viewport,
@@ -844,6 +893,8 @@ pub const Device = struct {
         scissor_count: u32,
         scissors: [*c]const c.VkRect2D,
     ) void {
+        std.debug.assert(command_buffer != null);
+
         self.dispatch.CmdSetScissor(
             command_buffer,
             first_scissor,
@@ -858,6 +909,9 @@ pub const Device = struct {
         pipeline_bind_point: c.VkPipelineBindPoint,
         pipeline: c.VkPipeline,
     ) void {
+        std.debug.assert(command_buffer != null);
+        std.debug.assert(pipeline != null);
+
         self.dispatch.CmdBindPipeline(
             command_buffer,
             pipeline_bind_point,
@@ -873,6 +927,8 @@ pub const Device = struct {
         buffers: [*c]const c.VkBuffer,
         offsets: [*c]c.VkDeviceSize,
     ) void {
+        std.debug.assert(command_buffer != null);
+
         self.dispatch.CmdBindVertexBuffers(
             command_buffer,
             first_binding,
@@ -889,11 +945,39 @@ pub const Device = struct {
         offset: c.VkDeviceSize,
         index_type: c.VkIndexType,
     ) void {
+        std.debug.assert(command_buffer != null);
+
         self.dispatch.CmdBindIndexBuffer(
             command_buffer,
             buffer,
             offset,
             index_type,
+        );
+    }
+
+    pub fn cmdBindDescriptorSets(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        pipeline_bind_point: c.VkPipelineBindPoint,
+        layout: c.VkPipelineLayout,
+        first_set: u32,
+        descriptor_set_count: u32,
+        descriptor_sets: [*c]const c.VkDescriptorSet,
+        dynamic_offset_count: u32,
+        dynamic_offsets: [*c]const u32,
+    ) void {
+        std.debug.assert(command_buffer != null);
+        std.debug.assert(layout != null);
+
+        self.dispatch.CmdBindDescriptorSets(
+            command_buffer,
+            pipeline_bind_point,
+            layout,
+            first_set,
+            descriptor_set_count,
+            descriptor_sets,
+            dynamic_offset_count,
+            dynamic_offsets,
         );
     }
 
@@ -905,6 +989,8 @@ pub const Device = struct {
         first_vertex: u32,
         first_instance: u32,
     ) void {
+        std.debug.assert(command_buffer != null);
+
         self.dispatch.CmdDraw(
             command_buffer,
             vertex_count,
@@ -923,6 +1009,8 @@ pub const Device = struct {
         vertex_offset: i32,
         first_instance: u32,
     ) void {
+        std.debug.assert(command_buffer != null);
+
         self.dispatch.CmdDrawIndexed(
             command_buffer,
             index_count,
@@ -941,6 +1029,10 @@ pub const Device = struct {
         region_count: u32,
         regions: [*c]const c.VkBufferCopy,
     ) void {
+        std.debug.assert(command_buffer != null);
+        std.debug.assert(src_buffer != null);
+        std.debug.assert(dst_buffer != null);
+
         self.dispatch.CmdCopyBuffer(
             command_buffer,
             src_buffer,
@@ -970,6 +1062,8 @@ pub const Device = struct {
         self: *const Self,
         semaphore: c.VkSemaphore,
     ) void {
+        std.debug.assert(semaphore != null);
+
         self.dispatch.DestroySemaphore(
             self.device,
             semaphore,
@@ -997,6 +1091,8 @@ pub const Device = struct {
         self: *const Self,
         fence: c.VkFence,
     ) void {
+        std.debug.assert(fence != null);
+
         self.dispatch.DestroyFence(
             self.device,
             fence,
@@ -1046,6 +1142,8 @@ pub const Device = struct {
         fence: c.VkFence,
         image_index: *u32,
     ) !c.VkResult {
+        std.debug.assert(swapchain != null);
+
         const result = self.dispatch.AcquireNextImageKHR(
             self.device,
             swapchain,
@@ -1095,6 +1193,8 @@ pub const Device = struct {
         self: *const Self,
         buffer: c.VkBuffer,
     ) void {
+        std.debug.assert(buffer != null);
+
         self.dispatch.DestroyBuffer(
             self.device,
             buffer,
@@ -1107,6 +1207,8 @@ pub const Device = struct {
         buffer: c.VkBuffer,
         requirements: *c.VkMemoryRequirements,
     ) void {
+        std.debug.assert(buffer != null);
+
         self.dispatch.GetBufferMemoryRequirements(
             self.device,
             buffer,
@@ -1119,6 +1221,8 @@ pub const Device = struct {
         physical_device: c.VkPhysicalDevice,
         memory_properties: *c.VkPhysicalDeviceMemoryProperties,
     ) void {
+        std.debug.assert(physical_device != null);
+
         self.dispatch.GetPhysicalDeviceMemoryProperties(
             physical_device,
             memory_properties,
@@ -1145,6 +1249,8 @@ pub const Device = struct {
         self: *const Self,
         memory: c.VkDeviceMemory,
     ) void {
+        std.debug.assert(memory != null);
+
         self.dispatch.FreeMemory(
             self.device,
             memory,
@@ -1158,6 +1264,9 @@ pub const Device = struct {
         memory: c.VkDeviceMemory,
         offset: c.VkDeviceSize,
     ) !void {
+        std.debug.assert(buffer != null);
+        std.debug.assert(memory != null);
+
         try vk.checkVulkanError(
             "Failed to bind Vulkan buffer memory",
             self.dispatch.BindBufferMemory(
@@ -1177,6 +1286,9 @@ pub const Device = struct {
         flags: c.VkMemoryMapFlags,
         data: [*c]?*anyopaque,
     ) !void {
+        std.debug.assert(memory != null);
+        std.debug.assert(data != null);
+
         try vk.checkVulkanError(
             "Failed to map Vulkan memory",
             self.dispatch.MapMemory(
@@ -1194,9 +1306,119 @@ pub const Device = struct {
         self: *const Self,
         memory: c.VkDeviceMemory,
     ) void {
+        std.debug.assert(memory != null);
+
         self.dispatch.UnmapMemory(
             self.device,
             memory,
+        );
+    }
+
+    pub fn createDescriptorPool(
+        self: *const Self,
+        create_info: *const c.VkDescriptorPoolCreateInfo,
+        descriptor_pool: *c.VkDescriptorPool,
+    ) !void {
+        try vk.checkVulkanError(
+            "Failed to create Vulkan descriptor pool",
+            self.dispatch.CreateDescriptorPool(
+                self.device,
+                create_info,
+                self.instance.allocation_callbacks,
+                descriptor_pool,
+            ),
+        );
+    }
+
+    pub fn destroyDescriptorPool(
+        self: *const Self,
+        descriptor_pool: c.VkDescriptorPool,
+    ) void {
+        std.debug.assert(descriptor_pool != null);
+
+        self.dispatch.DestroyDescriptorPool(
+            self.device,
+            descriptor_pool,
+            self.instance.allocation_callbacks,
+        );
+    }
+
+    pub fn allocateDescriptorSets(
+        self: *const Self,
+        allocate_info: *const c.VkDescriptorSetAllocateInfo,
+        descriptor_sets: [*c]c.VkDescriptorSet,
+    ) !void {
+        try vk.checkVulkanError(
+            "Failed to allocate Vulkan descriptor sets",
+            self.dispatch.AllocateDescriptorSets(
+                self.device,
+                allocate_info,
+                descriptor_sets,
+            ),
+        );
+    }
+
+    pub fn updateDescriptorSets(
+        self: *const Self,
+        descriptor_write_count: u32,
+        descriptor_writes: [*c]const c.VkWriteDescriptorSet,
+        descriptor_copy_count: u32,
+        descriptor_copies: [*c]const c.VkCopyDescriptorSet,
+    ) void {
+        self.dispatch.UpdateDescriptorSets(
+            self.device,
+            descriptor_write_count,
+            descriptor_writes,
+            descriptor_copy_count,
+            descriptor_copies,
+        );
+    }
+
+    pub fn freeDescriptorSets(
+        self: *const Self,
+        descriptor_pool: c.VkDescriptorPool,
+        descriptor_set_count: u32,
+        descriptor_sets: [*c]c.VkDescriptorSet,
+    ) !void {
+        std.debug.assert(descriptor_pool != null);
+
+        try vk.checkVulkanError(
+            "Failed to free Vulkan descriptor sets",
+            self.dispatch.FreeDescriptorSets(
+                self.device,
+                descriptor_pool,
+                descriptor_set_count,
+                descriptor_sets,
+            ),
+        );
+    }
+
+    pub fn createDescriptorSetLayout(
+        self: *const Self,
+        create_info: *const c.VkDescriptorSetLayoutCreateInfo,
+        descriptor_set_layout: *c.VkDescriptorSetLayout,
+    ) !void {
+        try vk.checkVulkanError(
+            "Failed to create Vulkan descriptor set layout",
+            self.dispatch.CreateDescriptorSetLayout(
+                self.device,
+                create_info,
+                self.instance.allocation_callbacks,
+                descriptor_set_layout,
+            ),
+        );
+    }
+
+    pub fn destroyDescriptorSetLayout(
+        self: *const Self,
+        descriptor_set_layout: c.VkDescriptorSetLayout,
+    ) void {
+        std.debug.assert(descriptor_set_layout != null);
+
+        self.dispatch.DestroyDescriptorSetLayout(
+            self.device,
+            descriptor_set_layout,
+            self.instance.allocation_callbacks,
         );
     }
 };

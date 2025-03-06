@@ -16,11 +16,14 @@ pub const Shader = @import("shader.zig").Shader;
 pub const Surface = @import("surface.zig").Surface;
 pub const SwapChain = @import("swap_chain.zig").SwapChain;
 pub const SwapChainSupportDetails = @import("swap_chain.zig").SwapChainSupportDetails;
+pub const UniformBuffer = @import("uniform_buffer.zig").UniformBuffer;
+pub const UniformRegistry = @import("uniform_registry.zig").UniformRegistry;
 pub const VertexBuffer = @import("vertex_buffer.zig").VertexBuffer;
 
 pub const log = std.log.scoped(.gfx_vk);
 
 pub const MaxFramesInFlight = 2;
+pub const MaxDescriptorSets = 1024;
 
 const PipelineKey = struct {
     program: gfx.ProgramHandle,
@@ -40,17 +43,24 @@ var g_swap_chain: *SwapChain = undefined;
 var g_main_render_pass: *RenderPass = undefined;
 var g_command_buffers: *CommandBuffers = undefined;
 var g_debug_messenger: ?c.VkDebugUtilsMessengerEXT = null;
+var g_uniform_registry: *UniformRegistry = undefined;
+var g_descriptor_pool: c.VkDescriptorPool = undefined;
 
-var g_shader_modules: [gfx.MaxShaderHandles]Shader = undefined;
+var m_shaders: [gfx.MaxShaderHandles]Shader = undefined;
 var g_programs: [gfx.MaxProgramHandles]Program = undefined;
 var g_pipelines: std.AutoHashMap(PipelineKey, Pipeline) = undefined;
 var g_vertex_buffers: [gfx.MaxVertexBufferHandles]VertexBuffer = undefined;
 var g_index_buffers: [gfx.MaxIndexBufferHandles]IndexBuffer = undefined;
+var g_uniform_buffers: [gfx.MaxUniformHandles]*UniformRegistry.Entry = undefined;
 
 var g_vertex_buffers_to_destroy: [gfx.MaxProgramHandles]VertexBuffer = undefined;
 var g_vertex_buffers_to_destroy_count: u32 = 0;
 var g_index_buffers_to_destroy: [gfx.MaxProgramHandles]IndexBuffer = undefined;
 var g_index_buffers_to_destroy_count: u32 = 0;
+var g_programs_to_destroy: [gfx.MaxProgramHandles]Program = undefined;
+var g_programs_to_destroy_count: u32 = 0;
+var g_shaders_to_destroy: [gfx.MaxShaderHandles]Shader = undefined;
+var g_shaders_to_destroy_count: u32 = 0;
 
 var g_image_available_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
 var g_render_finished_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
@@ -138,7 +148,7 @@ fn setupDebugMessenger(options: *const gfx.Options, instance: *Instance) !?c.VkD
     return debug_messenger;
 }
 
-fn cleanUpBuffers() void {
+fn destroyPendingResources() void {
     for (0..g_vertex_buffers_to_destroy_count) |i| {
         g_vertex_buffers_to_destroy[i].deinit();
     }
@@ -148,6 +158,16 @@ fn cleanUpBuffers() void {
         g_index_buffers_to_destroy[i].deinit();
     }
     g_index_buffers_to_destroy_count = 0;
+
+    for (0..g_programs_to_destroy_count) |i| {
+        g_programs_to_destroy[i].deinit();
+    }
+    g_programs_to_destroy_count = 0;
+
+    for (0..g_shaders_to_destroy_count) |i| {
+        g_shaders_to_destroy[i].deinit();
+    }
+    g_shaders_to_destroy_count = 0;
 }
 
 fn recreateSwapChain() !void {
@@ -333,6 +353,37 @@ pub fn init(allocator: std.mem.Allocator, options: *const gfx.Options) !void {
     }
 
     g_pipelines = .init(g_allocator);
+
+    g_uniform_registry = try g_allocator.create(UniformRegistry);
+    errdefer g_allocator.destroy(g_uniform_registry);
+
+    g_uniform_registry.* = try UniformRegistry.init(
+        g_allocator,
+        g_device,
+    );
+    errdefer g_uniform_registry.deinit();
+
+    const pool_size = std.mem.zeroInit(
+        c.VkDescriptorPoolSize,
+        .{
+            .type = c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .descriptorCount = 128, // TODO: this can be calculated in advance knowing our max resources (see bgfx as example)
+        },
+    );
+
+    const pool_info = std.mem.zeroInit(
+        c.VkDescriptorPoolCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+            .maxSets = MaxDescriptorSets * MaxFramesInFlight,
+            .poolSizeCount = 1,
+            .pPoolSizes = &pool_size,
+            .flags = c.VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT,
+        },
+    );
+
+    try g_device.createDescriptorPool(&pool_info, &g_descriptor_pool);
+    errdefer g_device.destroyDescriptorPool(g_descriptor_pool);
 }
 
 pub fn deinit() void {
@@ -342,7 +393,12 @@ pub fn deinit() void {
         log.err("Failed to wait for Vulkan device to become idle", .{});
     };
 
-    cleanUpBuffers();
+    destroyPendingResources();
+
+    g_device.destroyDescriptorPool(g_descriptor_pool);
+
+    g_uniform_registry.deinit();
+    g_allocator.destroy(g_uniform_registry);
 
     for (0..MaxFramesInFlight) |i| {
         g_device.destroySemaphore(g_image_available_semaphores[i]);
@@ -380,37 +436,53 @@ pub fn deinit() void {
     g_library.deinit();
 }
 
-pub fn getSwapchainSize() gfx.Size {
+pub fn getSwapchainSize() [2]u32 {
     return .{
-        .width = @as(f32, @floatFromInt(g_swap_chain.extent.width)),
-        .height = @as(f32, @floatFromInt(g_swap_chain.extent.height)),
+        g_swap_chain.extent.width,
+        g_swap_chain.extent.height,
     };
 }
 
-pub fn setViewSize(width: u32, height: u32) void {
-    if (g_framebuffer_width != width or g_framebuffer_height != height) {
-        g_framebuffer_width = width;
-        g_framebuffer_height = height;
+pub fn setFramebufferSize(size: [2]u32) void {
+    if (g_framebuffer_width != size[0] or g_framebuffer_height != size[1]) {
+        g_framebuffer_width = size[0];
+        g_framebuffer_height = size[1];
         g_framebuffer_invalidated = true;
     }
 }
 
 pub fn createShader(
     handle: gfx.ShaderHandle,
-    data: []align(@alignOf(u32)) const u8,
-    input_attributes: []?gfx.Attribute,
+    data: *const gfx.ShaderData,
 ) !void {
-    g_shader_modules[handle] = try Shader.init(g_device, data, input_attributes);
+    m_shaders[handle] = try Shader.init(g_device, data);
 
-    log.debug("Created Vulkan shader module: {d}", .{handle});
+    log.debug("Created {s} shader:", .{switch (data.type) {
+        .vertex => "vertex",
+        .fragment => "fragment",
+    }});
+    log.debug("  - Handle: {d}", .{handle});
+
+    for (data.input_attributes) |input_attribute| {
+        log.debug("  - Attribute {d}: {}", .{ input_attribute.location, input_attribute.attribute });
+    }
+
+    for (data.descriptor_sets) |descriptor_set| {
+        log.debug("  - Descriptor set {d}:", .{descriptor_set.set});
+        for (descriptor_set.bindings) |binding| {
+            log.debug("    Binding {d}: {s} {}", .{ binding.binding, binding.name, binding.type });
+        }
+    }
 }
 
 pub fn destroyShader(
     handle: gfx.ShaderHandle,
 ) void {
-    g_shader_modules[handle].deinit();
+    //m_shaders[handle].deinit();
+    g_shaders_to_destroy[g_shaders_to_destroy_count] = m_shaders[handle];
+    g_shaders_to_destroy_count += 1;
 
-    log.debug("Destroyed Vulkan shader module: {d}", .{handle});
+    log.debug("Destroyed shader with handle {d}", .{handle});
 }
 
 pub fn createProgram(
@@ -420,24 +492,30 @@ pub fn createProgram(
 ) !void {
     g_programs[handle] = try Program.init(
         g_device,
-        &g_shader_modules[vertex_shader],
-        &g_shader_modules[fragment_shader],
+        &m_shaders[vertex_shader],
+        &m_shaders[fragment_shader],
+        g_uniform_registry,
+        g_descriptor_pool,
     );
 
-    log.debug("Created Vulkan program: {d}", .{handle});
+    log.debug("Created program:", .{});
+    log.debug("  - Handle: {d}", .{handle});
+    log.debug("  - Vertex shader handle: {d}", .{vertex_shader});
+    log.debug("  - Fragment shader handle: {d}", .{fragment_shader});
 }
 
 pub fn destroyProgram(
     handle: gfx.ProgramHandle,
 ) void {
-    g_programs[handle].deinit();
-    log.debug("Destroyed Vulkan program: {d}", .{handle});
+    //g_programs[handle].deinit();
+    g_programs_to_destroy[g_programs_to_destroy_count] = g_programs[handle];
+    g_programs_to_destroy_count += 1;
+    log.debug("Destroyed program with handle {d}", .{handle});
 }
 
 pub fn createVertexBuffer(
     handle: gfx.VertexBufferHandle,
-    data: [*]const u8,
-    size: u32,
+    data: []const u8,
     layout: gfx.VertexLayout,
 ) !void {
     g_vertex_buffers[handle] = try VertexBuffer.init(
@@ -446,10 +524,10 @@ pub fn createVertexBuffer(
         g_device.queue_family_indices.transfer_family.?,
         layout,
         data,
-        size,
     );
 
-    log.debug("Created Vulkan vertex buffer: {d}", .{handle});
+    log.debug("Created vertex buffer:", .{});
+    log.debug("  - Handle: {d}", .{handle});
 }
 
 pub fn destroyVertexBuffer(
@@ -457,13 +535,12 @@ pub fn destroyVertexBuffer(
 ) void {
     g_vertex_buffers_to_destroy[g_vertex_buffers_to_destroy_count] = g_vertex_buffers[handle];
     g_vertex_buffers_to_destroy_count += 1;
-    log.debug("Destroyed Vulkan vertex buffer: {d}", .{handle});
+    log.debug("Destroyed vertex buffer with handle {d}", .{handle});
 }
 
 pub fn createIndexBuffer(
     handle: gfx.IndexBufferHandle,
-    data: [*]const u8,
-    size: u32,
+    data: []const u8,
     index_type: gfx.IndexType,
 ) !void {
     g_index_buffers[handle] = try IndexBuffer.init(
@@ -471,11 +548,11 @@ pub fn createIndexBuffer(
         g_transfer_queue,
         g_device.queue_family_indices.transfer_family.?,
         data,
-        size,
         index_type,
     );
 
-    log.debug("Created Vulkan index buffer: {d}", .{handle});
+    log.debug("Created index buffer:", .{});
+    log.debug("  - Handle: {d}", .{handle});
 }
 
 pub fn destroyIndexBuffer(
@@ -483,7 +560,31 @@ pub fn destroyIndexBuffer(
 ) void {
     g_index_buffers_to_destroy[g_index_buffers_to_destroy_count] = g_index_buffers[handle];
     g_index_buffers_to_destroy_count += 1;
-    log.debug("Destroyed Vulkan index buffer: {d}", .{handle});
+    log.debug("Destroyed index buffer with handle {d}", .{handle});
+}
+
+pub fn createUniformBuffer(
+    handle: gfx.UniformHandle,
+    name: []const u8,
+    size: u32,
+) !void {
+    g_uniform_buffers[handle] = try g_uniform_registry.create(name, size);
+    log.debug("Created uniform buffer:", .{});
+    log.debug("  - Handle: {d}", .{handle});
+}
+
+pub fn destroyUniformBuffer(
+    handle: gfx.UniformHandle,
+) void {
+    g_uniform_registry.destroy(g_uniform_buffers[handle].name);
+    log.debug("Destroyed uniform buffer with handle {d}", .{handle});
+}
+
+pub fn updateUniformBuffer(
+    handle: gfx.UniformHandle,
+    data: []const u8,
+) !void {
+    g_uniform_buffers[handle].buffer[g_current_frame].update(data);
 }
 
 pub fn beginFrame() !bool {
@@ -508,7 +609,7 @@ pub fn beginFrame() !bool {
     try g_device.resetFences(1, &g_in_flight_fences[g_current_frame]);
 
     try g_command_buffers.reset(g_current_frame);
-    cleanUpBuffers();
+    destroyPendingResources();
     try g_command_buffers.begin(g_current_frame, false);
 
     g_command_buffers.beginRenderPass(
@@ -570,36 +671,36 @@ pub fn endFrame() !void {
     g_current_frame = (g_current_frame + 1) % MaxFramesInFlight;
 }
 
-pub fn setViewport(viewport: gfx.Rect) void {
+pub fn setViewport(position: [2]u32, size: [2]u32) void {
     const vk_viewport = std.mem.zeroInit(
         c.VkViewport,
         .{
-            .x = @as(f32, viewport.position.x),
-            .y = @as(f32, viewport.position.y),
-            .width = @as(f32, viewport.size.width),
-            .height = @as(f32, viewport.size.height),
+            .x = @as(f32, @floatFromInt(position[0])),
+            .y = @as(f32, @floatFromInt(position[1])),
+            .width = @as(f32, @floatFromInt(size[0])),
+            .height = @as(f32, @floatFromInt(size[1])),
             .minDepth = 0,
             .maxDepth = 1,
         },
     );
-    g_command_buffers.setViewport(g_current_frame, vk_viewport);
+    g_command_buffers.setViewport(g_current_frame, &vk_viewport);
 }
 
-pub fn setScissor(scissor: gfx.Rect) void {
+pub fn setScissor(position: [2]u32, size: [2]u32) void {
     const vk_scissor = std.mem.zeroInit(
         c.VkRect2D,
         .{
             .offset = c.VkOffset2D{
-                .x = @as(i32, @intFromFloat(scissor.position.x)),
-                .y = @as(i32, @intFromFloat(scissor.position.y)),
+                .x = @as(i32, @intCast(position[0])),
+                .y = @as(i32, @intCast(position[1])),
             },
             .extent = c.VkExtent2D{
-                .width = @as(u32, @intFromFloat(scissor.size.width)),
-                .height = @as(u32, @intFromFloat(scissor.size.height)),
+                .width = size[0],
+                .height = size[1],
             },
         },
     );
-    g_command_buffers.setScissor(g_current_frame, vk_scissor);
+    g_command_buffers.setScissor(g_current_frame, &vk_scissor);
 }
 
 pub fn bindProgram(program: gfx.ProgramHandle) void {
@@ -669,6 +770,18 @@ pub fn drawIndexed(
         g_current_frame,
         vertex_buffer.buffer.handle,
         @ptrCast(&offsets),
+    );
+
+    var program = &g_programs[g_current_program.?];
+
+    g_command_buffers.bindDescriptorSets(
+        g_current_frame,
+        program.pipeline_layout,
+        0,
+        1,
+        &program.descriptor_sets[g_current_frame],
+        0,
+        null,
     );
 
     const index_type: c_uint = switch (g_index_buffers[g_current_index_buffer.?].index_type) {

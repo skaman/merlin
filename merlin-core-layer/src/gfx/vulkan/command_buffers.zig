@@ -92,6 +92,9 @@ pub const CommandBuffers = struct {
         framebuffer: c.VkFramebuffer,
         extent: c.VkExtent2D,
     ) void {
+        std.debug.assert(framebuffer != null);
+        std.debug.assert(render_pass != null);
+
         const begin_info = std.mem.zeroInit(
             c.VkRenderPassBeginInfo,
             .{
@@ -124,25 +127,27 @@ pub const CommandBuffers = struct {
         self.device.cmdEndRenderPass(self.handles[index]);
     }
 
-    pub fn setViewport(self: *Self, index: u32, viewport: c.VkViewport) void {
+    pub fn setViewport(self: *Self, index: u32, viewport: *const c.VkViewport) void {
         self.device.cmdSetViewport(
             self.handles[index],
             0,
             1,
-            &viewport,
+            viewport,
         );
     }
 
-    pub fn setScissor(self: *Self, index: u32, scissor: c.VkRect2D) void {
+    pub fn setScissor(self: *Self, index: u32, scissor: *const c.VkRect2D) void {
         self.device.cmdSetScissor(
             self.handles[index],
             0,
             1,
-            &scissor,
+            scissor,
         );
     }
 
     pub fn bindPipeline(self: *Self, index: u32, pipeline: c.VkPipeline) void {
+        std.debug.assert(pipeline != null);
+
         self.device.cmdBindPipeline(
             self.handles[index],
             c.VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -156,6 +161,9 @@ pub const CommandBuffers = struct {
         buffer: c.VkBuffer,
         offsets: [*c]c.VkDeviceSize,
     ) void {
+        std.debug.assert(buffer != null);
+        std.debug.assert(offsets != null);
+
         const buffers = &buffer;
         self.device.cmdBindVertexBuffers(
             self.handles[index],
@@ -173,11 +181,38 @@ pub const CommandBuffers = struct {
         offset: c.VkDeviceSize,
         index_type: c.VkIndexType,
     ) void {
+        std.debug.assert(buffer != null);
+
         self.device.cmdBindIndexBuffer(
             self.handles[index],
             buffer,
             offset,
             index_type,
+        );
+    }
+
+    pub fn bindDescriptorSets(
+        self: *Self,
+        index: u32,
+        pipeline_layout: c.VkPipelineLayout,
+        first_set: u32,
+        descriptor_set_count: u32,
+        descriptor_sets: [*c]c.VkDescriptorSet,
+        dynamic_offset_count: u32,
+        dynamic_offsets: [*c]u32,
+    ) void {
+        std.debug.assert(pipeline_layout != null);
+        std.debug.assert(descriptor_sets != null);
+
+        self.device.cmdBindDescriptorSets(
+            self.handles[index],
+            c.VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipeline_layout,
+            first_set,
+            descriptor_set_count,
+            descriptor_sets,
+            dynamic_offset_count,
+            dynamic_offsets,
         );
     }
 
@@ -225,6 +260,10 @@ pub const CommandBuffers = struct {
         region_count: u32,
         regions: [*c]const c.VkBufferCopy,
     ) void {
+        std.debug.assert(src_buffer != null);
+        std.debug.assert(dst_buffer != null);
+        std.debug.assert(regions != null);
+
         self.device.cmdCopyBuffer(
             self.handles[index],
             src_buffer,

@@ -3,6 +3,7 @@ const std = @import("std");
 const clap = @import("clap");
 const mcl = @import("merlin_core_layer");
 const gfx = mcl.gfx;
+const utils = mcl.utils;
 
 const reflect = @import("reflect.zig");
 
@@ -16,7 +17,7 @@ fn compileShader(
     filename: []const u8,
     kind: c.shaderc_shader_kind,
     source: []const u8,
-) ![]const u8 {
+) ![]align(@alignOf(u32)) const u8 {
     const compiler = c.shaderc_compiler_initialize();
     defer c.shaderc_compiler_release(compiler);
 
@@ -46,7 +47,7 @@ fn compileShader(
 
     const size = c.shaderc_result_get_length(result);
 
-    const output = try allocator.alloc(u8, size);
+    const output = try allocator.alignedAlloc(u8, @alignOf(u32), size);
     const bytes = c.shaderc_result_get_bytes(result);
     @memcpy(output, bytes[0..size]);
     return output;
@@ -59,26 +60,25 @@ pub fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     return try file.readToEndAlloc(allocator, 10 * 1024 * 1024);
 }
 
-pub fn saveFile(path: []const u8, shader_type: gfx.ShaderType, data: []const u8, input_attributes: []?gfx.Attribute) !void {
+pub fn saveFile(
+    path: []const u8,
+    shader_type: gfx.ShaderType,
+    data: []align(@alignOf(u32)) const u8,
+    input_attributes: []const gfx.ShaderInputAttribute,
+    descriptor_sets: []const gfx.DescriptorSet,
+) !void {
     var file = try std.fs.cwd().createFile(path, .{});
     defer file.close();
 
-    const writer = file.writer();
-    try writer.writeAll(&gfx.ShaderMagic);
-    try writer.writeInt(u8, gfx.ShaderVersion, .little);
-    try writer.writeInt(u8, @intFromEnum(shader_type), .little);
-    try writer.writeInt(u32, @intCast(data.len), .little);
-    try writer.writeAll(data);
-    if (shader_type == .vertex) {
-        try writer.writeInt(u8, @intCast(input_attributes.len), .little);
-        for (input_attributes) |attribute| {
-            try writer.writeInt(u8, @intFromBool(attribute != null), .little);
-            if (attribute == null) {
-                continue;
-            }
-            try writer.writeInt(u8, @intFromEnum(attribute.?), .little);
-        }
-    }
+    const shader_data = gfx.ShaderData{
+        .type = shader_type,
+        .data = data,
+        .input_attributes = input_attributes,
+        .descriptor_sets = descriptor_sets,
+    };
+
+    try utils.Serializer.writeHeader(file.writer(), gfx.ShaderMagic, gfx.ShaderVersion);
+    try utils.Serializer.write(file.writer(), shader_data);
 }
 
 const Params = clap.parseParamsComptime(
@@ -121,8 +121,6 @@ pub fn main() !void {
 
     const parsers = comptime .{
         .FILE = clap.parsers.string,
-        //.str = clap.parsers.string,
-        //.usize = clap.parsers.int(usize, 0),
     };
 
     var diag = clap.Diagnostic{};
@@ -144,8 +142,6 @@ pub fn main() !void {
         return printHelp();
     }
 
-    //std.log.info("Compiling {s}...", .{source_file.?});
-
     var shader_type: ?gfx.ShaderType = null;
     for (StageExtensionMap) |map_entry| {
         if (std.mem.endsWith(u8, source_file.?, map_entry.extension)) {
@@ -157,6 +153,16 @@ pub fn main() !void {
         std.log.err("Unknown shader type", .{});
         return error.UnknownShaderType;
     }
+
+    const std_out = std.io.getStdOut().writer();
+
+    try std_out.print("Compiling {s} ({s})\n", .{
+        source_file.?,
+        switch (shader_type.?) {
+            .vertex => "vertex",
+            .fragment => "fragment",
+        },
+    });
 
     const file_content = try readFile(allocator, source_file.?);
     defer allocator.free(file_content);
@@ -172,18 +178,35 @@ pub fn main() !void {
     var shader_reflect = try reflect.ShaderReflect.init(data);
     defer shader_reflect.deinit();
 
-    const input_attributes = try shader_reflect.getInputAttributes(allocator);
-    defer allocator.free(input_attributes);
+    const input_attributes = switch (shader_type.?) {
+        .vertex => try shader_reflect.getInputAttributes(allocator, std_out),
+        else => &[_]gfx.ShaderInputAttribute{},
+    };
+    defer {
+        if (shader_type.? == .vertex) {
+            allocator.free(input_attributes);
+        }
+    }
 
-    //var shader_data = try shared.ShaderData.init(
-    //    allocator,
-    //    shader_type.?,
-    //    data,
-    //    input_attributes,
-    //);
-    //defer shader_data.deinit();
+    const descriptor_sets = try shader_reflect.getDescriptorSets(allocator, std_out);
+    defer {
+        for (descriptor_sets) |descriptor_set| {
+            for (descriptor_set.bindings) |binding| {
+                allocator.free(binding.name);
+            }
+            allocator.free(descriptor_set.bindings);
+        }
+        allocator.free(descriptor_sets);
+    }
 
-    if (res.args.output) |s| {
-        try saveFile(s, shader_type.?, data, input_attributes);
+    if (res.args.output) |output_path| {
+        try std_out.print("Saving {s}\n", .{output_path});
+        try saveFile(
+            output_path,
+            shader_type.?,
+            data,
+            input_attributes,
+            descriptor_sets,
+        );
     }
 }

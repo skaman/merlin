@@ -19,14 +19,17 @@ pub const Instance = struct {
         GetPhysicalDeviceSurfaceFormatsKHR: std.meta.Child(c.PFN_vkGetPhysicalDeviceSurfaceFormatsKHR) = undefined,
         GetPhysicalDeviceSurfacePresentModesKHR: std.meta.Child(c.PFN_vkGetPhysicalDeviceSurfacePresentModesKHR) = undefined,
         EnumerateDeviceExtensionProperties: std.meta.Child(c.PFN_vkEnumerateDeviceExtensionProperties) = undefined,
+        CreateDevice: std.meta.Child(c.PFN_vkCreateDevice) = undefined,
+    };
+    const DebugExtDispatch = struct {
         CreateDebugUtilsMessengerEXT: std.meta.Child(c.PFN_vkCreateDebugUtilsMessengerEXT) = undefined,
         DestroyDebugUtilsMessengerEXT: std.meta.Child(c.PFN_vkDestroyDebugUtilsMessengerEXT) = undefined,
-        CreateDevice: std.meta.Child(c.PFN_vkCreateDevice) = undefined,
     };
 
     handle: c.VkInstance,
     allocation_callbacks: ?*c.VkAllocationCallbacks,
     dispatch: Dispatch,
+    debug_dispatch: ?DebugExtDispatch,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -88,7 +91,7 @@ pub const Instance = struct {
                 .applicationVersion = c.VK_MAKE_VERSION(1, 0, 0),
                 .pEngineName = "merlin",
                 .engineVersion = c.VK_MAKE_VERSION(1, 0, 0),
-                .apiVersion = c.VK_API_VERSION_1_3,
+                .apiVersion = c.VK_API_VERSION_1_4,
             },
         );
 
@@ -107,6 +110,15 @@ pub const Instance = struct {
                 .ppEnabledExtensionNames = extensions.items.ptr,
             },
         );
+
+        vk.log.debug("Vulkan layers:", .{});
+        for (layers.items) |layer| {
+            vk.log.debug("  - {s}", .{layer});
+        }
+        vk.log.debug("Vulkan extensions:", .{});
+        for (extensions.items) |extension| {
+            vk.log.debug("  - {s}", .{extension});
+        }
 
         if (options.enable_vulkan_debug) {
             const debug_create_info = std.mem.zeroInit(
@@ -128,10 +140,19 @@ pub const Instance = struct {
             &instance,
         );
 
+        const dispatch = try library.load(Dispatch, instance);
+        errdefer dispatch.DestroyInstance(instance, allocation_callbacks);
+
+        var debug_dispatch: ?DebugExtDispatch = null;
+        if (options.enable_vulkan_debug) {
+            debug_dispatch = try library.load(DebugExtDispatch, instance);
+        }
+
         return .{
             .handle = instance,
             .allocation_callbacks = allocation_callbacks,
-            .dispatch = try library.load(Dispatch, instance),
+            .dispatch = dispatch,
+            .debug_dispatch = debug_dispatch,
         };
     }
 
@@ -250,6 +271,8 @@ pub const Instance = struct {
         physical_device: c.VkPhysicalDevice,
         properties: *c.VkPhysicalDeviceProperties,
     ) void {
+        std.debug.assert(physical_device != null);
+
         self.dispatch.GetPhysicalDeviceProperties(physical_device, properties);
     }
 
@@ -258,6 +281,8 @@ pub const Instance = struct {
         physical_device: c.VkPhysicalDevice,
         features: *c.VkPhysicalDeviceFeatures,
     ) void {
+        std.debug.assert(physical_device != null);
+
         self.dispatch.GetPhysicalDeviceFeatures(physical_device, features);
     }
 
@@ -266,6 +291,8 @@ pub const Instance = struct {
         physical_device: c.VkPhysicalDevice,
         memory_properties: *c.VkPhysicalDeviceMemoryProperties,
     ) void {
+        std.debug.assert(physical_device != null);
+
         self.dispatch.GetPhysicalDeviceMemoryProperties(physical_device, memory_properties);
     }
 
@@ -275,6 +302,8 @@ pub const Instance = struct {
         count: *u32,
         queue_family_properties: [*c]c.VkQueueFamilyProperties,
     ) void {
+        std.debug.assert(physical_device != null);
+
         self.dispatch.GetPhysicalDeviceQueueFamilyProperties(physical_device, count, queue_family_properties);
     }
 
@@ -283,6 +312,8 @@ pub const Instance = struct {
         allocator: std.mem.Allocator,
         physical_device: c.VkPhysicalDevice,
     ) ![]c.VkQueueFamilyProperties {
+        std.debug.assert(physical_device != null);
+
         var count: u32 = undefined;
         self.getPhysicalDeviceQueueFamilyProperties(physical_device, &count, null);
 
@@ -307,6 +338,9 @@ pub const Instance = struct {
         surface: c.VkSurfaceKHR,
         supported: *c.VkBool32,
     ) !void {
+        std.debug.assert(physical_device != null);
+        std.debug.assert(surface != null);
+
         try vk.checkVulkanError(
             "Failed to get physical device surface support",
             self.dispatch.GetPhysicalDeviceSurfaceSupportKHR(
@@ -324,6 +358,9 @@ pub const Instance = struct {
         surface: c.VkSurfaceKHR,
         capabilities: *c.VkSurfaceCapabilitiesKHR,
     ) !void {
+        std.debug.assert(physical_device != null);
+        std.debug.assert(surface != null);
+
         try vk.checkVulkanError(
             "Failed to get physical device surface capabilities",
             self.dispatch.GetPhysicalDeviceSurfaceCapabilitiesKHR(
@@ -341,6 +378,9 @@ pub const Instance = struct {
         count: *u32,
         formats: [*c]c.VkSurfaceFormatKHR,
     ) !void {
+        std.debug.assert(physical_device != null);
+        std.debug.assert(surface != null);
+
         const result = self.dispatch.GetPhysicalDeviceSurfaceFormatsKHR(
             physical_device,
             surface,
@@ -364,6 +404,9 @@ pub const Instance = struct {
         physical_device: c.VkPhysicalDevice,
         surface: c.VkSurfaceKHR,
     ) ![]c.VkSurfaceFormatKHR {
+        std.debug.assert(physical_device != null);
+        std.debug.assert(surface != null);
+
         var count: u32 = undefined;
         try self.getPhysicalDeviceSurfaceFormatsKHR(
             physical_device,
@@ -397,6 +440,9 @@ pub const Instance = struct {
         count: *u32,
         present_modes: [*c]c.VkPresentModeKHR,
     ) !void {
+        std.debug.assert(physical_device != null);
+        std.debug.assert(surface != null);
+
         const result = self.dispatch.GetPhysicalDeviceSurfacePresentModesKHR(
             physical_device,
             surface,
@@ -420,6 +466,9 @@ pub const Instance = struct {
         physical_device: c.VkPhysicalDevice,
         surface: c.VkSurfaceKHR,
     ) ![]c.VkPresentModeKHR {
+        std.debug.assert(physical_device != null);
+        std.debug.assert(surface != null);
+
         var count: u32 = undefined;
         try self.getPhysicalDeviceSurfacePresentModesKHR(
             physical_device,
@@ -453,6 +502,8 @@ pub const Instance = struct {
         count: *u32,
         properties: [*c]c.VkExtensionProperties,
     ) !void {
+        std.debug.assert(physical_device != null);
+
         const result = self.dispatch.EnumerateDeviceExtensionProperties(
             physical_device,
             layer_name,
@@ -476,6 +527,8 @@ pub const Instance = struct {
         physical_device: c.VkPhysicalDevice,
         layer_name: [*c]const u8,
     ) ![]c.VkExtensionProperties {
+        std.debug.assert(physical_device != null);
+
         var count: u32 = undefined;
         try self.enumerateDeviceExtensionProperties(
             physical_device,
@@ -504,9 +557,11 @@ pub const Instance = struct {
         create_info: *const c.VkDebugUtilsMessengerCreateInfoEXT,
         messenger: *c.VkDebugUtilsMessengerEXT,
     ) !void {
+        std.debug.assert(self.debug_dispatch != null);
+
         try vk.checkVulkanError(
             "Failed to create Vulkan debug messenger",
-            self.dispatch.CreateDebugUtilsMessengerEXT(
+            self.debug_dispatch.?.CreateDebugUtilsMessengerEXT(
                 self.handle,
                 create_info,
                 self.allocation_callbacks,
@@ -519,7 +574,9 @@ pub const Instance = struct {
         self: *Self,
         messenger: c.VkDebugUtilsMessengerEXT,
     ) void {
-        self.dispatch.DestroyDebugUtilsMessengerEXT(
+        std.debug.assert(self.debug_dispatch != null);
+
+        self.debug_dispatch.?.DestroyDebugUtilsMessengerEXT(
             self.handle,
             messenger,
             self.allocation_callbacks,
@@ -532,6 +589,8 @@ pub const Instance = struct {
         create_info: *const c.VkDeviceCreateInfo,
         device: *c.VkDevice,
     ) !void {
+        std.debug.assert(physical_device != null);
+
         try vk.checkVulkanError(
             "Failed to create Vulkan device",
             self.dispatch.CreateDevice(

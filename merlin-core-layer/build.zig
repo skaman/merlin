@@ -16,7 +16,7 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    const merlin_core_layer = b.addSharedLibrary(.{
+    const merlin_core_layer = b.addLibrary(.{
         .name = "merlin_core_layer",
         .root_module = merlin_core_layer_mod,
     });
@@ -49,4 +49,13 @@ pub fn build(b: *std.Build) !void {
         },
         else => @compileError("Unsupported OS"),
     }
+
+    const merlin_core_layer_unit_tests = b.addTest(.{
+        .root_module = merlin_core_layer_mod,
+    });
+
+    const run_merlin_core_layer_unit_tests = b.addRunArtifact(merlin_core_layer_unit_tests);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&run_merlin_core_layer_unit_tests.step);
 }

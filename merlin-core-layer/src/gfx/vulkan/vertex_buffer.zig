@@ -15,12 +15,11 @@ pub const VertexBuffer = struct {
         queue: c.VkQueue,
         queue_family_index: u32,
         layout: gfx.VertexLayout,
-        data: [*]const u8,
-        size: u32,
+        data: []const u8,
     ) !Self {
         var staging_buffer = try vk.Buffer.init(
             device,
-            size,
+            @intCast(data.len),
             c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         );
@@ -30,17 +29,17 @@ pub const VertexBuffer = struct {
         try device.mapMemory(
             staging_buffer.memory,
             0,
-            size,
+            @intCast(data.len),
             0,
             @ptrCast(&mapped_data),
         );
         defer device.unmapMemory(staging_buffer.memory);
 
-        @memcpy(mapped_data[0..size], data[0..size]);
+        @memcpy(mapped_data[0..data.len], data);
 
         var buffer = try vk.Buffer.init(
             device,
-            size,
+            @intCast(data.len),
             c.VK_BUFFER_USAGE_TRANSFER_DST_BIT | c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
             c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         );
@@ -50,7 +49,7 @@ pub const VertexBuffer = struct {
             queue,
             queue_family_index,
             staging_buffer.handle,
-            size,
+            @intCast(data.len),
         );
 
         return .{

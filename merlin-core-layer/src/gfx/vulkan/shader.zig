@@ -9,30 +9,44 @@ pub const Shader = struct {
 
     device: *const vk.Device,
     handle: c.VkShaderModule,
+    input_attributes: [vk.Pipeline.MaxVertexAttributes]gfx.ShaderInputAttribute,
     input_attribute_count: u8,
-    input_attributes: [vk.Pipeline.MaxVertexAttributes]?gfx.Attribute,
+    descriptor_sets: [vk.Pipeline.MaxDescriptorSetBindings]gfx.DescriptorSet,
+    descriptor_set_count: u8,
 
     pub fn init(
         device: *const vk.Device,
-        data: []align(@alignOf(u32)) const u8,
-        input_attributes: []?gfx.Attribute,
+        data: *const gfx.ShaderData,
     ) !Self {
-        var handle: c.VkShaderModule = undefined;
+        if (data.input_attributes.len > vk.Pipeline.MaxVertexAttributes) {
+            vk.log.err("Input attributes count exceeds maximum vertex attributes", .{});
+            return error.MaxVertexAttributesExceeded;
+        }
+
+        if (data.descriptor_sets.len > vk.Pipeline.MaxDescriptorSetBindings) {
+            vk.log.err("Descriptor sets count exceeds maximum descriptor sets", .{});
+            return error.MaxDescriptorSetsExceeded;
+        }
+
+        var module: c.VkShaderModule = undefined;
         const create_info = c.VkShaderModuleCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
-            .codeSize = data.len,
-            .pCode = @ptrCast(data.ptr),
+            .codeSize = data.data.len,
+            .pCode = @ptrCast(data.data.ptr),
         };
-        try device.createShaderModule(&create_info, &handle);
+        try device.createShaderModule(&create_info, &module);
 
         var self = Self{
             .device = device,
-            .handle = handle,
-            .input_attribute_count = @intCast(input_attributes.len),
+            .handle = module,
             .input_attributes = undefined,
+            .input_attribute_count = @intCast(data.input_attributes.len),
+            .descriptor_sets = undefined,
+            .descriptor_set_count = @intCast(data.descriptor_sets.len),
         };
 
-        @memcpy(self.input_attributes[0..input_attributes.len], input_attributes);
+        @memcpy(self.input_attributes[0..data.input_attributes.len], data.input_attributes);
+        @memcpy(self.descriptor_sets[0..data.descriptor_sets.len], data.descriptor_sets);
 
         return self;
     }

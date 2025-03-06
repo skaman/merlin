@@ -15,6 +15,7 @@ const SizeTable = [_][4]u8{
 pub const Pipeline = struct {
     const Self = @This();
     pub const MaxVertexAttributes = 16;
+    pub const MaxDescriptorSetBindings = 16;
 
     const AttributeType = [_][4][2]c.VkFormat{
         // uint_8
@@ -75,15 +76,11 @@ pub const Pipeline = struct {
 
         var attribute_descriptions: [MaxVertexAttributes]c.VkVertexInputAttributeDescription = undefined;
         var attribute_count: u32 = 0;
-        for (0..program.vertex_shader.input_attribute_count) |i| {
-            const attribute = program.vertex_shader.input_attributes[i];
-            if (attribute == null) {
-                continue;
-            }
-
-            const attribute_data = vertex_layout.attributes[@intFromEnum(attribute.?)];
+        for (0..program.vertex_shader.input_attribute_count) |index| {
+            const input_attribute = program.vertex_shader.input_attributes[index];
+            const attribute_data = vertex_layout.attributes[@intFromEnum(input_attribute.attribute)];
             if (attribute_data.num == 0) {
-                std.log.warn("Attribute {} not found in vertex layout", .{attribute.?});
+                std.log.warn("Attribute {} not found in vertex layout", .{input_attribute.attribute});
                 continue;
             }
 
@@ -91,10 +88,10 @@ pub const Pipeline = struct {
             std.debug.assert(attribute_data.num <= AttributeType.len);
 
             attribute_descriptions[attribute_count] = .{
-                .location = @intCast(i),
+                .location = @intCast(input_attribute.location),
                 .binding = 0,
                 .format = AttributeType[@intFromEnum(attribute_data.type)][@intCast(attribute_data.num - 1)][@intFromBool(attribute_data.normalized)],
-                .offset = vertex_layout.offsets[@intFromEnum(attribute.?)],
+                .offset = vertex_layout.offsets[@intFromEnum(input_attribute.attribute)],
             };
 
             attribute_count += 1;
@@ -230,10 +227,9 @@ pub const Pipeline = struct {
             &pipeline,
         );
 
-        vk.log.debug("---------------------------------------------------------------", .{});
-        vk.log.debug("Pipeline created", .{});
+        vk.log.debug("Pipeline created:", .{});
         vk.log.debug(
-            "  Binding Description 0: binding={d}, stride={d}, inputRate={s}",
+            "  - Binding Description 0: binding={d}, stride={d}, inputRate={s}",
             .{
                 binding_description.binding,
                 binding_description.stride,
@@ -243,7 +239,7 @@ pub const Pipeline = struct {
         for (0..attribute_count) |index| {
             const attribute = attribute_descriptions[index];
             vk.log.debug(
-                "Attribute Description {d}: location={d}, binding={d}, format={s}, offset={d}",
+                "  - Attribute Description {d}: location={d}, binding={d}, format={s}, offset={d}",
                 .{
                     index,
                     attribute.location,
@@ -253,8 +249,6 @@ pub const Pipeline = struct {
                 },
             );
         }
-        // TODO: dump pipeline_create_info
-        vk.log.debug("---------------------------------------------------------------", .{});
 
         return .{
             .device = device,

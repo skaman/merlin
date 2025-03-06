@@ -4,6 +4,11 @@ pub const zmath = @import("zmath");
 
 pub const gfx = @import("gfx/gfx.zig");
 pub const platform = @import("platform/platform.zig");
+pub const utils = @import("utils.zig");
+
+test {
+    std.testing.refAllDecls(@This());
+}
 
 pub const Options = struct {
     app_name: []const u8 = "Merlin",

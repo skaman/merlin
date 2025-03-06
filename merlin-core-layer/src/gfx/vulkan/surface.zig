@@ -57,7 +57,7 @@ pub const Surface = struct {
     ) !c.VkSurfaceKHR {
         const createWaylandSurfaceKHR = try library.get_proc(c.PFN_vkCreateWaylandSurfaceKHR, instance.handle, "vkCreateWaylandSurfaceKHR");
 
-        vk.log.info("Creating Wayland surface", .{});
+        vk.log.debug("Creating Wayland surface", .{});
 
         const create_info = std.mem.zeroInit(c.VkWaylandSurfaceCreateInfoKHR, .{
             .sType = c.VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
@@ -84,7 +84,7 @@ pub const Surface = struct {
     ) !c.VkSurfaceKHR {
         const createXlibSurfaceKHR = try library.get_proc(c.PFN_vkCreateXlibSurfaceKHR, instance.handle, "vkCreateXlibSurfaceKHR");
 
-        vk.log.info("Creating Xlib surface", .{});
+        vk.log.debug("Creating Xlib surface", .{});
 
         const create_info = std.mem.zeroInit(c.VkXlibSurfaceCreateInfoKHR, .{
             .sType = c.VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
@@ -111,7 +111,7 @@ pub const Surface = struct {
     ) !c.VkSurfaceKHR {
         const createXcbSurfaceKHR = try library.get_proc(c.PFN_vkCreateXcbSurfaceKHR, instance.handle, "vkCreateXcbSurfaceKHR");
 
-        vk.log.info("Creating Xcb surface", .{});
+        vk.log.debug("Creating Xcb surface", .{});
 
         var xcblib = try std.DynLib.open("libX11-xcb.so.1");
         defer xcblib.close();
@@ -156,7 +156,7 @@ pub const Surface = struct {
     ) !c.VkSurfaceKHR {
         const createWin32SurfaceKHR = try library.get_proc(c.PFN_vkCreateWin32SurfaceKHR, instance.handle, "vkCreateWin32SurfaceKHR");
 
-        vk.log.info("Creating Win32 surface", .{});
+        vk.log.debug("Creating Win32 surface", .{});
 
         const create_info = std.mem.zeroInit(c.VkWin32SurfaceCreateInfoKHR, .{
             .sType = c.VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
@@ -183,7 +183,7 @@ pub const Surface = struct {
     ) !c.VkSurfaceKHR {
         const createMacOSSurfaceMVK = try library.get_proc(c.PFN_vkCreateMacOSSurfaceMVK, instance.handle, "vkCreateMacOSSurfaceMVK");
 
-        vk.log.info("Creating Cocoa surface", .{});
+        vk.log.debug("Creating Cocoa surface", .{});
 
         const create_info = std.mem.zeroInit(c.VkMacOSSurfaceCreateInfoMVK, .{
             .sType = c.VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK,

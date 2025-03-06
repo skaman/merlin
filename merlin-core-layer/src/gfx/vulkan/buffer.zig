@@ -65,6 +65,8 @@ pub const Buffer = struct {
         src_buffer: c.VkBuffer,
         size: c.VkDeviceSize,
     ) !void {
+        std.debug.assert(src_buffer != null);
+
         var command_buffer = try vk.CommandBuffers.init(
             self.device,
             1,

@@ -138,14 +138,12 @@ pub const SwapChain = struct {
         );
         errdefer device.destroySwapchainKHR(swap_chain);
 
-        vk.log.debug("---------------------------------------------------------------", .{});
-        vk.log.debug("Swap chain created", .{});
-        vk.log.debug("       Image count: {d}", .{image_count});
-        vk.log.debug("      Image format: {s}", .{c.string_VkFormat(surface_format.format)});
-        vk.log.debug(" Image color space: {s}", .{c.string_VkColorSpaceKHR(surface_format.colorSpace)});
-        vk.log.debug("      Image extent: {d}x{d}", .{ extent.width, extent.height });
-        vk.log.debug("      Present mode: {s}", .{c.string_VkPresentModeKHR(present_mode)});
-        vk.log.debug("---------------------------------------------------------------", .{});
+        vk.log.debug("Swap chain created:", .{});
+        vk.log.debug("  - Image count: {d}", .{image_count});
+        vk.log.debug("  - Image format: {s}", .{c.string_VkFormat(surface_format.format)});
+        vk.log.debug("  - Image color space: {s}", .{c.string_VkColorSpaceKHR(surface_format.colorSpace)});
+        vk.log.debug("  - Image extent: {d}x{d}", .{ extent.width, extent.height });
+        vk.log.debug("  - Present mode: {s}", .{c.string_VkPresentModeKHR(present_mode)});
 
         const swap_chain_images = try device.getSwapchainImagesKHRAlloc(
             allocator,

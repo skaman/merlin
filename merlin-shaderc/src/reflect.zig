@@ -13,7 +13,7 @@ const c = @cImport({
 
 const AttributeMapEntry = struct {
     name: []const u8,
-    attribute: gfx.Attribute,
+    attribute: gfx.VertexAttribute,
 };
 
 const AttributeMap = [_]AttributeMapEntry{
@@ -59,11 +59,11 @@ pub const ShaderReflect = struct {
         c.spvReflectDestroyShaderModule(&self.shader_module);
     }
 
-    //pub fn getEntryPointName(self: *ShaderReflect) ![]const u8 {
-    //    return self.shader_module.entry_point_name;
-    //}
-
-    pub fn getInputAttributes(self: *ShaderReflect, allocator: std.mem.Allocator) ![]?gfx.Attribute {
+    pub fn getInputAttributes(
+        self: *ShaderReflect,
+        allocator: std.mem.Allocator,
+        std_out: anytype,
+    ) ![]gfx.ShaderInputAttribute {
         var input_variable_count: u32 = 0;
         if (c.spvReflectEnumerateInputVariables(
             &self.shader_module,
@@ -90,21 +90,138 @@ pub const ShaderReflect = struct {
         }
 
         const result = try allocator.alloc(
-            ?gfx.Attribute,
+            gfx.ShaderInputAttribute,
             input_variable_count,
         );
         errdefer allocator.free(result);
 
+        try std_out.print("Input variables:\n", .{});
         for (input_variables, 0..) |input, i| {
-            var attribute: ?gfx.Attribute = null;
+            try std_out.print("  - {s} (location={d})\n", .{ input.name, input.location });
+            var attribute: ?gfx.VertexAttribute = null;
             for (AttributeMap) |entry| {
                 if (std.mem.eql(u8, std.mem.sliceTo(input.name, 0), entry.name)) {
                     attribute = entry.attribute;
                     break;
                 }
             }
+            if (attribute == null) {
+                std.log.err("Unknown input variable {s}", .{input.name});
+                return error.UnknownInputVariable;
+            }
 
-            result[i] = attribute;
+            result[i] = .{
+                .attribute = attribute.?,
+                .location = @intCast(i),
+            };
+        }
+
+        return result;
+    }
+
+    pub fn getDescriptorSets(
+        self: *ShaderReflect,
+        allocator: std.mem.Allocator,
+        std_out: anytype,
+    ) ![]gfx.DescriptorSet {
+        var descriptor_set_count: u32 = 0;
+        if (c.spvReflectEnumerateDescriptorSets(
+            &self.shader_module,
+            &descriptor_set_count,
+            null,
+        ) != c.SPV_REFLECT_RESULT_SUCCESS) {
+            std.log.err("Failed to enumerate descriptor sets", .{});
+            return error.FailedEnumerateDescriptorSets;
+        }
+
+        const descriptor_sets = try allocator.alloc(
+            *c.SpvReflectDescriptorSet,
+            descriptor_set_count,
+        );
+        defer allocator.free(descriptor_sets);
+
+        if (c.spvReflectEnumerateDescriptorSets(
+            &self.shader_module,
+            &descriptor_set_count,
+            @ptrCast(descriptor_sets.ptr),
+        ) != c.SPV_REFLECT_RESULT_SUCCESS) {
+            std.log.err("Failed to enumerate descriptor sets", .{});
+            return error.FailedEnumerateDescriptorSets;
+        }
+
+        const result = try allocator.alloc(
+            gfx.DescriptorSet,
+            descriptor_set_count,
+        );
+        errdefer allocator.free(result);
+
+        var loaded_descriptor_sets: u32 = 0;
+        errdefer {
+            for (0..loaded_descriptor_sets) |i| {
+                for (result[i].bindings) |binding| {
+                    allocator.free(binding.name);
+                }
+                allocator.free(result[i].bindings);
+            }
+        }
+
+        for (descriptor_sets, 0..) |descriptor_set, i| {
+            try std_out.print("Descriptor set {d}:\n", .{descriptor_set.set});
+
+            result[i].set = descriptor_set.set;
+            result[i].bindings = try parseDescriptorSet(
+                allocator,
+                descriptor_set,
+                std_out,
+            );
+            loaded_descriptor_sets += 1;
+        }
+
+        return result;
+    }
+
+    fn parseDescriptorSet(
+        allocator: std.mem.Allocator,
+        descriptor_set: *c.SpvReflectDescriptorSet,
+        std_out: anytype,
+    ) ![]gfx.DescriptorBinding {
+        const result = try allocator.alloc(
+            gfx.DescriptorBinding,
+            descriptor_set.binding_count,
+        );
+        errdefer allocator.free(result);
+
+        var loaded_bindings: u32 = 0;
+        errdefer {
+            for (0..loaded_bindings) |i| {
+                allocator.free(result[i].name);
+            }
+        }
+
+        for (0..descriptor_set.binding_count) |i| {
+            const binding = descriptor_set.bindings[i];
+
+            const descriptor_type = switch (binding.*.descriptor_type) {
+                c.SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER => gfx.DescriptorBindType.uniform,
+                else => return error.UnsupportedDescriptorType,
+            };
+
+            result[i] = .{
+                .name = try allocator.dupe(u8, std.mem.sliceTo(binding.*.name, 0)),
+                .binding = binding.*.binding,
+                .size = binding.*.block.padded_size,
+                .type = descriptor_type,
+            };
+            loaded_bindings += 1;
+
+            try std_out.print("  - {s} (binding={d}, type={s}, size={s})\n", .{
+                result[i].name,
+                result[i].binding,
+                switch (result[i].type) {
+                    gfx.DescriptorBindType.uniform => "uniform",
+                },
+                std.fmt.fmtIntSizeDec(result[i].size),
+            });
         }
 
         return result;
