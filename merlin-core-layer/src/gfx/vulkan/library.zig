@@ -19,6 +19,7 @@ pub const Library = struct {
 
     handle: std.DynLib,
     get_instance_proc_addr: std.meta.Child(c.PFN_vkGetInstanceProcAddr),
+    get_device_proc_addr: std.meta.Child(c.PFN_vkGetDeviceProcAddr),
     dispatch: Dispatch,
 
     pub fn init() !Self {
@@ -30,10 +31,18 @@ pub const Library = struct {
             vk.log.err("Failed to load vkGetInstanceProcAddr", .{});
             return error.GetInstanceProcAddrNotFound;
         };
+        const get_device_proc_addr = library.lookup(
+            std.meta.Child(c.PFN_vkGetDeviceProcAddr),
+            "vkGetDeviceProcAddr",
+        ) orelse {
+            vk.log.err("Failed to load vkGetDeviceProcAddr", .{});
+            return error.GetDeviceProcAddrNotFound;
+        };
 
         var self: Self = .{
             .handle = library,
             .get_instance_proc_addr = get_instance_proc_addr,
+            .get_device_proc_addr = get_device_proc_addr,
             .dispatch = undefined,
         };
         self.dispatch = try self.load(Dispatch, null);

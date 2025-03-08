@@ -5,6 +5,7 @@ const c = @import("../../c.zig").c;
 const gfx = @import("../gfx.zig");
 pub const Buffer = @import("buffer.zig").Buffer;
 pub const CommandBuffers = @import("command_buffers.zig").CommandBuffers;
+pub const CommandPool = @import("command_pool.zig").CommandPool;
 pub const Device = @import("device.zig").Device;
 pub const IndexBuffer = @import("index_buffer.zig").IndexBuffer;
 pub const Instance = @import("instance.zig").Instance;
@@ -16,6 +17,7 @@ pub const Shader = @import("shader.zig").Shader;
 pub const Surface = @import("surface.zig").Surface;
 pub const SwapChain = @import("swap_chain.zig").SwapChain;
 pub const SwapChainSupportDetails = @import("swap_chain.zig").SwapChainSupportDetails;
+pub const Texture = @import("texture.zig").Texture;
 pub const UniformBuffer = @import("uniform_buffer.zig").UniformBuffer;
 pub const UniformRegistry = @import("uniform_registry.zig").UniformRegistry;
 pub const VertexBuffer = @import("vertex_buffer.zig").VertexBuffer;
@@ -31,6 +33,7 @@ const PipelineKey = struct {
 };
 
 var g_allocator: std.mem.Allocator = undefined;
+var g_arena_allocator: std.mem.Allocator = undefined;
 var g_options: gfx.Options = undefined;
 var g_library: Library = undefined;
 var g_instance: *Instance = undefined;
@@ -41,6 +44,8 @@ var g_transfer_queue: c.VkQueue = undefined;
 var g_surface: *Surface = undefined;
 var g_swap_chain: *SwapChain = undefined;
 var g_main_render_pass: *RenderPass = undefined;
+var g_graphics_command_pool: *CommandPool = undefined;
+var g_transfer_command_pool: *CommandPool = undefined;
 var g_command_buffers: *CommandBuffers = undefined;
 var g_debug_messenger: ?c.VkDebugUtilsMessengerEXT = null;
 var g_uniform_registry: *UniformRegistry = undefined;
@@ -52,6 +57,7 @@ var g_pipelines: std.AutoHashMap(PipelineKey, Pipeline) = undefined;
 var g_vertex_buffers: [gfx.MaxVertexBufferHandles]VertexBuffer = undefined;
 var g_index_buffers: [gfx.MaxIndexBufferHandles]IndexBuffer = undefined;
 var g_uniform_buffers: [gfx.MaxUniformHandles]*UniformRegistry.Entry = undefined;
+var g_textures: [gfx.MaxTextureHandles]Texture = undefined;
 
 var g_vertex_buffers_to_destroy: [gfx.MaxProgramHandles]VertexBuffer = undefined;
 var g_vertex_buffers_to_destroy_count: u32 = 0;
@@ -61,6 +67,8 @@ var g_programs_to_destroy: [gfx.MaxProgramHandles]Program = undefined;
 var g_programs_to_destroy_count: u32 = 0;
 var g_shaders_to_destroy: [gfx.MaxShaderHandles]Shader = undefined;
 var g_shaders_to_destroy_count: u32 = 0;
+var g_textures_to_destroy: [gfx.MaxTextureHandles]Texture = undefined;
+var g_textures_to_destroy_count: u32 = 0;
 
 var g_image_available_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
 var g_render_finished_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
@@ -168,6 +176,11 @@ fn destroyPendingResources() void {
         g_shaders_to_destroy[i].deinit();
     }
     g_shaders_to_destroy_count = 0;
+
+    for (0..g_textures_to_destroy_count) |i| {
+        g_textures_to_destroy[i].deinit();
+    }
+    g_textures_to_destroy_count = 0;
 }
 
 fn recreateSwapChain() !void {
@@ -176,7 +189,7 @@ fn recreateSwapChain() !void {
         return;
     }
 
-    g_device.waitIdle() catch {
+    g_device.deviceWaitIdle() catch {
         log.err("Failed to wait for Vulkan device to become idle", .{});
     };
 
@@ -219,10 +232,15 @@ fn getPipeline(
     return pipeline.?;
 }
 
-pub fn init(allocator: std.mem.Allocator, options: *const gfx.Options) !void {
+pub fn init(
+    allocator: std.mem.Allocator,
+    arena_allocator: std.mem.Allocator,
+    options: *const gfx.Options,
+) !void {
     log.debug("Initializing Vulkan renderer", .{});
 
     g_allocator = allocator;
+    g_arena_allocator = arena_allocator;
     g_options = options.*;
     g_framebuffer_width = options.framebuffer_width;
     g_framebuffer_height = options.framebuffer_height;
@@ -232,7 +250,6 @@ pub fn init(allocator: std.mem.Allocator, options: *const gfx.Options) !void {
 
     g_instance = try g_allocator.create(Instance);
     errdefer g_allocator.destroy(g_instance);
-
     g_instance.* = try Instance.init(
         g_allocator,
         &g_options,
@@ -248,7 +265,6 @@ pub fn init(allocator: std.mem.Allocator, options: *const gfx.Options) !void {
 
     g_surface = try g_allocator.create(Surface);
     errdefer g_allocator.destroy(g_surface);
-
     g_surface.* = try Surface.init(
         &g_library,
         g_instance,
@@ -258,7 +274,6 @@ pub fn init(allocator: std.mem.Allocator, options: *const gfx.Options) !void {
 
     g_device = try g_allocator.create(Device);
     errdefer g_allocator.destroy(g_device);
-
     g_device.* = try Device.init(
         g_allocator,
         &g_options,
@@ -288,7 +303,6 @@ pub fn init(allocator: std.mem.Allocator, options: *const gfx.Options) !void {
 
     g_swap_chain = try g_allocator.create(SwapChain);
     errdefer g_allocator.destroy(g_swap_chain);
-
     g_swap_chain.* = try SwapChain.init(
         g_allocator,
         g_instance,
@@ -301,7 +315,6 @@ pub fn init(allocator: std.mem.Allocator, options: *const gfx.Options) !void {
 
     g_main_render_pass = try g_allocator.create(RenderPass);
     errdefer g_allocator.destroy(g_main_render_pass);
-
     g_main_render_pass.* = try RenderPass.init(
         g_device,
         g_swap_chain.format,
@@ -310,13 +323,28 @@ pub fn init(allocator: std.mem.Allocator, options: *const gfx.Options) !void {
 
     try g_swap_chain.createFrameBuffers(g_main_render_pass);
 
+    g_graphics_command_pool = try g_allocator.create(CommandPool);
+    errdefer g_allocator.destroy(g_graphics_command_pool);
+    g_graphics_command_pool.* = try CommandPool.init(
+        g_device,
+        g_device.queue_family_indices.graphics_family.?,
+    );
+    errdefer g_graphics_command_pool.deinit();
+
+    g_transfer_command_pool = try g_allocator.create(CommandPool);
+    errdefer g_allocator.destroy(g_transfer_command_pool);
+    g_transfer_command_pool.* = try CommandPool.init(
+        g_device,
+        g_device.queue_family_indices.transfer_family.?,
+    );
+    errdefer g_transfer_command_pool.deinit();
+
     g_command_buffers = try g_allocator.create(CommandBuffers);
     errdefer g_allocator.destroy(g_command_buffers);
-
     g_command_buffers.* = try CommandBuffers.init(
         g_device,
+        g_graphics_command_pool,
         MaxFramesInFlight,
-        g_device.queue_family_indices.graphics_family.?,
     );
     errdefer g_command_buffers.deinit();
 
@@ -389,7 +417,7 @@ pub fn init(allocator: std.mem.Allocator, options: *const gfx.Options) !void {
 pub fn deinit() void {
     log.debug("Deinitializing Vulkan renderer", .{});
 
-    g_device.waitIdle() catch {
+    g_device.deviceWaitIdle() catch {
         log.err("Failed to wait for Vulkan device to become idle", .{});
     };
 
@@ -414,6 +442,12 @@ pub fn deinit() void {
 
     g_command_buffers.deinit();
     g_allocator.destroy(g_command_buffers);
+
+    g_graphics_command_pool.deinit();
+    g_allocator.destroy(g_graphics_command_pool);
+
+    g_transfer_command_pool.deinit();
+    g_allocator.destroy(g_transfer_command_pool);
 
     g_main_render_pass.deinit();
     g_allocator.destroy(g_main_render_pass);
@@ -491,6 +525,7 @@ pub fn createProgram(
     fragment_shader: gfx.ShaderHandle,
 ) !void {
     g_programs[handle] = try Program.init(
+        g_allocator,
         g_device,
         &m_shaders[vertex_shader],
         &m_shaders[fragment_shader],
@@ -520,8 +555,8 @@ pub fn createVertexBuffer(
 ) !void {
     g_vertex_buffers[handle] = try VertexBuffer.init(
         g_device,
+        g_transfer_command_pool,
         g_transfer_queue,
-        g_device.queue_family_indices.transfer_family.?,
         layout,
         data,
     );
@@ -545,8 +580,8 @@ pub fn createIndexBuffer(
 ) !void {
     g_index_buffers[handle] = try IndexBuffer.init(
         g_device,
+        g_transfer_command_pool,
         g_transfer_queue,
-        g_device.queue_family_indices.transfer_family.?,
         data,
         index_type,
     );
@@ -585,6 +620,31 @@ pub fn updateUniformBuffer(
     data: []const u8,
 ) !void {
     g_uniform_buffers[handle].buffer[g_current_frame].update(data);
+}
+
+pub fn createTexture(
+    handle: gfx.TextureHandle,
+    reader: std.io.AnyReader,
+) !void {
+    g_textures[handle] = try Texture.init(
+        g_arena_allocator,
+        g_device,
+        g_transfer_command_pool,
+        g_transfer_queue,
+        reader,
+    );
+
+    log.debug("Created texture:", .{});
+    log.debug("  - Handle: {d}", .{handle});
+}
+
+pub fn destroyTexture(
+    handle: gfx.TextureHandle,
+) void {
+    g_textures_to_destroy[g_textures_to_destroy_count] = g_textures[handle];
+    g_textures_to_destroy_count += 1;
+
+    log.debug("Destroyed texture with handle {d}", .{handle});
 }
 
 pub fn beginFrame() !bool {
@@ -736,6 +796,18 @@ pub fn draw(
         g_current_frame,
         vertex_buffer.buffer.handle,
         @ptrCast(&offsets),
+    );
+
+    var program = &g_programs[g_current_program.?];
+
+    g_command_buffers.bindDescriptorSets(
+        g_current_frame,
+        program.pipeline_layout,
+        0,
+        1,
+        &program.descriptor_sets[g_current_frame],
+        0,
+        null,
     );
 
     g_command_buffers.draw(

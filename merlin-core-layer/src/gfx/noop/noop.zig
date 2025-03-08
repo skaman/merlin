@@ -2,7 +2,7 @@ const std = @import("std");
 
 const gfx = @import("../gfx.zig");
 
-pub fn init(_: std.mem.Allocator, _: *const gfx.Options) !void {}
+pub fn init(_: std.mem.Allocator, _: std.mem.Allocator, _: *const gfx.Options) !void {}
 pub fn deinit() void {}
 pub fn getSwapchainSize() [2]u32 {
     return .{ 0, 0 };
@@ -19,6 +19,8 @@ pub fn destroyIndexBuffer(_: gfx.IndexBufferHandle) void {}
 pub fn createUniformBuffer(_: gfx.UniformHandle, _: []const u8, _: u32) !void {}
 pub fn destroyUniformBuffer(_: gfx.UniformHandle) void {}
 pub fn updateUniformBuffer(_: gfx.UniformHandle, _: []const u8) !void {}
+pub fn createTexture(_: gfx.TextureHandle, _: std.io.AnyReader) !void {}
+pub fn destroyTexture(_: gfx.TextureHandle) void {}
 pub fn beginFrame() !bool {
     return true;
 }

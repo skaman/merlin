@@ -46,6 +46,8 @@ pub const UniformRegistry = struct {
         }
 
         var entry = try self.allocator.create(Entry);
+        errdefer self.allocator.destroy(entry);
+
         entry.name = try self.allocator.dupe(u8, name);
         errdefer self.allocator.free(entry.name);
 

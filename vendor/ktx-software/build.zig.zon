@@ -1,5 +1,5 @@
 .{
-    .name = .spirv_headers,
+    .name = .ktx_software,
     .version = "0.0.0",
 
     .dependencies = .{},
@@ -8,5 +8,6 @@
         "build.zig",
         "build.zig.zon",
         "upstream",
+        "generated",
     },
 }

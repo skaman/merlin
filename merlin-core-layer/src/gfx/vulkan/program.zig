@@ -7,6 +7,7 @@ const vk = @import("vulkan.zig");
 pub const Program = struct {
     const Self = @This();
 
+    allocator: std.mem.Allocator,
     device: *const vk.Device,
     pipeline_layout: c.VkPipelineLayout,
     vertex_shader: *const vk.Shader,
@@ -17,9 +18,11 @@ pub const Program = struct {
     descriptor_sets: [vk.MaxFramesInFlight]c.VkDescriptorSet,
 
     layout_names: [vk.Pipeline.MaxDescriptorSetBindings][]const u8,
+    layout_types: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorType,
     layout_count: u32,
 
     pub fn init(
+        allocator: std.mem.Allocator,
         device: *const vk.Device,
         vertex_shader: *const vk.Shader,
         fragment_shader: *const vk.Shader,
@@ -29,7 +32,13 @@ pub const Program = struct {
         var layouts: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorSetLayoutBinding = undefined;
         var layout_names: [vk.Pipeline.MaxDescriptorSetBindings][]const u8 = undefined;
         var layout_sizes: [vk.Pipeline.MaxDescriptorSetBindings]u32 = undefined;
+        var layout_types: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorType = undefined;
         var layout_count: u32 = 0;
+        errdefer {
+            for (0..layout_count) |i| {
+                allocator.free(layout_names[i]);
+            }
+        }
 
         for (0..vertex_shader.descriptor_set_count) |index| {
             const descriptor_set = &vertex_shader.descriptor_sets[index];
@@ -40,10 +49,12 @@ pub const Program = struct {
             }
 
             for (descriptor_set.bindings) |binding| {
-                layouts[layout_count] = convertDescriptorSetLayoutBinding(binding);
+                const layout_binding = convertDescriptorSetLayoutBinding(binding);
+                layouts[layout_count] = layout_binding;
                 layouts[layout_count].stageFlags |= c.VK_SHADER_STAGE_VERTEX_BIT;
-                layout_names[layout_count] = binding.name;
+                layout_names[layout_count] = try allocator.dupe(u8, binding.name);
                 layout_sizes[layout_count] = binding.size;
+                layout_types[layout_count] = layout_binding.descriptorType;
                 layout_count += 1;
             }
         }
@@ -72,10 +83,12 @@ pub const Program = struct {
                 if (existing_descriptor_set_index) |other_index| {
                     layouts[other_index].stageFlags |= c.VK_SHADER_STAGE_FRAGMENT_BIT;
                 } else {
-                    layouts[layout_count] = convertDescriptorSetLayoutBinding(binding);
+                    const layout_binding = convertDescriptorSetLayoutBinding(binding);
+                    layouts[layout_count] = layout_binding;
                     layouts[layout_count].stageFlags |= c.VK_SHADER_STAGE_FRAGMENT_BIT;
-                    layout_names[layout_count] = binding.name;
+                    layout_names[layout_count] = try allocator.dupe(u8, binding.name);
                     layout_sizes[layout_count] = binding.size;
+                    layout_types[layout_count] = layout_binding.descriptorType;
                     layout_count += 1;
                 }
             }
@@ -149,10 +162,14 @@ pub const Program = struct {
         var created_uniforms: u32 = 0;
         errdefer {
             for (0..created_uniforms) |i| {
-                uniform_registry.destroy(layout_names[i]);
+                if (layout_types[i] == c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+                    uniform_registry.destroy(layout_names[i]);
+                }
             }
         }
         for (0..layout_count) |binding_index| {
+            if (layout_types[binding_index] != c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) continue;
+
             const binding = layouts[binding_index];
             const name = layout_names[binding_index];
             const size = layout_sizes[binding_index];
@@ -193,6 +210,7 @@ pub const Program = struct {
         }
 
         return .{
+            .allocator = allocator,
             .device = device,
             .pipeline_layout = pipeline_layout,
             .vertex_shader = vertex_shader,
@@ -202,13 +220,17 @@ pub const Program = struct {
             .descriptor_set_layout = descriptor_set_layout,
             .descriptor_sets = descriptor_sets,
             .layout_names = layout_names,
+            .layout_types = layout_types,
             .layout_count = layout_count,
         };
     }
 
     pub fn deinit(self: *Self) void {
         for (0..self.layout_count) |binding_index| {
-            self.uniform_registry.destroy(self.layout_names[binding_index]);
+            if (self.layout_types[binding_index] == c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
+                self.uniform_registry.destroy(self.layout_names[binding_index]);
+            }
+            self.allocator.free(self.layout_names[binding_index]);
         }
 
         self.device.freeDescriptorSets(
@@ -225,9 +247,10 @@ pub const Program = struct {
         }
     }
 
-    fn convertBindingType(type_: gfx.DescriptorBindType) c.VkDescriptorType {
-        return switch (type_) {
+    fn convertBindingType(bind_type: gfx.DescriptorBindType) c.VkDescriptorType {
+        return switch (bind_type) {
             .uniform => c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+            .combined_sampler => c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
         };
     }
 

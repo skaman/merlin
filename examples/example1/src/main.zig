@@ -8,11 +8,11 @@ const platform = mcl.platform;
 const frag_shader_code = @embedFile("shader.frag.bin");
 const vert_shader_code = @embedFile("shader.vert.bin");
 
-const Vertices = [_][5]f32{
-    [_]f32{ -0.5, -0.5, 1.0, 0.0, 0.0 },
-    [_]f32{ 0.5, -0.5, 0.0, 1.0, 0.0 },
-    [_]f32{ 0.5, 0.5, 0.0, 0.0, 1.0 },
-    [_]f32{ -0.5, 0.5, 1.0, 1.0, 1.0 },
+const Vertices = [_][7]f32{
+    [_]f32{ -0.5, -0.5, 1.0, 0.0, 0.0, 1.0, 0.0 },
+    [_]f32{ 0.5, -0.5, 0.0, 1.0, 0.0, 0.0, 0.0 },
+    [_]f32{ 0.5, 0.5, 0.0, 0.0, 1.0, 0.0, 1.0 },
+    [_]f32{ -0.5, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0 },
 };
 
 const Indices = [_]u16{
@@ -38,9 +38,13 @@ pub fn main() !void {
     const program_handle = try gfx.createProgram(vert_shader_handle, frag_shader_handle);
     defer gfx.destroyProgram(program_handle);
 
+    const texture_handle = try gfx.createTextureFromFilePath("test.ktx");
+    defer gfx.destroyTexture(texture_handle);
+
     var vertex_layout = gfx.VertexLayout.init();
     vertex_layout.add(.position, 2, .float, false, false);
     vertex_layout.add(.color_0, 3, .float, false, false);
+    vertex_layout.add(.tex_coord_0, 2, .float, false, false);
 
     const vertex_buffer_handle = try gfx.createVertexBuffer(
         std.mem.sliceAsBytes(&Vertices),

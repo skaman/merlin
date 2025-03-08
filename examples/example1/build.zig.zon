@@ -1,6 +1,7 @@
 .{
-    .name = "merlin-example1",
+    .name = .merlin_example1,
     .version = "0.0.0",
+    .fingerprint = 0x59117d43dfdf490e,
 
     .dependencies = .{
         .merlin_core_layer = .{

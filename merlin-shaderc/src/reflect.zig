@@ -203,13 +203,17 @@ pub const ShaderReflect = struct {
 
             const descriptor_type = switch (binding.*.descriptor_type) {
                 c.SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER => gfx.DescriptorBindType.uniform,
+                c.SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => gfx.DescriptorBindType.combined_sampler,
                 else => return error.UnsupportedDescriptorType,
             };
 
             result[i] = .{
                 .name = try allocator.dupe(u8, std.mem.sliceTo(binding.*.name, 0)),
                 .binding = binding.*.binding,
-                .size = binding.*.block.padded_size,
+                .size = switch (descriptor_type) {
+                    gfx.DescriptorBindType.uniform => binding.*.block.size,
+                    gfx.DescriptorBindType.combined_sampler => 0,
+                },
                 .type = descriptor_type,
             };
             loaded_bindings += 1;
@@ -219,6 +223,7 @@ pub const ShaderReflect = struct {
                 result[i].binding,
                 switch (result[i].type) {
                     gfx.DescriptorBindType.uniform => "uniform",
+                    gfx.DescriptorBindType.combined_sampler => "combined sampler",
                 },
                 std.fmt.fmtIntSizeDec(result[i].size),
             });

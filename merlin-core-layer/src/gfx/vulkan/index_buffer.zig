@@ -12,8 +12,8 @@ pub const IndexBuffer = struct {
 
     pub fn init(
         device: *const vk.Device,
+        command_pool: *const vk.CommandPool,
         queue: c.VkQueue,
-        queue_family_index: u32,
         data: []const u8,
         index_type: gfx.IndexType,
     ) !Self {
@@ -49,8 +49,8 @@ pub const IndexBuffer = struct {
         errdefer buffer.deinit();
 
         try buffer.copyFromBuffer(
+            command_pool,
             queue,
-            queue_family_index,
             staging_buffer.handle,
             @intCast(data.len),
         );

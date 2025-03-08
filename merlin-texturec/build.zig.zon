@@ -1,17 +1,16 @@
 .{
-    .name = .merlin_shaderc,
+    .name = "merlin-texturec",
     .version = "0.0.0",
-    .fingerprint = 0xf0353bff9578ece8,
 
     .dependencies = .{
         .merlin_core_layer = .{
             .path = "../merlin-core-layer",
         },
-        .libshaderc = .{
-            .path = "../vendor/shaderc",
+        .stb = .{
+            .path = "../vendor/stb",
         },
-        .spirv_reflect = .{
-            .path = "../vendor/spirv-reflect",
+        .ktx_software = .{
+            .path = "../vendor/ktx-software",
         },
         .clap = .{
             .path = "../vendor/zig-clap",

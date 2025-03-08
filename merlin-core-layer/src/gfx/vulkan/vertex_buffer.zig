@@ -12,8 +12,8 @@ pub const VertexBuffer = struct {
 
     pub fn init(
         device: *const vk.Device,
+        command_pool: *const vk.CommandPool,
         queue: c.VkQueue,
-        queue_family_index: u32,
         layout: gfx.VertexLayout,
         data: []const u8,
     ) !Self {
@@ -46,8 +46,8 @@ pub const VertexBuffer = struct {
         errdefer buffer.deinit();
 
         try buffer.copyFromBuffer(
+            command_pool,
             queue,
-            queue_family_index,
             staging_buffer.handle,
             @intCast(data.len),
         );

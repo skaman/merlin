@@ -4,8 +4,9 @@
 
     .dependencies = .{
         .system_sdk = .{
-            .url = "https://github.com/zig-gamedev/system_sdk/archive/refs/tags/v0.2.1.zip",
-            .hash = "122071280f7f0852ef6d2cd74f7c6593511eb48ec3b1b88d1457cd2453eb8597d925",
+            //.url = "https://github.com/zig-gamedev/system_sdk/archive/refs/tags/v0.2.1.zip",
+            .url = "https://github.com/samloeschen/system_sdk/archive/refs/heads/main.zip",
+            .hash = "122040b48744d9f8383507c3a842aced0097cbfa98ba400e05f9857eca4665f7b607",
         },
     },
 

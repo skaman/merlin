@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) !void {
     const glfw = b.dependency("glfw", .{});
     const vulkan_headers = b.dependency("vulkan_headers", .{});
     const vulkan_utility_libraries = b.dependency("vulkan_utility_libraries", .{});
+    const ktx_software = b.dependency("ktx_software", .{});
     const zmath = b.dependency("zmath", .{});
 
     const merlin_core_layer_mod = b.addModule("merlin_core_layer", .{
@@ -29,6 +30,8 @@ pub fn build(b: *std.Build) !void {
     merlin_core_layer.addIncludePath(b.path("../vendor/vulkan-headers/upstream/include"));
     merlin_core_layer.linkLibrary(vulkan_utility_libraries.artifact("vulkan_utility_libraries"));
     merlin_core_layer.addIncludePath(b.path("../vendor/vulkan-utility-libraries/upstream/include"));
+    merlin_core_layer.linkLibrary(ktx_software.artifact("ktx_software"));
+    merlin_core_layer.addIncludePath(b.path("../vendor/ktx-software/upstream/include"));
     merlin_core_layer.root_module.addImport("zmath", zmath.module("root"));
 
     switch (builtin.target.os.tag) {

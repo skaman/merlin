@@ -28,3 +28,9 @@
 [submodule "vendor/zmath"]
 	path = vendor/zmath
 	url = https://github.com/zig-gamedev/zmath.git
+[submodule "vendor/stb/upstream"]
+	path = vendor/stb/upstream
+	url = https://github.com/nothings/stb.git
+[submodule "vendor/ktx-software/upstream"]
+	path = vendor/ktx-software/upstream
+	url = https://github.com/KhronosGroup/KTX-Software.git

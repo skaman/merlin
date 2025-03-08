@@ -1,5 +1,5 @@
 .{
-    .name = "spirv-tools",
+    .name = .spirv_tools,
     .version = "0.0.0",
 
     .dependencies = .{

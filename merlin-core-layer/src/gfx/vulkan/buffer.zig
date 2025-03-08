@@ -60,8 +60,8 @@ pub const Buffer = struct {
 
     pub fn copyFromBuffer(
         self: *Self,
+        command_pool: *const vk.CommandPool,
         queue: c.VkQueue,
-        queue_family_index: u32,
         src_buffer: c.VkBuffer,
         size: c.VkDeviceSize,
     ) !void {
@@ -69,8 +69,8 @@ pub const Buffer = struct {
 
         var command_buffer = try vk.CommandBuffers.init(
             self.device,
+            command_pool,
             1,
-            queue_family_index,
         );
         defer command_buffer.deinit();
 
