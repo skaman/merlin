@@ -17,7 +17,11 @@ fn format_supported(
     format: c.VkFormat,
 ) bool {
     var properties: c.VkFormatProperties = undefined;
-    device.getPhysicalDeviceFormatProperties(format, &properties);
+    device.instance.getPhysicalDeviceFormatProperties(
+        device.physical_device,
+        format,
+        &properties,
+    );
 
     const needed_features = c.VK_FORMAT_FEATURE_TRANSFER_DST_BIT | c.VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
     return (properties.optimalTilingFeatures & needed_features) == needed_features;
@@ -61,6 +65,8 @@ pub const Texture = struct {
 
     device: *const vk.Device,
     ktx_texture: c.ktxVulkanTexture,
+    image_view: c.VkImageView,
+    sampler: c.VkSampler,
 
     pub fn init(
         arena_allocator: std.mem.Allocator,
@@ -123,6 +129,11 @@ pub const Texture = struct {
                 c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
             ),
         );
+        errdefer c.ktxVulkanTexture_Destruct(
+            &texture,
+            device.device,
+            device.instance.allocation_callbacks,
+        );
 
         vk.log.debug("KTX texture uploaded:", .{});
         vk.log.debug("  - Width: {d}", .{texture.width});
@@ -134,13 +145,84 @@ pub const Texture = struct {
         vk.log.debug("  - Image layout: {s}", .{c.string_VkImageLayout(texture.imageLayout)});
         vk.log.debug("  - View type: {s}", .{c.string_VkImageViewType(texture.viewType)});
 
+        const view_info = c.VkImageViewCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            .image = texture.image,
+            .viewType = texture.viewType,
+            .format = texture.imageFormat,
+            .components = c.VkComponentMapping{
+                .r = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .g = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .b = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                .a = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+            },
+            .subresourceRange = c.VkImageSubresourceRange{
+                .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = texture.levelCount,
+                .baseArrayLayer = 0,
+                .layerCount = texture.layerCount,
+            },
+        };
+        var texture_image_view: c.VkImageView = undefined;
+        try device.createImageView(&view_info, &texture_image_view);
+        errdefer device.destroyImageView(texture_image_view);
+
+        var sampler_info = c.VkSamplerCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            .magFilter = c.VK_FILTER_LINEAR,
+            .minFilter = c.VK_FILTER_LINEAR,
+            .addressModeU = c.VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeV = c.VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_REPEAT,
+            .borderColor = c.VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+            .unnormalizedCoordinates = c.VK_FALSE,
+            .compareEnable = c.VK_FALSE,
+            .compareOp = c.VK_COMPARE_OP_ALWAYS,
+            .mipmapMode = c.VK_SAMPLER_MIPMAP_MODE_LINEAR,
+            .mipLodBias = 0.0,
+            .minLod = 0.0,
+            .maxLod = @floatFromInt(texture.levelCount),
+        };
+
+        if (device.features.features.samplerAnisotropy == c.VK_TRUE) {
+            sampler_info.anisotropyEnable = c.VK_TRUE;
+            sampler_info.maxAnisotropy = device.properties.limits.maxSamplerAnisotropy;
+        }
+
+        var sampler: c.VkSampler = undefined;
+        try device.createSampler(&sampler_info, &sampler);
+        errdefer device.destroySampler(sampler);
+
+        vk.log.debug("Created sampler:", .{});
+        vk.log.debug("  - Mag filter: {s}", .{c.string_VkFilter(sampler_info.magFilter)});
+        vk.log.debug("  - Min filter: {s}", .{c.string_VkFilter(sampler_info.minFilter)});
+        vk.log.debug("  - Address mode U: {s}", .{c.string_VkSamplerAddressMode(sampler_info.addressModeU)});
+        vk.log.debug("  - Address mode V: {s}", .{c.string_VkSamplerAddressMode(sampler_info.addressModeV)});
+        vk.log.debug("  - Address mode W: {s}", .{c.string_VkSamplerAddressMode(sampler_info.addressModeW)});
+        vk.log.debug("  - Border color: {s}", .{c.string_VkBorderColor(sampler_info.borderColor)});
+        vk.log.debug("  - Unnormalized coordinates: {}", .{sampler_info.unnormalizedCoordinates == c.VK_TRUE});
+        vk.log.debug("  - Compare enable: {}", .{sampler_info.compareEnable == c.VK_TRUE});
+        vk.log.debug("  - Compare op: {s}", .{c.string_VkCompareOp(sampler_info.compareOp)});
+        vk.log.debug("  - Mipmap mode: {s}", .{c.string_VkSamplerMipmapMode(sampler_info.mipmapMode)});
+        vk.log.debug("  - Mip lod bias: {d}", .{sampler_info.mipLodBias});
+        vk.log.debug("  - Min lod: {d}", .{sampler_info.minLod});
+        vk.log.debug("  - Max lod: {d}", .{sampler_info.maxLod});
+        vk.log.debug("  - Anisotropy enable: {}", .{sampler_info.anisotropyEnable == c.VK_TRUE});
+        vk.log.debug("  - Max anisotropy: {d}", .{sampler_info.maxAnisotropy});
+
         return .{
             .device = device,
             .ktx_texture = texture,
+            .image_view = texture_image_view,
+            .sampler = sampler,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        self.device.destroySampler(self.sampler);
+        self.device.destroyImageView(self.image_view);
+
         c.ktxVulkanTexture_Destruct(
             &self.ktx_texture,
             self.device.device,

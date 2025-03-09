@@ -223,6 +223,28 @@ pub const CommandBuffers = struct {
         );
     }
 
+    pub fn pushDescriptorSet(
+        self: *const Self,
+        index: u32,
+        pipeline_layout: c.VkPipelineLayout,
+        set: u32,
+        descriptor_write_count: u32,
+        descriptor_writes: [*c]const c.VkWriteDescriptorSet,
+    ) void {
+        std.debug.assert(pipeline_layout != null);
+        std.debug.assert(descriptor_writes != null);
+        std.debug.assert(index < self.count);
+
+        self.device.cmdPushDescriptorSet(
+            self.handles[index],
+            c.VK_PIPELINE_BIND_POINT_GRAPHICS,
+            pipeline_layout,
+            set,
+            descriptor_write_count,
+            descriptor_writes,
+        );
+    }
+
     pub fn draw(
         self: *Self,
         index: u32,

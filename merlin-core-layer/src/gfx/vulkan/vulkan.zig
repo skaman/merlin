@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const c = @import("../../c.zig").c;
+const utils = @import("../../utils.zig");
 const gfx = @import("../gfx.zig");
 pub const Buffer = @import("buffer.zig").Buffer;
 pub const CommandBuffers = @import("command_buffers.zig").CommandBuffers;
@@ -56,7 +57,7 @@ var g_programs: [gfx.MaxProgramHandles]Program = undefined;
 var g_pipelines: std.AutoHashMap(PipelineKey, Pipeline) = undefined;
 var g_vertex_buffers: [gfx.MaxVertexBufferHandles]VertexBuffer = undefined;
 var g_index_buffers: [gfx.MaxIndexBufferHandles]IndexBuffer = undefined;
-var g_uniform_buffers: [gfx.MaxUniformHandles]*UniformRegistry.Entry = undefined;
+//var g_uniform_buffers: [gfx.MaxUniformHandles]*UniformRegistry.Entry = undefined;
 var g_textures: [gfx.MaxTextureHandles]Texture = undefined;
 
 var g_vertex_buffers_to_destroy: [gfx.MaxProgramHandles]VertexBuffer = undefined;
@@ -83,6 +84,12 @@ var g_current_index_buffer: ?gfx.IndexBufferHandle = null;
 var g_framebuffer_width: u32 = 0;
 var g_framebuffer_height: u32 = 0;
 var g_framebuffer_invalidated: bool = false;
+
+var g_shader_handles: utils.HandlePool(gfx.ShaderHandle, gfx.MaxShaderHandles) = undefined;
+var g_program_handles: utils.HandlePool(gfx.ProgramHandle, gfx.MaxProgramHandles) = undefined;
+var g_vertex_buffer_handles: utils.HandlePool(gfx.VertexBufferHandle, gfx.MaxVertexBufferHandles) = undefined;
+var g_index_buffer_handles: utils.HandlePool(gfx.IndexBufferHandle, gfx.MaxIndexBufferHandles) = undefined;
+var g_texture_handles: utils.HandlePool(gfx.TextureHandle, gfx.MaxTextureHandles) = undefined;
 
 pub fn debugCallback(
     message_severity: c.VkDebugUtilsMessageSeverityFlagBitsEXT,
@@ -412,6 +419,12 @@ pub fn init(
 
     try g_device.createDescriptorPool(&pool_info, &g_descriptor_pool);
     errdefer g_device.destroyDescriptorPool(g_descriptor_pool);
+
+    g_shader_handles = .init();
+    g_program_handles = .init();
+    g_vertex_buffer_handles = .init();
+    g_index_buffer_handles = .init();
+    g_texture_handles = .init();
 }
 
 pub fn deinit() void {
@@ -422,6 +435,12 @@ pub fn deinit() void {
     };
 
     destroyPendingResources();
+
+    g_shader_handles.deinit();
+    g_program_handles.deinit();
+    g_vertex_buffer_handles.deinit();
+    g_index_buffer_handles.deinit();
+    g_texture_handles.deinit();
 
     g_device.destroyDescriptorPool(g_descriptor_pool);
 
@@ -485,10 +504,10 @@ pub fn setFramebufferSize(size: [2]u32) void {
     }
 }
 
-pub fn createShader(
-    handle: gfx.ShaderHandle,
-    data: *const gfx.ShaderData,
-) !void {
+pub fn createShader(data: *const gfx.ShaderData) !gfx.ShaderHandle {
+    const handle = try g_shader_handles.alloc();
+    errdefer g_shader_handles.free(handle);
+
     m_shaders[handle] = try Shader.init(g_device, data);
 
     log.debug("Created {s} shader:", .{switch (data.type) {
@@ -507,23 +526,26 @@ pub fn createShader(
             log.debug("    Binding {d}: {s} {}", .{ binding.binding, binding.name, binding.type });
         }
     }
+
+    return handle;
 }
 
-pub fn destroyShader(
-    handle: gfx.ShaderHandle,
-) void {
-    //m_shaders[handle].deinit();
+pub fn destroyShader(handle: gfx.ShaderHandle) void {
     g_shaders_to_destroy[g_shaders_to_destroy_count] = m_shaders[handle];
     g_shaders_to_destroy_count += 1;
+
+    g_shader_handles.free(handle);
 
     log.debug("Destroyed shader with handle {d}", .{handle});
 }
 
 pub fn createProgram(
-    handle: gfx.ProgramHandle,
     vertex_shader: gfx.ShaderHandle,
     fragment_shader: gfx.ShaderHandle,
-) !void {
+) !gfx.ProgramHandle {
+    const handle = try g_program_handles.alloc();
+    errdefer g_program_handles.free(handle);
+
     g_programs[handle] = try Program.init(
         g_allocator,
         g_device,
@@ -537,22 +559,26 @@ pub fn createProgram(
     log.debug("  - Handle: {d}", .{handle});
     log.debug("  - Vertex shader handle: {d}", .{vertex_shader});
     log.debug("  - Fragment shader handle: {d}", .{fragment_shader});
+
+    return handle;
 }
 
-pub fn destroyProgram(
-    handle: gfx.ProgramHandle,
-) void {
-    //g_programs[handle].deinit();
+pub fn destroyProgram(handle: gfx.ProgramHandle) void {
     g_programs_to_destroy[g_programs_to_destroy_count] = g_programs[handle];
     g_programs_to_destroy_count += 1;
+
+    g_program_handles.free(handle);
+
     log.debug("Destroyed program with handle {d}", .{handle});
 }
 
 pub fn createVertexBuffer(
-    handle: gfx.VertexBufferHandle,
     data: []const u8,
     layout: gfx.VertexLayout,
-) !void {
+) !gfx.VertexBufferHandle {
+    const handle = try g_vertex_buffer_handles.alloc();
+    errdefer g_vertex_buffer_handles.free(handle);
+
     g_vertex_buffers[handle] = try VertexBuffer.init(
         g_device,
         g_transfer_command_pool,
@@ -563,21 +589,26 @@ pub fn createVertexBuffer(
 
     log.debug("Created vertex buffer:", .{});
     log.debug("  - Handle: {d}", .{handle});
+
+    return handle;
 }
 
-pub fn destroyVertexBuffer(
-    handle: gfx.VertexBufferHandle,
-) void {
+pub fn destroyVertexBuffer(handle: gfx.VertexBufferHandle) void {
     g_vertex_buffers_to_destroy[g_vertex_buffers_to_destroy_count] = g_vertex_buffers[handle];
     g_vertex_buffers_to_destroy_count += 1;
+
+    g_vertex_buffer_handles.free(handle);
+
     log.debug("Destroyed vertex buffer with handle {d}", .{handle});
 }
 
 pub fn createIndexBuffer(
-    handle: gfx.IndexBufferHandle,
     data: []const u8,
     index_type: gfx.IndexType,
-) !void {
+) !gfx.IndexBufferHandle {
+    const handle = try g_index_buffer_handles.alloc();
+    errdefer g_index_buffer_handles.free(handle);
+
     g_index_buffers[handle] = try IndexBuffer.init(
         g_device,
         g_transfer_command_pool,
@@ -588,30 +619,34 @@ pub fn createIndexBuffer(
 
     log.debug("Created index buffer:", .{});
     log.debug("  - Handle: {d}", .{handle});
+
+    return handle;
 }
 
-pub fn destroyIndexBuffer(
-    handle: gfx.IndexBufferHandle,
-) void {
+pub fn destroyIndexBuffer(handle: gfx.IndexBufferHandle) void {
     g_index_buffers_to_destroy[g_index_buffers_to_destroy_count] = g_index_buffers[handle];
     g_index_buffers_to_destroy_count += 1;
+
+    g_index_buffer_handles.free(handle);
+
     log.debug("Destroyed index buffer with handle {d}", .{handle});
 }
 
 pub fn createUniformBuffer(
-    handle: gfx.UniformHandle,
     name: []const u8,
     size: u32,
-) !void {
-    g_uniform_buffers[handle] = try g_uniform_registry.create(name, size);
+) !gfx.UniformHandle {
+    const handle = try g_uniform_registry.createBuffer(name, size);
+
     log.debug("Created uniform buffer:", .{});
     log.debug("  - Handle: {d}", .{handle});
+
+    return handle;
 }
 
-pub fn destroyUniformBuffer(
-    handle: gfx.UniformHandle,
-) void {
-    g_uniform_registry.destroy(g_uniform_buffers[handle].name);
+pub fn destroyUniformBuffer(handle: gfx.UniformHandle) void {
+    g_uniform_registry.destroy(handle);
+
     log.debug("Destroyed uniform buffer with handle {d}", .{handle});
 }
 
@@ -619,13 +654,28 @@ pub fn updateUniformBuffer(
     handle: gfx.UniformHandle,
     data: []const u8,
 ) !void {
-    g_uniform_buffers[handle].buffer[g_current_frame].update(data);
+    try g_uniform_registry.updateBuffer(handle, g_current_frame, data);
 }
 
-pub fn createTexture(
-    handle: gfx.TextureHandle,
-    reader: std.io.AnyReader,
-) !void {
+pub fn createCombinedSampler(name: []const u8) !gfx.UniformHandle {
+    const handle = try g_uniform_registry.createCombinedSampler(name);
+
+    log.debug("Created combined sampler:", .{});
+    log.debug("  - Handle: {d}", .{handle});
+
+    return handle;
+}
+
+pub fn destroyCombinedSampler(handle: gfx.UniformHandle) void {
+    g_uniform_registry.destroy(handle);
+
+    log.debug("Destroyed combined sampler with handle {d}", .{handle});
+}
+
+pub fn createTexture(reader: std.io.AnyReader) !gfx.TextureHandle {
+    const handle = try g_texture_handles.alloc();
+    errdefer g_texture_handles.free(handle);
+
     g_textures[handle] = try Texture.init(
         g_arena_allocator,
         g_device,
@@ -636,13 +686,15 @@ pub fn createTexture(
 
     log.debug("Created texture:", .{});
     log.debug("  - Handle: {d}", .{handle});
+
+    return handle;
 }
 
-pub fn destroyTexture(
-    handle: gfx.TextureHandle,
-) void {
+pub fn destroyTexture(handle: gfx.TextureHandle) void {
     g_textures_to_destroy[g_textures_to_destroy_count] = g_textures[handle];
     g_textures_to_destroy_count += 1;
+
+    g_texture_handles.free(handle);
 
     log.debug("Destroyed texture with handle {d}", .{handle});
 }
@@ -775,6 +827,15 @@ pub fn bindIndexBuffer(index_buffer: gfx.IndexBufferHandle) void {
     g_current_index_buffer = index_buffer;
 }
 
+pub fn bindTexture(texture: gfx.TextureHandle, uniform: gfx.UniformHandle) void {
+    g_uniform_registry.updateCombinedSampler(
+        uniform,
+        texture,
+    ) catch {
+        log.err("Failed to update Vulkan combined sampler", .{});
+    };
+}
+
 pub fn draw(
     vertex_count: u32,
     instance_count: u32,
@@ -799,16 +860,14 @@ pub fn draw(
     );
 
     var program = &g_programs[g_current_program.?];
-
-    g_command_buffers.bindDescriptorSets(
+    program.pushDescriptorSet(
+        g_command_buffers,
         g_current_frame,
-        program.pipeline_layout,
-        0,
-        1,
-        &program.descriptor_sets[g_current_frame],
-        0,
-        null,
-    );
+        &g_textures,
+    ) catch {
+        log.err("Failed to bind Vulkan descriptor set", .{});
+        return;
+    };
 
     g_command_buffers.draw(
         g_current_frame,
@@ -845,16 +904,14 @@ pub fn drawIndexed(
     );
 
     var program = &g_programs[g_current_program.?];
-
-    g_command_buffers.bindDescriptorSets(
+    program.pushDescriptorSet(
+        g_command_buffers,
         g_current_frame,
-        program.pipeline_layout,
-        0,
-        1,
-        &program.descriptor_sets[g_current_frame],
-        0,
-        null,
-    );
+        &g_textures,
+    ) catch {
+        log.err("Failed to bind Vulkan descriptor set", .{});
+        return;
+    };
 
     const index_type: c_uint = switch (g_index_buffers[g_current_index_buffer.?].index_type) {
         gfx.IndexType.u8 => c.VK_INDEX_TYPE_UINT8_EXT,

@@ -26,6 +26,7 @@ pub const Device = struct {
         CmdDrawIndexed: std.meta.Child(c.PFN_vkCmdDrawIndexed) = undefined,
         CmdEndRenderPass: std.meta.Child(c.PFN_vkCmdEndRenderPass) = undefined,
         CmdPipelineBarrier: std.meta.Child(c.PFN_vkCmdPipelineBarrier) = undefined,
+        CmdPushDescriptorSetKHR: std.meta.Child(c.PFN_vkCmdPushDescriptorSetKHR) = undefined,
         CmdSetScissor: std.meta.Child(c.PFN_vkCmdSetScissor) = undefined,
         CmdSetViewport: std.meta.Child(c.PFN_vkCmdSetViewport) = undefined,
         CreateBuffer: std.meta.Child(c.PFN_vkCreateBuffer) = undefined,
@@ -39,6 +40,7 @@ pub const Device = struct {
         CreateImageView: std.meta.Child(c.PFN_vkCreateImageView) = undefined,
         CreatePipelineLayout: std.meta.Child(c.PFN_vkCreatePipelineLayout) = undefined,
         CreateRenderPass: std.meta.Child(c.PFN_vkCreateRenderPass) = undefined,
+        CreateSampler: std.meta.Child(c.PFN_vkCreateSampler) = undefined,
         CreateSemaphore: std.meta.Child(c.PFN_vkCreateSemaphore) = undefined,
         CreateShaderModule: std.meta.Child(c.PFN_vkCreateShaderModule) = undefined,
         CreateSwapchainKHR: std.meta.Child(c.PFN_vkCreateSwapchainKHR) = undefined,
@@ -54,6 +56,7 @@ pub const Device = struct {
         DestroyPipeline: std.meta.Child(c.PFN_vkDestroyPipeline) = undefined,
         DestroyPipelineLayout: std.meta.Child(c.PFN_vkDestroyPipelineLayout) = undefined,
         DestroyRenderPass: std.meta.Child(c.PFN_vkDestroyRenderPass) = undefined,
+        DestroySampler: std.meta.Child(c.PFN_vkDestroySampler) = undefined,
         DestroySemaphore: std.meta.Child(c.PFN_vkDestroySemaphore) = undefined,
         DestroyShaderModule: std.meta.Child(c.PFN_vkDestroyShaderModule) = undefined,
         DestroySwapchainKHR: std.meta.Child(c.PFN_vkDestroySwapchainKHR) = undefined,
@@ -66,10 +69,6 @@ pub const Device = struct {
         GetDeviceQueue: std.meta.Child(c.PFN_vkGetDeviceQueue) = undefined,
         GetImageMemoryRequirements: std.meta.Child(c.PFN_vkGetImageMemoryRequirements) = undefined,
         GetImageSubresourceLayout: std.meta.Child(c.PFN_vkGetImageSubresourceLayout) = undefined,
-        GetPhysicalDeviceFeatures2: std.meta.Child(c.PFN_vkGetPhysicalDeviceFeatures2) = undefined,
-        GetPhysicalDeviceFormatProperties: std.meta.Child(c.PFN_vkGetPhysicalDeviceFormatProperties) = undefined,
-        GetPhysicalDeviceImageFormatProperties: std.meta.Child(c.PFN_vkGetPhysicalDeviceImageFormatProperties) = undefined,
-        GetPhysicalDeviceMemoryProperties: std.meta.Child(c.PFN_vkGetPhysicalDeviceMemoryProperties) = undefined,
         GetSwapchainImagesKHR: std.meta.Child(c.PFN_vkGetSwapchainImagesKHR) = undefined,
         MapMemory: std.meta.Child(c.PFN_vkMapMemory) = undefined,
         QueuePresentKHR: std.meta.Child(c.PFN_vkQueuePresentKHR) = undefined,
@@ -99,6 +98,7 @@ pub const Device = struct {
     dispatch: Dispatch,
     queue_family_indices: QueueFamilyIndices,
     features: c.VkPhysicalDeviceFeatures2,
+    properties: c.VkPhysicalDeviceProperties,
     ktx_vulkan_functions: c.struct_ktxVulkanFunctions,
 
     pub fn init(
@@ -175,7 +175,7 @@ pub const Device = struct {
                 const memory_heap = memory_properties.memoryHeaps[mh_index];
                 vk.log.debug(
                     "    {d:0>3}: size {d}, flags 0x{x:0>8}",
-                    .{ mh_index, std.fmt.fmtIntSizeBin(memory_heap.size), memory_heap.flags },
+                    .{ mh_index, std.fmt.fmtIntSizeDec(memory_heap.size), memory_heap.flags },
                 );
             }
 
@@ -236,7 +236,7 @@ pub const Device = struct {
                 .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
             },
         );
-        dispatch.GetPhysicalDeviceFeatures2(selected_physical_device, &physical_device_features);
+        instance.getPhysicalDeviceFeatures2(selected_physical_device, &physical_device_features);
 
         const validation_layers = try vk.prepareValidationLayers(
             allocator,
@@ -289,9 +289,9 @@ pub const Device = struct {
             .vkGetBufferMemoryRequirements = dispatch.GetBufferMemoryRequirements,
             .vkGetImageMemoryRequirements = dispatch.GetImageMemoryRequirements,
             .vkGetImageSubresourceLayout = dispatch.GetImageSubresourceLayout,
-            .vkGetPhysicalDeviceImageFormatProperties = dispatch.GetPhysicalDeviceImageFormatProperties,
-            .vkGetPhysicalDeviceFormatProperties = dispatch.GetPhysicalDeviceFormatProperties,
-            .vkGetPhysicalDeviceMemoryProperties = dispatch.GetPhysicalDeviceMemoryProperties,
+            .vkGetPhysicalDeviceImageFormatProperties = instance.dispatch.GetPhysicalDeviceImageFormatProperties,
+            .vkGetPhysicalDeviceFormatProperties = instance.dispatch.GetPhysicalDeviceFormatProperties,
+            .vkGetPhysicalDeviceMemoryProperties = instance.dispatch.GetPhysicalDeviceMemoryProperties,
             .vkMapMemory = dispatch.MapMemory,
             .vkQueueSubmit = dispatch.QueueSubmit,
             .vkQueueWaitIdle = dispatch.QueueWaitIdle,
@@ -306,6 +306,7 @@ pub const Device = struct {
             .dispatch = dispatch,
             .queue_family_indices = queue_family_indices,
             .features = physical_device_features,
+            .properties = selected_physical_device_properties,
             .ktx_vulkan_functions = ktx_vulkan_functions,
         };
     }
@@ -326,8 +327,6 @@ pub const Device = struct {
     ) !u32 {
         std.debug.assert(physical_device != null);
 
-        var properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
-        var features = std.mem.zeroes(c.VkPhysicalDeviceFeatures);
         var queue_family_properties = std.ArrayList(c.VkQueueFamilyProperties).init(
             allocator,
         );
@@ -336,6 +335,7 @@ pub const Device = struct {
         var score: u32 = 0;
 
         // Device properties
+        var properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
         instance.getPhysicalDeviceProperties(
             physical_device,
             &properties,
@@ -354,9 +354,16 @@ pub const Device = struct {
         );
 
         // Device features
-        instance.getPhysicalDeviceFeatures(
+        var physical_device_features = std.mem.zeroInit(
+            c.VkPhysicalDeviceFeatures2,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+            },
+        );
+
+        instance.getPhysicalDeviceFeatures2(
             physical_device,
-            &features,
+            &physical_device_features,
         );
 
         const device_extension_support = try checkDeviceExtensionSupport(
@@ -377,7 +384,7 @@ pub const Device = struct {
         const swap_chain_adequate = (swap_chain_support.formats.len > 0 and
             swap_chain_support.present_modes.len > 0);
 
-        if (features.geometryShader == 0 or
+        if (physical_device_features.features.geometryShader == 0 or
             !queue_family_indices.isComplete() or
             !device_extension_support or
             !swap_chain_adequate)
@@ -864,6 +871,28 @@ pub const Device = struct {
         );
     }
 
+    pub fn cmdPushDescriptorSet(
+        self: *const Self,
+        command_buffer: c.VkCommandBuffer,
+        pipeline_bind_point: c.VkPipelineBindPoint,
+        layout: c.VkPipelineLayout,
+        set: u32,
+        descriptor_write_count: u32,
+        descriptor_writes: [*c]const c.VkWriteDescriptorSet,
+    ) void {
+        std.debug.assert(command_buffer != null);
+        std.debug.assert(layout != null);
+
+        self.dispatch.CmdPushDescriptorSetKHR(
+            command_buffer,
+            pipeline_bind_point,
+            layout,
+            set,
+            descriptor_write_count,
+            descriptor_writes,
+        );
+    }
+
     pub fn cmdSetScissor(
         self: *const Self,
         command_buffer: c.VkCommandBuffer,
@@ -1078,6 +1107,22 @@ pub const Device = struct {
         );
     }
 
+    pub fn createSampler(
+        self: *const Self,
+        create_info: *const c.VkSamplerCreateInfo,
+        sampler: *c.VkSampler,
+    ) !void {
+        try vk.checkVulkanError(
+            "Failed to create Vulkan sampler",
+            self.dispatch.CreateSampler(
+                self.device,
+                create_info,
+                self.instance.allocation_callbacks,
+                sampler,
+            ),
+        );
+    }
+
     pub fn createSemaphore(
         self: *const Self,
         create_info: *const c.VkSemaphoreCreateInfo,
@@ -1269,6 +1314,19 @@ pub const Device = struct {
         );
     }
 
+    pub fn destroySampler(
+        self: *const Self,
+        sampler: c.VkSampler,
+    ) void {
+        std.debug.assert(sampler != null);
+
+        self.dispatch.DestroySampler(
+            self.device,
+            sampler,
+            self.instance.allocation_callbacks,
+        );
+    }
+
     pub fn destroySemaphore(
         self: *const Self,
         semaphore: c.VkSemaphore,
@@ -1430,61 +1488,6 @@ pub const Device = struct {
             image,
             subresource,
             layout,
-        );
-    }
-
-    pub fn getPhysicalDeviceFeatures2(
-        self: *const Self,
-        features: *c.VkPhysicalDeviceFeatures2,
-    ) void {
-        self.dispatch.GetPhysicalDeviceFeatures2(
-            self.physical_device,
-            features,
-        );
-    }
-
-    pub fn getPhysicalDeviceFormatProperties(
-        self: *const Self,
-        format: c.VkFormat,
-        format_properties: *c.VkFormatProperties,
-    ) void {
-        self.dispatch.GetPhysicalDeviceFormatProperties(
-            self.physical_device,
-            format,
-            format_properties,
-        );
-    }
-
-    pub fn getPhysicalDeviceImageFormatProperties(
-        self: *const Self,
-        format: c.VkFormat,
-        image_type: c.VkImageType,
-        tiling: c.VkImageTiling,
-        usage: c.VkImageUsageFlags,
-        flags: c.VkImageCreateFlags,
-        image_format_properties: *c.VkImageFormatProperties,
-    ) !c.VkResult {
-        return self.dispatch.GetPhysicalDeviceImageFormatProperties(
-            self.physical_device,
-            format,
-            image_type,
-            tiling,
-            usage,
-            flags,
-            image_format_properties,
-        );
-    }
-
-    pub fn getPhysicalDeviceMemoryProperties(
-        self: *const Self,
-        physical_device: c.VkPhysicalDevice,
-        memory_properties: *c.VkPhysicalDeviceMemoryProperties,
-    ) void {
-        std.debug.assert(physical_device != null);
-
-        self.dispatch.GetPhysicalDeviceMemoryProperties(
-            physical_device,
-            memory_properties,
         );
     }
 

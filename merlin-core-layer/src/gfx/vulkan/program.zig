@@ -4,6 +4,23 @@ const c = @import("../../c.zig").c;
 const gfx = @import("../gfx.zig");
 const vk = @import("vulkan.zig");
 
+fn convertBindingType(bind_type: gfx.DescriptorBindType) c.VkDescriptorType {
+    return switch (bind_type) {
+        .uniform => c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .combined_sampler => c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+    };
+}
+
+fn convertDescriptorSetLayoutBinding(binding: gfx.DescriptorBinding) c.VkDescriptorSetLayoutBinding {
+    return c.VkDescriptorSetLayoutBinding{
+        .binding = binding.binding,
+        .descriptorType = convertBindingType(binding.type),
+        .descriptorCount = 1,
+        .stageFlags = 0,
+        .pImmutableSamplers = null,
+    };
+}
+
 pub const Program = struct {
     const Self = @This();
 
@@ -15,10 +32,11 @@ pub const Program = struct {
     uniform_registry: *vk.UniformRegistry,
     descriptor_pool: c.VkDescriptorPool,
     descriptor_set_layout: c.VkDescriptorSetLayout,
-    descriptor_sets: [vk.MaxFramesInFlight]c.VkDescriptorSet,
 
-    layout_names: [vk.Pipeline.MaxDescriptorSetBindings][]const u8,
-    layout_types: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorType,
+    uniform_handles: [vk.Pipeline.MaxDescriptorSetBindings]gfx.UniformHandle,
+    write_descriptor_sets: [vk.Pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet,
+    descriptor_types: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorType,
+
     layout_count: u32,
 
     pub fn init(
@@ -32,13 +50,7 @@ pub const Program = struct {
         var layouts: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorSetLayoutBinding = undefined;
         var layout_names: [vk.Pipeline.MaxDescriptorSetBindings][]const u8 = undefined;
         var layout_sizes: [vk.Pipeline.MaxDescriptorSetBindings]u32 = undefined;
-        var layout_types: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorType = undefined;
         var layout_count: u32 = 0;
-        errdefer {
-            for (0..layout_count) |i| {
-                allocator.free(layout_names[i]);
-            }
-        }
 
         for (0..vertex_shader.descriptor_set_count) |index| {
             const descriptor_set = &vertex_shader.descriptor_sets[index];
@@ -49,12 +61,10 @@ pub const Program = struct {
             }
 
             for (descriptor_set.bindings) |binding| {
-                const layout_binding = convertDescriptorSetLayoutBinding(binding);
-                layouts[layout_count] = layout_binding;
+                layouts[layout_count] = convertDescriptorSetLayoutBinding(binding);
                 layouts[layout_count].stageFlags |= c.VK_SHADER_STAGE_VERTEX_BIT;
-                layout_names[layout_count] = try allocator.dupe(u8, binding.name);
+                layout_names[layout_count] = binding.name;
                 layout_sizes[layout_count] = binding.size;
-                layout_types[layout_count] = layout_binding.descriptorType;
                 layout_count += 1;
             }
         }
@@ -83,12 +93,10 @@ pub const Program = struct {
                 if (existing_descriptor_set_index) |other_index| {
                     layouts[other_index].stageFlags |= c.VK_SHADER_STAGE_FRAGMENT_BIT;
                 } else {
-                    const layout_binding = convertDescriptorSetLayoutBinding(binding);
-                    layouts[layout_count] = layout_binding;
+                    layouts[layout_count] = convertDescriptorSetLayoutBinding(binding);
                     layouts[layout_count].stageFlags |= c.VK_SHADER_STAGE_FRAGMENT_BIT;
-                    layout_names[layout_count] = try allocator.dupe(u8, binding.name);
+                    layout_names[layout_count] = binding.name;
                     layout_sizes[layout_count] = binding.size;
-                    layout_types[layout_count] = layout_binding.descriptorType;
                     layout_count += 1;
                 }
             }
@@ -116,6 +124,7 @@ pub const Program = struct {
                 .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
                 .bindingCount = layout_count,
                 .pBindings = &layouts,
+                .flags = c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR,
             };
 
             try device.createDescriptorSetLayout(&create_info, &descriptor_set_layout);
@@ -143,70 +152,48 @@ pub const Program = struct {
         for (0..vk.MaxFramesInFlight) |i| {
             descriptor_set_layouts[i] = descriptor_set_layout;
         }
-        const descriptor_set_alloc_info = std.mem.zeroInit(
-            c.VkDescriptorSetAllocateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
-                .descriptorPool = descriptor_pool,
-                .descriptorSetCount = vk.MaxFramesInFlight,
-                .pSetLayouts = &descriptor_set_layouts,
-            },
-        );
 
-        var descriptor_sets: [vk.MaxFramesInFlight]c.VkDescriptorSet = undefined;
-        try device.allocateDescriptorSets(
-            &descriptor_set_alloc_info,
-            &descriptor_sets,
-        );
-
-        var created_uniforms: u32 = 0;
+        var write_descriptor_sets: [vk.Pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet = undefined;
+        var descriptor_types: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorType = undefined;
+        var uniform_handles: [vk.Pipeline.MaxDescriptorSetBindings]gfx.UniformHandle = undefined;
         errdefer {
-            for (0..created_uniforms) |i| {
-                if (layout_types[i] == c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
-                    uniform_registry.destroy(layout_names[i]);
-                }
+            for (0..layout_count) |binding_index| {
+                uniform_registry.destroy(uniform_handles[binding_index]);
             }
         }
-        for (0..layout_count) |binding_index| {
-            if (layout_types[binding_index] != c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) continue;
 
-            const binding = layouts[binding_index];
+        for (0..layout_count) |binding_index| {
             const name = layout_names[binding_index];
             const size = layout_sizes[binding_index];
+            const descriptor_type = layouts[binding_index].descriptorType;
 
-            const entry = try uniform_registry.create(name, size);
-            created_uniforms += 1;
+            descriptor_types[binding_index] = descriptor_type;
 
-            for (0..vk.MaxFramesInFlight) |i| {
-                const buffer_info = std.mem.zeroInit(
-                    c.VkDescriptorBufferInfo,
-                    .{
-                        .buffer = entry.buffer[i].buffer.handle,
-                        .offset = 0,
-                        .range = size,
-                    },
-                );
-
-                const write_info = std.mem.zeroInit(
-                    c.VkWriteDescriptorSet,
-                    .{
-                        .sType = c.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
-                        .dstSet = descriptor_sets[i],
-                        .dstBinding = binding.binding,
-                        .dstArrayElement = 0,
-                        .descriptorCount = 1,
-                        .descriptorType = binding.descriptorType,
-                        .pBufferInfo = &buffer_info,
-                    },
-                );
-
-                device.updateDescriptorSets(
-                    1,
-                    &write_info,
-                    0,
-                    null,
-                );
+            switch (descriptor_type) {
+                c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
+                    uniform_handles[binding_index] = try uniform_registry.createBuffer(name, size);
+                },
+                c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
+                    uniform_handles[binding_index] = try uniform_registry.createCombinedSampler(name);
+                },
+                else => {
+                    vk.log.err(
+                        "Unsupported descriptor type: {s}",
+                        .{c.string_VkDescriptorType(descriptor_type)},
+                    );
+                    return error.UnsupportedDescriptorType;
+                },
             }
+
+            write_descriptor_sets[binding_index] = std.mem.zeroInit(
+                c.VkWriteDescriptorSet,
+                .{
+                    .sType = c.VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                    .dstBinding = layouts[binding_index].binding,
+                    .descriptorCount = 1,
+                    .descriptorType = layouts[binding_index].descriptorType,
+                },
+            );
         }
 
         return .{
@@ -218,28 +205,17 @@ pub const Program = struct {
             .uniform_registry = uniform_registry,
             .descriptor_pool = descriptor_pool,
             .descriptor_set_layout = descriptor_set_layout,
-            .descriptor_sets = descriptor_sets,
-            .layout_names = layout_names,
-            .layout_types = layout_types,
+            .uniform_handles = uniform_handles,
+            .write_descriptor_sets = write_descriptor_sets,
+            .descriptor_types = descriptor_types,
             .layout_count = layout_count,
         };
     }
 
     pub fn deinit(self: *Self) void {
         for (0..self.layout_count) |binding_index| {
-            if (self.layout_types[binding_index] == c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER) {
-                self.uniform_registry.destroy(self.layout_names[binding_index]);
-            }
-            self.allocator.free(self.layout_names[binding_index]);
+            self.uniform_registry.destroy(self.uniform_handles[binding_index]);
         }
-
-        self.device.freeDescriptorSets(
-            self.descriptor_pool,
-            vk.MaxFramesInFlight,
-            &self.descriptor_sets,
-        ) catch |err| {
-            vk.log.err("Failed to free descriptor sets: {}", .{err});
-        };
 
         self.device.destroyPipelineLayout(self.pipeline_layout);
         if (self.descriptor_set_layout) |descriptor_set_layout_value| {
@@ -247,20 +223,57 @@ pub const Program = struct {
         }
     }
 
-    fn convertBindingType(bind_type: gfx.DescriptorBindType) c.VkDescriptorType {
-        return switch (bind_type) {
-            .uniform => c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .combined_sampler => c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-        };
-    }
+    pub fn pushDescriptorSet(
+        self: *Self,
+        command_buffers: *const vk.CommandBuffers,
+        index: u32,
+        textures: []vk.Texture,
+    ) !void {
+        for (0..self.layout_count) |binding_index| {
+            const handle = self.uniform_handles[binding_index];
+            switch (self.descriptor_types[binding_index]) {
+                c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
+                    self.write_descriptor_sets[binding_index].pBufferInfo = &.{
+                        .buffer = self.uniform_registry.entries[handle].uniform.buffer[index].buffer.handle,
+                        .offset = 0,
+                        .range = self.uniform_registry.entries[handle].uniform.buffer_size,
+                    };
+                },
+                c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
+                    const texture_handle = self.uniform_registry.entries[handle].combined_sampler.texture;
+                    if (texture_handle) |texture_handle_value| {
+                        const texture = &textures[texture_handle_value];
+                        self.write_descriptor_sets[binding_index].pImageInfo = &.{
+                            .imageLayout = texture.ktx_texture.imageLayout,
+                            .imageView = texture.image_view,
+                            .sampler = texture.sampler,
+                        };
+                    } else {
+                        vk.log.err("Texture handle is null for descriptor {d}", .{binding_index});
+                        return error.TextureHandleIsNull;
+                    }
+                },
+                else => {
+                    vk.log.err(
+                        "Unsupported descriptor type: {s}",
+                        .{c.string_VkDescriptorType(self.descriptor_types[binding_index])},
+                    );
+                    return error.UnsupportedDescriptorType;
+                },
+            }
+            //self.write_descriptor_sets[binding_index].dstSet = descriptor_set;
+            //self.write_descriptor_sets[binding_index].pBufferInfo = &self.uniform_registry.getBufferInfo(self.uniform_handles[binding_index]);
+        }
 
-    fn convertDescriptorSetLayoutBinding(binding: gfx.DescriptorBinding) c.VkDescriptorSetLayoutBinding {
-        return c.VkDescriptorSetLayoutBinding{
-            .binding = binding.binding,
-            .descriptorType = convertBindingType(binding.type),
-            .descriptorCount = 1,
-            .stageFlags = 0,
-            .pImmutableSamplers = null,
-        };
+        command_buffers.pushDescriptorSet(
+            index,
+            self.pipeline_layout,
+            0,
+            self.layout_count,
+            &self.write_descriptor_sets,
+        );
+        //const descriptor_set = self.descriptor_pool.allocateDescriptorSet(self.descriptor_set_layout);
+        //errdefer self.descriptor_pool.freeDescriptorSet(descriptor_set);
+
     }
 };

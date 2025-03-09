@@ -118,7 +118,7 @@ pub const Buffer = struct {
         property_flags: c.VkMemoryPropertyFlags,
     ) !u32 {
         var memory_properties: c.VkPhysicalDeviceMemoryProperties = undefined;
-        device.getPhysicalDeviceMemoryProperties(
+        device.instance.getPhysicalDeviceMemoryProperties(
             device.physical_device,
             &memory_properties,
         );
