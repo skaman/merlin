@@ -12,7 +12,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    lib.linkLibCpp();
+    lib.linkLibC();
     lib.addIncludePath(b.path("upstream"));
     lib.addIncludePath(b.path("upstream/include"));
 
