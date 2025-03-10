@@ -53,8 +53,8 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const spirv_headers = b.dependency("vulkan_headers", .{});
-    lib.linkLibrary(spirv_headers.artifact("vulkan_headers"));
+    const vulkan_headers = b.dependency("vulkan_headers", .{});
+    lib.linkLibrary(vulkan_headers.artifact("vulkan_headers"));
 
     lib.addIncludePath(b.path("../vulkan-headers/upstream/include"));
 

@@ -159,7 +159,6 @@ pub fn build(b: *std.Build) void {
                     .flags = &.{},
                 });
                 lib.root_module.addCMacro("_GLFW_X11", "1");
-                //lib.linkSystemLibrary("X11");
             }
             if (options.enable_wayland) {
                 lib.addCSourceFiles(.{

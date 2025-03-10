@@ -2,7 +2,11 @@
     .name = .ktx_software,
     .version = "0.0.0",
 
-    .dependencies = .{},
+    .dependencies = .{
+        .vulkan_headers = .{
+            .path = "../vulkan-headers",
+        },
+    },
 
     .paths = .{
         "build.zig",

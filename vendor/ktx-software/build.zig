@@ -17,7 +17,9 @@ pub fn build(b: *std.Build) void {
     lib.addIncludePath(b.path("upstream"));
     lib.addIncludePath(b.path("upstream/include"));
     lib.addIncludePath(b.path("upstream/external"));
+    lib.addIncludePath(b.path("upstream/external/basisu/zstd"));
     lib.addIncludePath(b.path("upstream/utils"));
+    lib.addIncludePath(b.path("upstream/other_include"));
     lib.addIncludePath(b.path("generated"));
 
     const src_dir = "upstream/";
@@ -87,8 +89,14 @@ pub fn build(b: *std.Build) void {
             "-DBASISU_SUPPORT_SSE=0", // TODO: Enable this
             "-DBASISU_SUPPORT_OPENCL=0",
             //"-msse4.1",
+            "-DKHRONOS_STATIC",
         },
     });
+
+    const vulkan_headers = b.dependency("vulkan_headers", .{});
+    lib.linkLibrary(vulkan_headers.artifact("vulkan_headers"));
+
+    lib.addIncludePath(b.path("../vulkan-headers/upstream/include"));
 
     b.installArtifact(lib);
 }
