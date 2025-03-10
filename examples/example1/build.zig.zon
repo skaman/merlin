@@ -10,6 +10,9 @@
         .merlin_shaderc = .{
             .path = "../../merlin-shaderc",
         },
+        .merlin_texturec = .{
+            .path = "../../merlin-texturec",
+        },
     },
 
     .paths = .{

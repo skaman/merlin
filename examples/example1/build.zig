@@ -1,7 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-fn addShaders(b: *std.Build, shaders: []const []const u8, exe: *std.Build.Step.Compile) !void {
+fn addShaders(b: *std.Build, shaders: []const []const u8) !void {
     const merlin_shaderc = b.dependency("merlin_shaderc", .{});
     const merlin_shaderc_exe = merlin_shaderc.artifact("merlin-shaderc");
 
@@ -14,10 +14,27 @@ fn addShaders(b: *std.Build, shaders: []const []const u8, exe: *std.Build.Step.C
         const output = tool_step.addOutputFileArg(output_slice);
         tool_step.addFileArg(b.path(shader));
 
-        //b.getInstallStep().dependOn(&b.addInstallFileWithDir(output, .prefix, output_slice).step);
-        exe.root_module.addAnonymousImport(std.fs.path.basename(output_slice), .{
-            .root_source_file = output,
-        });
+        b.getInstallStep().dependOn(&b.addInstallFileWithDir(output, .bin, output_slice).step);
+    }
+}
+
+fn addTextures(b: *std.Build, textures: []const []const u8) !void {
+    const merlin_texturec = b.dependency("merlin_texturec", .{});
+    const merlin_texturec_exe = merlin_texturec.artifact("merlin-texturec");
+
+    for (textures) |texture| {
+        var output_buffer: [4096]u8 = undefined;
+        const extension = std.fs.path.extension(texture);
+        const texture_without_extension = texture[0..(texture.len - extension.len)];
+        const output_slice = try std.fmt.bufPrint(&output_buffer, "{s}.ktx", .{texture_without_extension});
+
+        const tool_step = b.addRunArtifact(merlin_texturec_exe);
+        tool_step.addArg("-m");
+        tool_step.addArg("-c");
+        tool_step.addFileArg(b.path(texture));
+        const output = tool_step.addOutputFileArg(output_slice);
+
+        b.getInstallStep().dependOn(&b.addInstallFileWithDir(output, .bin, output_slice).step);
     }
 }
 
@@ -39,10 +56,15 @@ pub fn build(b: *std.Build) !void {
     });
 
     const shaders = [_][]const u8{
-        "src/shader.vert",
-        "src/shader.frag",
+        "assets/shader.vert",
+        "assets/shader.frag",
     };
-    try addShaders(b, &shaders, example1);
+    try addShaders(b, &shaders);
+
+    const textures = [_][]const u8{
+        "assets/uv_texture.png",
+    };
+    try addTextures(b, &textures);
 
     b.installArtifact(example1);
     example1.root_module.addImport("merlin_core_layer", merlin_core_layer.module("merlin_core_layer"));

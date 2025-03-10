@@ -89,7 +89,7 @@ const Params = clap.parseParamsComptime(
 );
 
 pub fn printHelp() !void {
-    std.debug.print("Usage: shaderc [options] <source file>\n", .{});
+    std.debug.print("Usage: merlin-shaderc [options] <source file>\n", .{});
     return clap.help(
         std.io.getStdErr().writer(),
         clap.Help,

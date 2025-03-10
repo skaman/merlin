@@ -1,6 +1,7 @@
 .{
-    .name = "merlin-texturec",
+    .name = .merlin_texturec,
     .version = "0.0.0",
+    .fingerprint = 0x22359c88be4ff1f,
 
     .dependencies = .{
         .merlin_core_layer = .{
@@ -11,6 +12,9 @@
         },
         .ktx_software = .{
             .path = "../vendor/ktx-software",
+        },
+        .vulkan_headers = .{
+            .path = "../vendor/vulkan-headers",
         },
         .clap = .{
             .path = "../vendor/zig-clap",

@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) !void {
     const merlin_core_layer = b.dependency("merlin_core_layer", .{});
     const clap = b.dependency("clap", .{});
     const stb = b.dependency("stb", .{});
+    const vulkan_headers = b.dependency("vulkan_headers", .{});
     const ktx_software = b.dependency("ktx_software", .{});
 
     const texturec_mod = b.createModule(.{
@@ -30,6 +31,9 @@ pub fn build(b: *std.Build) !void {
 
     texturec.linkLibrary(ktx_software.artifact("ktx_software"));
     texturec.addIncludePath(b.path("../vendor/ktx-software/upstream/include"));
+
+    texturec.linkLibrary(vulkan_headers.artifact("vulkan_headers"));
+    texturec.addIncludePath(b.path("../vendor/vulkan-headers/upstream/include"));
 
     const run_cmd = b.addRunArtifact(texturec);
     run_cmd.step.dependOn(b.getInstallStep());

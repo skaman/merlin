@@ -374,6 +374,15 @@ pub fn createShaderFromMemory(data: []const u8) !ShaderHandle {
     return try createShader(stream.reader().any());
 }
 
+pub fn createShaderFromFile(path: []const u8) !ShaderHandle {
+    std.debug.assert(g_initialized);
+
+    var file = try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+
+    return try createShader(file.reader().any());
+}
+
 pub fn destroyShader(handle: ShaderHandle) void {
     std.debug.assert(g_initialized);
     g_v_tab.destroyShader(handle);
@@ -441,7 +450,7 @@ pub fn createTexture(reader: std.io.AnyReader) !TextureHandle {
     return try g_v_tab.createTexture(reader);
 }
 
-pub fn createTextureFromFilePath(path: []const u8) !TextureHandle {
+pub fn createTextureFromFile(path: []const u8) !TextureHandle {
     std.debug.assert(g_initialized);
 
     var file = try std.fs.cwd().openFile(path, .{});

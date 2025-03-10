@@ -5,9 +5,6 @@ const gfx = mcl.gfx;
 const zm = mcl.zmath;
 const platform = mcl.platform;
 
-const frag_shader_code = @embedFile("shader.frag.bin");
-const vert_shader_code = @embedFile("shader.vert.bin");
-
 const Vertices = [_][7]f32{
     [_]f32{ -0.5, -0.5, 1.0, 0.0, 0.0, 1.0, 0.0 },
     [_]f32{ 0.5, -0.5, 0.0, 1.0, 0.0, 0.0, 0.0 },
@@ -20,7 +17,37 @@ const Indices = [_]u16{
     2, 3, 0,
 };
 
+fn getAssetPath(allocator: std.mem.Allocator, asset_name: []const u8) ![]const u8 {
+    const exe_path = try std.fs.selfExeDirPathAlloc(allocator);
+    defer allocator.free(exe_path);
+
+    return try std.fs.path.join(allocator, &[_][]const u8{
+        exe_path,
+        std.mem.bytesAsSlice(u8, "assets"),
+        asset_name,
+    });
+}
+
+fn loadShader(allocator: std.mem.Allocator, shader_name: []const u8) !gfx.ShaderHandle {
+    const shader_path = try getAssetPath(allocator, shader_name);
+    defer allocator.free(shader_path);
+
+    return try gfx.createShaderFromFile(shader_path);
+}
+
+fn loadTexture(allocator: std.mem.Allocator, texture_name: []const u8) !gfx.TextureHandle {
+    const texture_path = try getAssetPath(allocator, texture_name);
+    defer allocator.free(texture_path);
+
+    return try gfx.createTextureFromFile(texture_path);
+}
+
 pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+
+    const allocator = gpa.allocator();
+
     try mcl.init(
         .{
             .window_title = "Example 1",
@@ -29,16 +56,22 @@ pub fn main() !void {
     );
     defer mcl.deinit();
 
-    const vert_shader_handle = try gfx.createShaderFromMemory(vert_shader_code);
+    const exe_path = try std.fs.selfExeDirPathAlloc(allocator);
+    defer allocator.free(exe_path);
+
+    const vert_shader_handle = try loadShader(allocator, "shader.vert.bin");
     defer gfx.destroyShader(vert_shader_handle);
 
-    const frag_shader_handle = try gfx.createShaderFromMemory(frag_shader_code);
+    const frag_shader_handle = try loadShader(allocator, "shader.frag.bin");
     defer gfx.destroyShader(frag_shader_handle);
 
     const program_handle = try gfx.createProgram(vert_shader_handle, frag_shader_handle);
     defer gfx.destroyProgram(program_handle);
 
-    const texture_handle = try gfx.createTextureFromFilePath("test.ktx");
+    const sampler_handle = try gfx.createCombinedSampler("u_tex_sampler");
+    defer gfx.destroyCombinedSampler(sampler_handle);
+
+    const texture_handle = try loadTexture(allocator, "uv_texture.ktx");
     defer gfx.destroyTexture(texture_handle);
 
     var vertex_layout = gfx.VertexLayout.init();
@@ -112,6 +145,7 @@ pub fn main() !void {
         gfx.bindProgram(program_handle);
         gfx.bindVertexBuffer(vertex_buffer_handle);
         gfx.bindIndexBuffer(index_buffer_handle);
+        gfx.bindTexture(texture_handle, sampler_handle);
         gfx.drawIndexed(6, 1, 0, 0, 0);
 
         gfx.endFrame() catch |err| {
