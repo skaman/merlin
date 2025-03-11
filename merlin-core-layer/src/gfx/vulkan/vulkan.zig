@@ -7,17 +7,16 @@ const gfx = @import("../gfx.zig");
 pub const Buffer = @import("buffer.zig").Buffer;
 pub const CommandBuffers = @import("command_buffers.zig").CommandBuffers;
 pub const CommandPool = @import("command_pool.zig").CommandPool;
-pub const Device = @import("device.zig").Device;
+pub const device = @import("device.zig");
 pub const IndexBuffer = @import("index_buffer.zig").IndexBuffer;
-pub const Instance = @import("instance.zig").Instance;
-pub const Library = @import("library.zig").Library;
+pub const instance = @import("instance.zig");
+pub const library = @import("library.zig");
 pub const Pipeline = @import("pipeline.zig").Pipeline;
 pub const Program = @import("program.zig").Program;
-pub const RenderPass = @import("render_pass.zig").RenderPass;
+pub const render_pass = @import("render_pass.zig");
 pub const Shader = @import("shader.zig").Shader;
-pub const Surface = @import("surface.zig").Surface;
-pub const SwapChain = @import("swap_chain.zig").SwapChain;
-pub const SwapChainSupportDetails = @import("swap_chain.zig").SwapChainSupportDetails;
+pub const surface = @import("surface.zig");
+pub const swap_chain = @import("swap_chain.zig");
 pub const Texture = @import("texture.zig").Texture;
 pub const UniformBuffer = @import("uniform_buffer.zig").UniformBuffer;
 pub const UniformRegistry = @import("uniform_registry.zig").UniformRegistry;
@@ -36,15 +35,12 @@ const PipelineKey = struct {
 var g_allocator: std.mem.Allocator = undefined;
 var g_arena_allocator: std.mem.Allocator = undefined;
 var g_options: gfx.Options = undefined;
-var g_library: Library = undefined;
-var g_instance: *Instance = undefined;
-var g_device: *Device = undefined;
 var g_graphics_queue: c.VkQueue = undefined;
 var g_present_queue: c.VkQueue = undefined;
 var g_transfer_queue: c.VkQueue = undefined;
-var g_surface: *Surface = undefined;
-var g_swap_chain: *SwapChain = undefined;
-var g_main_render_pass: *RenderPass = undefined;
+var g_surface: c.VkSurfaceKHR = undefined;
+var g_swap_chain: swap_chain.SwapChain = undefined;
+var g_main_render_pass: c.VkRenderPass = undefined;
 var g_graphics_command_pool: *CommandPool = undefined;
 var g_transfer_command_pool: *CommandPool = undefined;
 var g_command_buffers: *CommandBuffers = undefined;
@@ -140,7 +136,7 @@ pub fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void 
     }
 }
 
-fn setupDebugMessenger(options: *const gfx.Options, instance: *Instance) !?c.VkDebugUtilsMessengerEXT {
+fn setupDebugMessenger(options: *const gfx.Options) !?c.VkDebugUtilsMessengerEXT {
     if (!options.enable_vulkan_debug) {
         return null;
     }
@@ -196,24 +192,19 @@ fn recreateSwapChain() !void {
         return;
     }
 
-    g_device.deviceWaitIdle() catch {
+    device.deviceWaitIdle() catch {
         log.err("Failed to wait for Vulkan device to become idle", .{});
     };
 
-    g_swap_chain.deinit();
-    g_allocator.destroy(g_swap_chain);
-
-    g_swap_chain = try g_allocator.create(SwapChain);
-    g_swap_chain.* = try SwapChain.init(
+    swap_chain.destroy(&g_swap_chain);
+    g_swap_chain = try swap_chain.create(
         g_allocator,
-        g_instance,
-        g_device,
         g_surface,
         g_framebuffer_width,
         g_framebuffer_height,
     );
 
-    try g_swap_chain.createFrameBuffers(g_main_render_pass);
+    try swap_chain.createFrameBuffers(&g_swap_chain, g_main_render_pass);
 }
 
 fn getPipeline(
@@ -230,7 +221,6 @@ fn getPipeline(
     }
 
     pipeline = try Pipeline.init(
-        g_device,
         &g_programs[program],
         g_main_render_pass,
         layout.*,
@@ -252,104 +242,64 @@ pub fn init(
     g_framebuffer_width = options.framebuffer_width;
     g_framebuffer_height = options.framebuffer_height;
 
-    g_library = try Library.init();
-    errdefer g_library.deinit();
+    try library.init();
+    errdefer library.deinit();
 
-    g_instance = try g_allocator.create(Instance);
-    errdefer g_allocator.destroy(g_instance);
-    g_instance.* = try Instance.init(
-        g_allocator,
-        &g_options,
-        &g_library,
-        null,
-    );
-    errdefer g_instance.deinit();
+    try instance.init(g_allocator, &g_options);
+    errdefer instance.deinit();
 
-    g_debug_messenger = try setupDebugMessenger(
-        &g_options,
-        g_instance,
-    );
+    g_debug_messenger = try setupDebugMessenger(&g_options);
 
-    g_surface = try g_allocator.create(Surface);
-    errdefer g_allocator.destroy(g_surface);
-    g_surface.* = try Surface.init(
-        &g_library,
-        g_instance,
-        &g_options,
-    );
-    errdefer g_surface.deinit();
+    g_surface = try surface.create(&g_options);
+    errdefer surface.destroy(g_surface);
 
-    g_device = try g_allocator.create(Device);
-    errdefer g_allocator.destroy(g_device);
-    g_device.* = try Device.init(
-        g_allocator,
-        &g_options,
-        &g_library,
-        g_instance,
-        g_surface,
-    );
-    errdefer g_device.deinit();
+    try device.init(g_allocator, &g_options, g_surface);
+    errdefer device.deinit();
 
-    g_device.getDeviceQueue(
-        g_device.queue_family_indices.graphics_family.?,
+    device.getDeviceQueue(
+        device.queue_family_indices.graphics_family.?,
         0,
         &g_graphics_queue,
     );
 
-    g_device.getDeviceQueue(
-        g_device.queue_family_indices.present_family.?,
+    device.getDeviceQueue(
+        device.queue_family_indices.present_family.?,
         0,
         &g_present_queue,
     );
 
-    g_device.getDeviceQueue(
-        g_device.queue_family_indices.transfer_family.?,
+    device.getDeviceQueue(
+        device.queue_family_indices.transfer_family.?,
         0,
         &g_transfer_queue,
     );
 
-    g_swap_chain = try g_allocator.create(SwapChain);
-    errdefer g_allocator.destroy(g_swap_chain);
-    g_swap_chain.* = try SwapChain.init(
+    g_swap_chain = try swap_chain.create(
         g_allocator,
-        g_instance,
-        g_device,
         g_surface,
         g_framebuffer_width,
         g_framebuffer_height,
     );
-    errdefer g_swap_chain.deinit();
+    errdefer swap_chain.destroy(&g_swap_chain);
 
-    g_main_render_pass = try g_allocator.create(RenderPass);
-    errdefer g_allocator.destroy(g_main_render_pass);
-    g_main_render_pass.* = try RenderPass.init(
-        g_device,
-        g_swap_chain.format,
-    );
-    errdefer g_main_render_pass.deinit();
+    g_main_render_pass = try render_pass.create(g_swap_chain.format);
+    errdefer render_pass.destroy(g_main_render_pass);
 
-    try g_swap_chain.createFrameBuffers(g_main_render_pass);
+    try swap_chain.createFrameBuffers(&g_swap_chain, g_main_render_pass);
 
     g_graphics_command_pool = try g_allocator.create(CommandPool);
     errdefer g_allocator.destroy(g_graphics_command_pool);
-    g_graphics_command_pool.* = try CommandPool.init(
-        g_device,
-        g_device.queue_family_indices.graphics_family.?,
-    );
+    g_graphics_command_pool.* = try CommandPool.init(device.queue_family_indices.graphics_family.?);
     errdefer g_graphics_command_pool.deinit();
 
     g_transfer_command_pool = try g_allocator.create(CommandPool);
     errdefer g_allocator.destroy(g_transfer_command_pool);
-    g_transfer_command_pool.* = try CommandPool.init(
-        g_device,
-        g_device.queue_family_indices.transfer_family.?,
-    );
+    g_transfer_command_pool.* = try CommandPool.init(device.queue_family_indices.transfer_family.?);
     errdefer g_transfer_command_pool.deinit();
 
     g_command_buffers = try g_allocator.create(CommandBuffers);
     errdefer g_allocator.destroy(g_command_buffers);
     g_command_buffers.* = try CommandBuffers.init(
-        g_device,
         g_graphics_command_pool,
         MaxFramesInFlight,
     );
@@ -371,17 +321,17 @@ pub fn init(
     );
 
     for (0..MaxFramesInFlight) |i| {
-        try g_device.createSemaphore(
+        try device.createSemaphore(
             &semaphore_create_info,
             &g_image_available_semaphores[i],
         );
 
-        try g_device.createSemaphore(
+        try device.createSemaphore(
             &semaphore_create_info,
             &g_render_finished_semaphores[i],
         );
 
-        try g_device.createFence(
+        try device.createFence(
             &fence_create_info,
             &g_in_flight_fences[i],
         );
@@ -392,10 +342,7 @@ pub fn init(
     g_uniform_registry = try g_allocator.create(UniformRegistry);
     errdefer g_allocator.destroy(g_uniform_registry);
 
-    g_uniform_registry.* = try UniformRegistry.init(
-        g_allocator,
-        g_device,
-    );
+    g_uniform_registry.* = try UniformRegistry.init(g_allocator);
     errdefer g_uniform_registry.deinit();
 
     const pool_size = std.mem.zeroInit(
@@ -417,8 +364,8 @@ pub fn init(
         },
     );
 
-    try g_device.createDescriptorPool(&pool_info, &g_descriptor_pool);
-    errdefer g_device.destroyDescriptorPool(g_descriptor_pool);
+    try device.createDescriptorPool(&pool_info, &g_descriptor_pool);
+    errdefer device.destroyDescriptorPool(g_descriptor_pool);
 
     g_shader_handles = .init();
     g_program_handles = .init();
@@ -430,7 +377,7 @@ pub fn init(
 pub fn deinit() void {
     log.debug("Deinitializing Vulkan renderer", .{});
 
-    g_device.deviceWaitIdle() catch {
+    device.deviceWaitIdle() catch {
         log.err("Failed to wait for Vulkan device to become idle", .{});
     };
 
@@ -442,15 +389,15 @@ pub fn deinit() void {
     g_index_buffer_handles.deinit();
     g_texture_handles.deinit();
 
-    g_device.destroyDescriptorPool(g_descriptor_pool);
+    device.destroyDescriptorPool(g_descriptor_pool);
 
     g_uniform_registry.deinit();
     g_allocator.destroy(g_uniform_registry);
 
     for (0..MaxFramesInFlight) |i| {
-        g_device.destroySemaphore(g_image_available_semaphores[i]);
-        g_device.destroySemaphore(g_render_finished_semaphores[i]);
-        g_device.destroyFence(g_in_flight_fences[i]);
+        device.destroySemaphore(g_image_available_semaphores[i]);
+        device.destroySemaphore(g_render_finished_semaphores[i]);
+        device.destroyFence(g_in_flight_fences[i]);
     }
 
     var iterator = g_pipelines.valueIterator();
@@ -468,25 +415,17 @@ pub fn deinit() void {
     g_transfer_command_pool.deinit();
     g_allocator.destroy(g_transfer_command_pool);
 
-    g_main_render_pass.deinit();
-    g_allocator.destroy(g_main_render_pass);
-
-    g_swap_chain.deinit();
-    g_allocator.destroy(g_swap_chain);
-
-    g_surface.deinit();
-    g_allocator.destroy(g_surface);
-
-    g_device.deinit();
-    g_allocator.destroy(g_device);
+    render_pass.destroy(g_main_render_pass);
+    swap_chain.destroy(&g_swap_chain);
+    surface.destroy(g_surface);
+    device.deinit();
 
     if (g_debug_messenger) |debug_messenger| {
-        g_instance.destroyDebugUtilsMessengerEXT(debug_messenger);
+        instance.destroyDebugUtilsMessengerEXT(debug_messenger);
     }
-    g_instance.deinit();
-    g_allocator.destroy(g_instance);
 
-    g_library.deinit();
+    instance.deinit();
+    library.deinit();
 }
 
 pub fn getSwapchainSize() [2]u32 {
@@ -508,7 +447,7 @@ pub fn createShader(data: *const gfx.ShaderData) !gfx.ShaderHandle {
     const handle = try g_shader_handles.alloc();
     errdefer g_shader_handles.free(handle);
 
-    m_shaders[handle] = try Shader.init(g_device, data);
+    m_shaders[handle] = try Shader.init(data);
 
     log.debug("Created {s} shader:", .{switch (data.type) {
         .vertex => "vertex",
@@ -548,7 +487,6 @@ pub fn createProgram(
 
     g_programs[handle] = try Program.init(
         g_allocator,
-        g_device,
         &m_shaders[vertex_shader],
         &m_shaders[fragment_shader],
         g_uniform_registry,
@@ -580,7 +518,6 @@ pub fn createVertexBuffer(
     errdefer g_vertex_buffer_handles.free(handle);
 
     g_vertex_buffers[handle] = try VertexBuffer.init(
-        g_device,
         g_transfer_command_pool,
         g_transfer_queue,
         layout,
@@ -610,7 +547,6 @@ pub fn createIndexBuffer(
     errdefer g_index_buffer_handles.free(handle);
 
     g_index_buffers[handle] = try IndexBuffer.init(
-        g_device,
         g_transfer_command_pool,
         g_transfer_queue,
         data,
@@ -678,7 +614,6 @@ pub fn createTexture(reader: std.io.AnyReader) !gfx.TextureHandle {
 
     g_textures[handle] = try Texture.init(
         g_arena_allocator,
-        g_device,
         g_transfer_command_pool,
         g_transfer_queue,
         reader,
@@ -700,14 +635,14 @@ pub fn destroyTexture(handle: gfx.TextureHandle) void {
 }
 
 pub fn beginFrame() !bool {
-    try g_device.waitForFences(
+    try device.waitForFences(
         1,
         &g_in_flight_fences[g_current_frame],
         c.VK_TRUE,
         c.UINT64_MAX,
     );
 
-    if (try g_device.acquireNextImageKHR(
+    if (try device.acquireNextImageKHR(
         g_swap_chain.handle,
         c.UINT64_MAX,
         g_image_available_semaphores[g_current_frame],
@@ -718,7 +653,7 @@ pub fn beginFrame() !bool {
         return false;
     }
 
-    try g_device.resetFences(1, &g_in_flight_fences[g_current_frame]);
+    try device.resetFences(1, &g_in_flight_fences[g_current_frame]);
 
     try g_command_buffers.reset(g_current_frame);
     destroyPendingResources();
@@ -726,7 +661,7 @@ pub fn beginFrame() !bool {
 
     g_command_buffers.beginRenderPass(
         g_current_frame,
-        g_main_render_pass.handle,
+        g_main_render_pass,
         g_swap_chain.frame_buffers.?[g_current_image_index],
         g_swap_chain.extent,
     );
@@ -755,7 +690,7 @@ pub fn endFrame() !void {
         },
     );
 
-    try g_device.queueSubmit(
+    try device.queueSubmit(
         g_graphics_queue,
         1,
         &submit_info,
@@ -774,7 +709,7 @@ pub fn endFrame() !void {
         },
     );
 
-    const result = try g_device.queuePresentKHR(g_present_queue, &present_info);
+    const result = try device.queuePresentKHR(g_present_queue, &present_info);
     if (result == c.VK_ERROR_OUT_OF_DATE_KHR or result == c.VK_SUBOPTIMAL_KHR or g_framebuffer_invalidated) {
         g_framebuffer_invalidated = false;
         try recreateSwapChain();

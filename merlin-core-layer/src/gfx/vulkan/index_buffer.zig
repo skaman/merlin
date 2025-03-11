@@ -11,7 +11,6 @@ pub const IndexBuffer = struct {
     index_type: gfx.IndexType,
 
     pub fn init(
-        device: *const vk.Device,
         command_pool: *const vk.CommandPool,
         queue: c.VkQueue,
         data: []const u8,
@@ -21,7 +20,6 @@ pub const IndexBuffer = struct {
         std.debug.assert(data.len > 0);
 
         var staging_buffer = try vk.Buffer.init(
-            device,
             @intCast(data.len),
             c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -29,19 +27,18 @@ pub const IndexBuffer = struct {
         defer staging_buffer.deinit();
 
         var mapped_data: [*c]u8 = undefined;
-        try device.mapMemory(
+        try vk.device.mapMemory(
             staging_buffer.memory,
             0,
             @intCast(data.len),
             0,
             @ptrCast(&mapped_data),
         );
-        defer device.unmapMemory(staging_buffer.memory);
+        defer vk.device.unmapMemory(staging_buffer.memory);
 
         @memcpy(mapped_data[0..data.len], data);
 
         var buffer = try vk.Buffer.init(
-            device,
             @intCast(data.len),
             c.VK_BUFFER_USAGE_TRANSFER_DST_BIT | c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
             c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,

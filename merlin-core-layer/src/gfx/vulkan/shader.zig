@@ -7,17 +7,13 @@ const vk = @import("vulkan.zig");
 pub const Shader = struct {
     const Self = @This();
 
-    device: *const vk.Device,
     handle: c.VkShaderModule,
     input_attributes: [vk.Pipeline.MaxVertexAttributes]gfx.ShaderInputAttribute,
     input_attribute_count: u8,
     descriptor_sets: [vk.Pipeline.MaxDescriptorSetBindings]gfx.DescriptorSet,
     descriptor_set_count: u8,
 
-    pub fn init(
-        device: *const vk.Device,
-        data: *const gfx.ShaderData,
-    ) !Self {
+    pub fn init(data: *const gfx.ShaderData) !Self {
         if (data.input_attributes.len > vk.Pipeline.MaxVertexAttributes) {
             vk.log.err("Input attributes count exceeds maximum vertex attributes", .{});
             return error.MaxVertexAttributesExceeded;
@@ -34,10 +30,9 @@ pub const Shader = struct {
             .codeSize = data.data.len,
             .pCode = @ptrCast(data.data.ptr),
         };
-        try device.createShaderModule(&create_info, &module);
+        try vk.device.createShaderModule(&create_info, &module);
 
         var self = Self{
-            .device = device,
             .handle = module,
             .input_attributes = undefined,
             .input_attribute_count = @intCast(data.input_attributes.len),
@@ -52,6 +47,6 @@ pub const Shader = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.device.destroyShaderModule(self.handle);
+        vk.device.destroyShaderModule(self.handle);
     }
 };

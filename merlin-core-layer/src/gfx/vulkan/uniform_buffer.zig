@@ -11,12 +11,8 @@ pub const UniformBuffer = struct {
     mapped_data: [*c]u8,
     mapped_data_size: u32,
 
-    pub fn init(
-        device: *const vk.Device,
-        size: u32,
-    ) !Self {
+    pub fn init(size: u32) !Self {
         var buffer = try vk.Buffer.init(
-            device,
             size,
             c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -24,14 +20,14 @@ pub const UniformBuffer = struct {
         errdefer buffer.deinit();
 
         var mapped_data: [*c]u8 = undefined;
-        try device.mapMemory(
+        try vk.device.mapMemory(
             buffer.memory,
             0,
             size,
             0,
             @ptrCast(&mapped_data),
         );
-        errdefer device.unmapMemory(buffer.memory);
+        errdefer vk.device.unmapMemory(buffer.memory);
 
         return .{
             .buffer = buffer,
@@ -41,7 +37,7 @@ pub const UniformBuffer = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.buffer.device.unmapMemory(self.buffer.memory);
+        vk.device.unmapMemory(self.buffer.memory);
         self.buffer.deinit();
     }
 

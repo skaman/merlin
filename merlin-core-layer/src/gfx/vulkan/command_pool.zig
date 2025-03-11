@@ -8,13 +8,8 @@ pub const CommandPool = struct {
     const Self = @This();
 
     handle: c.VkCommandPool,
-    //queue_family_index: u32,
-    device: *const vk.Device,
 
-    pub fn init(
-        device: *const vk.Device,
-        queue_family_index: u32,
-    ) !Self {
+    pub fn init(queue_family_index: u32) !Self {
         const create_info = std.mem.zeroInit(
             c.VkCommandPoolCreateInfo,
             .{
@@ -25,20 +20,16 @@ pub const CommandPool = struct {
         );
 
         var command_pool: c.VkCommandPool = undefined;
-        try device.createCommandPool(
+        try vk.device.createCommandPool(
             &create_info,
             &command_pool,
         );
-        errdefer device.destroyCommandPool(command_pool);
+        errdefer vk.device.destroyCommandPool(command_pool);
 
-        return .{
-            .handle = command_pool,
-            //.queue_family_index = queue_family_index,
-            .device = device,
-        };
+        return .{ .handle = command_pool };
     }
 
     pub fn deinit(self: *Self) void {
-        self.device.destroyCommandPool(self.handle);
+        vk.device.destroyCommandPool(self.handle);
     }
 };

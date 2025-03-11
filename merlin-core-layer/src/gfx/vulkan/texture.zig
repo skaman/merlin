@@ -13,12 +13,11 @@ fn checkKtxError(comptime message: []const u8, result: c.KTX_error_code) !void {
 
 // I got how to use KTX from https://github.com/spices-lib/Spices-Engine/
 fn format_supported(
-    device: *const vk.Device,
     format: c.VkFormat,
 ) bool {
     var properties: c.VkFormatProperties = undefined;
-    device.instance.getPhysicalDeviceFormatProperties(
-        device.physical_device,
+    vk.instance.getPhysicalDeviceFormatProperties(
+        vk.device.physical_device,
         format,
         &properties,
     );
@@ -27,30 +26,30 @@ fn format_supported(
     return (properties.optimalTilingFeatures & needed_features) == needed_features;
 }
 
-fn get_available_target_format(device: *const vk.Device) c.ktx_transcode_fmt_e {
-    const features = device.features.features;
+fn get_available_target_format() c.ktx_transcode_fmt_e {
+    const features = vk.device.features.features;
 
     // Block compression
     if (features.textureCompressionBC == c.VK_TRUE) {
-        if (format_supported(device, c.VK_FORMAT_BC7_SRGB_BLOCK)) {
+        if (format_supported(c.VK_FORMAT_BC7_SRGB_BLOCK)) {
             return c.KTX_TTF_BC7_RGBA;
         }
 
-        if (format_supported(device, c.VK_FORMAT_BC3_SRGB_BLOCK)) {
+        if (format_supported(c.VK_FORMAT_BC3_SRGB_BLOCK)) {
             return c.KTX_TTF_BC3_RGBA;
         }
     }
 
     // Adaptive scalable texture compression
     if (features.textureCompressionASTC_LDR == c.VK_TRUE) {
-        if (format_supported(device, c.VK_FORMAT_ASTC_4x4_SRGB_BLOCK)) {
+        if (format_supported(c.VK_FORMAT_ASTC_4x4_SRGB_BLOCK)) {
             return c.KTX_TTF_ASTC_4x4_RGBA;
         }
     }
 
     // Ericsson texture compression
     if (features.textureCompressionETC2 == c.VK_TRUE) {
-        if (format_supported(device, c.VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK)) {
+        if (format_supported(c.VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK)) {
             return c.KTX_TTF_ETC2_RGBA;
         }
     }
@@ -63,14 +62,12 @@ pub const Texture = struct {
 
     const MaxBufferSize = 256 * 1024 * 1024;
 
-    device: *const vk.Device,
     ktx_texture: c.ktxVulkanTexture,
     image_view: c.VkImageView,
     sampler: c.VkSampler,
 
     pub fn init(
         arena_allocator: std.mem.Allocator,
-        device: *const vk.Device,
         command_pool: *const vk.CommandPool,
         g_transfer_queue: c.VkQueue,
         reader: std.io.AnyReader,
@@ -94,7 +91,7 @@ pub const Texture = struct {
         defer c.ktxTexture2_Destroy(ktx_texture);
 
         if (c.ktxTexture2_NeedsTranscoding(ktx_texture)) {
-            const format = get_available_target_format(device);
+            const format = get_available_target_format();
             try checkKtxError(
                 "Failed to transcode KTX texture",
                 c.ktxTexture2_TranscodeBasis(ktx_texture, format, 0),
@@ -106,13 +103,13 @@ pub const Texture = struct {
             "Failed to create KTX Vulkan device info",
             c.ktxVulkanDeviceInfo_ConstructEx(
                 &vulkan_device_info,
-                device.instance.handle,
-                device.physical_device,
-                device.device,
+                vk.instance.handle,
+                vk.device.physical_device,
+                vk.device.handle,
                 g_transfer_queue,
                 command_pool.handle,
-                device.instance.allocation_callbacks,
-                &device.ktx_vulkan_functions,
+                vk.instance.allocation_callbacks,
+                &vk.device.ktx_vulkan_functions,
             ),
         );
         defer c.ktxVulkanDeviceInfo_Destruct(&vulkan_device_info);
@@ -131,8 +128,8 @@ pub const Texture = struct {
         );
         errdefer c.ktxVulkanTexture_Destruct(
             &texture,
-            device.device,
-            device.instance.allocation_callbacks,
+            vk.device.handle,
+            vk.instance.allocation_callbacks,
         );
 
         vk.log.debug("KTX texture uploaded:", .{});
@@ -165,8 +162,8 @@ pub const Texture = struct {
             },
         };
         var texture_image_view: c.VkImageView = undefined;
-        try device.createImageView(&view_info, &texture_image_view);
-        errdefer device.destroyImageView(texture_image_view);
+        try vk.device.createImageView(&view_info, &texture_image_view);
+        errdefer vk.device.destroyImageView(texture_image_view);
 
         var sampler_info = c.VkSamplerCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -185,14 +182,14 @@ pub const Texture = struct {
             .maxLod = @floatFromInt(texture.levelCount),
         };
 
-        if (device.features.features.samplerAnisotropy == c.VK_TRUE) {
+        if (vk.device.features.features.samplerAnisotropy == c.VK_TRUE) {
             sampler_info.anisotropyEnable = c.VK_TRUE;
-            sampler_info.maxAnisotropy = device.properties.limits.maxSamplerAnisotropy;
+            sampler_info.maxAnisotropy = vk.device.properties.limits.maxSamplerAnisotropy;
         }
 
         var sampler: c.VkSampler = undefined;
-        try device.createSampler(&sampler_info, &sampler);
-        errdefer device.destroySampler(sampler);
+        try vk.device.createSampler(&sampler_info, &sampler);
+        errdefer vk.device.destroySampler(sampler);
 
         vk.log.debug("Created sampler:", .{});
         vk.log.debug("  - Mag filter: {s}", .{c.string_VkFilter(sampler_info.magFilter)});
@@ -212,7 +209,6 @@ pub const Texture = struct {
         vk.log.debug("  - Max anisotropy: {d}", .{sampler_info.maxAnisotropy});
 
         return .{
-            .device = device,
             .ktx_texture = texture,
             .image_view = texture_image_view,
             .sampler = sampler,
@@ -220,13 +216,13 @@ pub const Texture = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.device.destroySampler(self.sampler);
-        self.device.destroyImageView(self.image_view);
+        vk.device.destroySampler(self.sampler);
+        vk.device.destroyImageView(self.image_view);
 
         c.ktxVulkanTexture_Destruct(
             &self.ktx_texture,
-            self.device.device,
-            self.device.instance.allocation_callbacks,
+            vk.device.handle,
+            vk.instance.allocation_callbacks,
         );
     }
 };

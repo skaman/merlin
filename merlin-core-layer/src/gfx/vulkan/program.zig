@@ -25,7 +25,6 @@ pub const Program = struct {
     const Self = @This();
 
     allocator: std.mem.Allocator,
-    device: *const vk.Device,
     pipeline_layout: c.VkPipelineLayout,
     vertex_shader: *const vk.Shader,
     fragment_shader: *const vk.Shader,
@@ -41,7 +40,6 @@ pub const Program = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        device: *const vk.Device,
         vertex_shader: *const vk.Shader,
         fragment_shader: *const vk.Shader,
         uniform_registry: *vk.UniformRegistry,
@@ -105,7 +103,7 @@ pub const Program = struct {
         var descriptor_set_layout: c.VkDescriptorSetLayout = null;
         errdefer {
             if (descriptor_set_layout) |descriptor_set_layout_value| {
-                device.destroyDescriptorSetLayout(descriptor_set_layout_value);
+                vk.device.destroyDescriptorSetLayout(descriptor_set_layout_value);
             }
         }
 
@@ -127,7 +125,7 @@ pub const Program = struct {
                 .flags = c.VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR,
             };
 
-            try device.createDescriptorSetLayout(&create_info, &descriptor_set_layout);
+            try vk.device.createDescriptorSetLayout(&create_info, &descriptor_set_layout);
         }
 
         const pipeline_layout_create_info = std.mem.zeroInit(
@@ -142,11 +140,11 @@ pub const Program = struct {
         );
 
         var pipeline_layout: c.VkPipelineLayout = undefined;
-        try device.createPipelineLayout(
+        try vk.device.createPipelineLayout(
             &pipeline_layout_create_info,
             &pipeline_layout,
         );
-        errdefer device.destroyPipelineLayout(pipeline_layout);
+        errdefer vk.device.destroyPipelineLayout(pipeline_layout);
 
         var descriptor_set_layouts: [vk.MaxFramesInFlight]c.VkDescriptorSetLayout = undefined;
         for (0..vk.MaxFramesInFlight) |i| {
@@ -198,7 +196,6 @@ pub const Program = struct {
 
         return .{
             .allocator = allocator,
-            .device = device,
             .pipeline_layout = pipeline_layout,
             .vertex_shader = vertex_shader,
             .fragment_shader = fragment_shader,
@@ -217,9 +214,9 @@ pub const Program = struct {
             self.uniform_registry.destroy(self.uniform_handles[binding_index]);
         }
 
-        self.device.destroyPipelineLayout(self.pipeline_layout);
+        vk.device.destroyPipelineLayout(self.pipeline_layout);
         if (self.descriptor_set_layout) |descriptor_set_layout_value| {
-            self.device.destroyDescriptorSetLayout(descriptor_set_layout_value);
+            vk.device.destroyDescriptorSetLayout(descriptor_set_layout_value);
         }
     }
 
@@ -261,8 +258,6 @@ pub const Program = struct {
                     return error.UnsupportedDescriptorType;
                 },
             }
-            //self.write_descriptor_sets[binding_index].dstSet = descriptor_set;
-            //self.write_descriptor_sets[binding_index].pBufferInfo = &self.uniform_registry.getBufferInfo(self.uniform_handles[binding_index]);
         }
 
         command_buffers.pushDescriptorSet(
@@ -272,8 +267,5 @@ pub const Program = struct {
             self.layout_count,
             &self.write_descriptor_sets,
         );
-        //const descriptor_set = self.descriptor_pool.allocateDescriptorSet(self.descriptor_set_layout);
-        //errdefer self.descriptor_pool.freeDescriptorSet(descriptor_set);
-
     }
 };

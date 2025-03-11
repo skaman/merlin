@@ -7,12 +7,10 @@ const vk = @import("vulkan.zig");
 pub const Buffer = struct {
     const Self = @This();
 
-    device: *const vk.Device,
     handle: c.VkBuffer,
     memory: c.VkDeviceMemory,
 
     pub fn init(
-        device: *const vk.Device,
         size: c.VkDeviceSize,
         usage: c.VkBufferUsageFlags,
         property_flags: c.VkMemoryPropertyFlags,
@@ -28,34 +26,32 @@ pub const Buffer = struct {
         );
 
         var handle: c.VkBuffer = undefined;
-        try device.createBuffer(
+        try vk.device.createBuffer(
             &buffer_info,
             &handle,
         );
-        errdefer device.destroyBuffer(handle);
+        errdefer vk.device.destroyBuffer(handle);
 
         var requirements: c.VkMemoryRequirements = undefined;
-        device.getBufferMemoryRequirements(handle, &requirements);
+        vk.device.getBufferMemoryRequirements(handle, &requirements);
 
         const memory = try allocateMemory(
-            device,
             &requirements,
             property_flags,
         );
-        errdefer device.freeMemory(memory);
+        errdefer vk.device.freeMemory(memory);
 
-        try device.bindBufferMemory(handle, memory, 0);
+        try vk.device.bindBufferMemory(handle, memory, 0);
 
         return .{
-            .device = device,
             .handle = handle,
             .memory = memory,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.device.destroyBuffer(self.handle);
-        self.device.freeMemory(self.memory);
+        vk.device.destroyBuffer(self.handle);
+        vk.device.freeMemory(self.memory);
     }
 
     pub fn copyFromBuffer(
@@ -68,7 +64,6 @@ pub const Buffer = struct {
         std.debug.assert(src_buffer != null);
 
         var command_buffer = try vk.CommandBuffers.init(
-            self.device,
             command_pool,
             1,
         );
@@ -102,24 +97,23 @@ pub const Buffer = struct {
                 .pCommandBuffers = &command_buffer.handles[0],
             },
         );
-        try self.device.queueSubmit(
+        try vk.device.queueSubmit(
             queue,
             1,
             &submit_info,
             null,
         );
 
-        try self.device.queueWaitIdle(queue);
+        try vk.device.queueWaitIdle(queue);
     }
 
     fn findMemoryTypeIndex(
-        device: *const vk.Device,
         memory_type_bits: u32,
         property_flags: c.VkMemoryPropertyFlags,
     ) !u32 {
         var memory_properties: c.VkPhysicalDeviceMemoryProperties = undefined;
-        device.instance.getPhysicalDeviceMemoryProperties(
-            device.physical_device,
+        vk.instance.getPhysicalDeviceMemoryProperties(
+            vk.device.physical_device,
             &memory_properties,
         );
 
@@ -137,12 +131,10 @@ pub const Buffer = struct {
     }
 
     fn allocateMemory(
-        device: *const vk.Device,
         requirements: *c.VkMemoryRequirements,
         property_flags: c.VkMemoryPropertyFlags,
     ) !c.VkDeviceMemory {
         const memory_type_index = try findMemoryTypeIndex(
-            device,
             requirements.memoryTypeBits,
             property_flags,
         );
@@ -157,7 +149,7 @@ pub const Buffer = struct {
         );
 
         var memory: c.VkDeviceMemory = undefined;
-        try device.allocateMemory(
+        try vk.device.allocateMemory(
             &allocate_info,
             &memory,
         );

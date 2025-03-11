@@ -56,13 +56,11 @@ pub const Pipeline = struct {
         },
     };
 
-    device: *const vk.Device,
     handle: c.VkPipeline,
 
     pub fn init(
-        device: *const vk.Device,
         program: *const vk.Program,
-        render_pass: *const vk.RenderPass,
+        render_pass: c.VkRenderPass,
         vertex_layout: gfx.VertexLayout,
     ) !Self {
         const binding_description = std.mem.zeroInit(
@@ -213,14 +211,14 @@ pub const Pipeline = struct {
                 .pColorBlendState = &color_blending,
                 .pDynamicState = &dynamic_state,
                 .layout = program.pipeline_layout,
-                .renderPass = render_pass.handle,
+                .renderPass = render_pass,
                 .subpass = 0,
                 //.basePipelineHandle = c.VK_NULL_HANDLE,
             },
         );
 
         var pipeline: c.VkPipeline = undefined;
-        try device.createGraphicsPipelines(
+        try vk.device.createGraphicsPipelines(
             null,
             1,
             &pipeline_create_info,
@@ -251,12 +249,11 @@ pub const Pipeline = struct {
         }
 
         return .{
-            .device = device,
             .handle = pipeline,
         };
     }
 
     pub fn deinit(self: *Self) void {
-        self.device.destroyPipeline(self.handle);
+        vk.device.destroyPipeline(self.handle);
     }
 };

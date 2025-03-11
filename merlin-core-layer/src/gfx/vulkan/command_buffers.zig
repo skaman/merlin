@@ -8,13 +8,11 @@ pub const CommandBuffers = struct {
     const Self = @This();
     const MaxCommandBuffers = 16;
 
-    device: *const vk.Device,
     command_pool: *const vk.CommandPool,
     handles: [MaxCommandBuffers]c.VkCommandBuffer,
     count: u32,
 
     pub fn init(
-        device: *const vk.Device,
         command_pool: *const vk.CommandPool,
         count: u32,
     ) !Self {
@@ -31,13 +29,12 @@ pub const CommandBuffers = struct {
             },
         );
 
-        try device.allocateCommandBuffers(
+        try vk.device.allocateCommandBuffers(
             &allocate_info,
             &handles,
         );
 
         return .{
-            .device = device,
             .command_pool = command_pool,
             .handles = handles,
             .count = count,
@@ -45,7 +42,7 @@ pub const CommandBuffers = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        self.device.freeCommandBuffers(
+        vk.device.freeCommandBuffers(
             self.command_pool.handle,
             self.count,
             &self.handles,
@@ -66,19 +63,19 @@ pub const CommandBuffers = struct {
             begin_info.flags = c.VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         }
 
-        try self.device.beginCommandBuffer(self.handles[index], &begin_info);
+        try vk.device.beginCommandBuffer(self.handles[index], &begin_info);
     }
 
     pub fn end(self: *Self, index: u32) !void {
         std.debug.assert(index < self.count);
 
-        try self.device.endCommandBuffer(self.handles[index]);
+        try vk.device.endCommandBuffer(self.handles[index]);
     }
 
     pub fn reset(self: *Self, index: u32) !void {
         std.debug.assert(index < self.count);
 
-        try self.device.resetCommandBuffer(self.handles[index], 0);
+        try vk.device.resetCommandBuffer(self.handles[index], 0);
     }
 
     pub fn beginRenderPass(
@@ -113,7 +110,7 @@ pub const CommandBuffers = struct {
             },
         );
 
-        try self.device.cmdBeginRenderPass(
+        try vk.device.cmdBeginRenderPass(
             self.handles[index],
             &begin_info,
             c.VK_SUBPASS_CONTENTS_INLINE,
@@ -123,13 +120,13 @@ pub const CommandBuffers = struct {
     pub fn endRenderPass(self: *Self, index: u32) void {
         std.debug.assert(index < self.count);
 
-        self.device.cmdEndRenderPass(self.handles[index]);
+        vk.device.cmdEndRenderPass(self.handles[index]);
     }
 
     pub fn setViewport(self: *Self, index: u32, viewport: *const c.VkViewport) void {
         std.debug.assert(index < self.count);
 
-        self.device.cmdSetViewport(
+        vk.device.cmdSetViewport(
             self.handles[index],
             0,
             1,
@@ -140,7 +137,7 @@ pub const CommandBuffers = struct {
     pub fn setScissor(self: *Self, index: u32, scissor: *const c.VkRect2D) void {
         std.debug.assert(index < self.count);
 
-        self.device.cmdSetScissor(
+        vk.device.cmdSetScissor(
             self.handles[index],
             0,
             1,
@@ -152,7 +149,7 @@ pub const CommandBuffers = struct {
         std.debug.assert(pipeline != null);
         std.debug.assert(index < self.count);
 
-        self.device.cmdBindPipeline(
+        vk.device.cmdBindPipeline(
             self.handles[index],
             c.VK_PIPELINE_BIND_POINT_GRAPHICS,
             pipeline,
@@ -170,7 +167,7 @@ pub const CommandBuffers = struct {
         std.debug.assert(index < self.count);
 
         const buffers = &buffer;
-        self.device.cmdBindVertexBuffers(
+        vk.device.cmdBindVertexBuffers(
             self.handles[index],
             0,
             1,
@@ -189,7 +186,7 @@ pub const CommandBuffers = struct {
         std.debug.assert(buffer != null);
         std.debug.assert(index < self.count);
 
-        self.device.cmdBindIndexBuffer(
+        vk.device.cmdBindIndexBuffer(
             self.handles[index],
             buffer,
             offset,
@@ -211,7 +208,7 @@ pub const CommandBuffers = struct {
         std.debug.assert(descriptor_sets != null);
         std.debug.assert(index < self.count);
 
-        self.device.cmdBindDescriptorSets(
+        vk.device.cmdBindDescriptorSets(
             self.handles[index],
             c.VK_PIPELINE_BIND_POINT_GRAPHICS,
             pipeline_layout,
@@ -235,7 +232,7 @@ pub const CommandBuffers = struct {
         std.debug.assert(descriptor_writes != null);
         std.debug.assert(index < self.count);
 
-        self.device.cmdPushDescriptorSet(
+        vk.device.cmdPushDescriptorSet(
             self.handles[index],
             c.VK_PIPELINE_BIND_POINT_GRAPHICS,
             pipeline_layout,
@@ -255,7 +252,7 @@ pub const CommandBuffers = struct {
     ) void {
         std.debug.assert(index < self.count);
 
-        self.device.cmdDraw(
+        vk.device.cmdDraw(
             self.handles[index],
             vertex_count,
             instance_count,
@@ -275,7 +272,7 @@ pub const CommandBuffers = struct {
     ) void {
         std.debug.assert(index < self.count);
 
-        self.device.cmdDrawIndexed(
+        vk.device.cmdDrawIndexed(
             self.handles[index],
             index_count,
             instance_count,
@@ -298,7 +295,7 @@ pub const CommandBuffers = struct {
         std.debug.assert(regions != null);
         std.debug.assert(index < self.count);
 
-        self.device.cmdCopyBuffer(
+        vk.device.cmdCopyBuffer(
             self.handles[index],
             src_buffer,
             dst_buffer,

@@ -28,18 +28,13 @@ pub const UniformRegistry = struct {
     };
 
     allocator: std.mem.Allocator,
-    device: *const vk.Device,
     name_map: std.StringHashMap(gfx.UniformHandle),
     entries: [gfx.MaxUniformHandles]UniformEntry,
     handles: utils.HandlePool(gfx.UniformHandle, gfx.MaxUniformHandles),
 
-    pub fn init(
-        allocator: std.mem.Allocator,
-        device: *const vk.Device,
-    ) !Self {
+    pub fn init(allocator: std.mem.Allocator) !Self {
         return .{
             .allocator = allocator,
-            .device = device,
             .name_map = .init(allocator),
             .handles = .init(),
             .entries = undefined,
@@ -81,7 +76,7 @@ pub const UniformRegistry = struct {
             }
         }
         inline for (0..vk.MaxFramesInFlight) |i| {
-            buffer[i] = try vk.UniformBuffer.init(self.device, size);
+            buffer[i] = try vk.UniformBuffer.init(size);
             buffer_count += 1;
         }
 
