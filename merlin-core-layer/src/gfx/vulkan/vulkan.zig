@@ -5,8 +5,8 @@ const c = @import("../../c.zig").c;
 const utils = @import("../../utils.zig");
 const gfx = @import("../gfx.zig");
 pub const Buffer = @import("buffer.zig").Buffer;
-pub const CommandBuffers = @import("command_buffers.zig").CommandBuffers;
-pub const CommandPool = @import("command_pool.zig").CommandPool;
+pub const command_buffers = @import("command_buffers.zig");
+pub const command_pool = @import("command_pool.zig");
 pub const device = @import("device.zig");
 pub const IndexBuffer = @import("index_buffer.zig").IndexBuffer;
 pub const instance = @import("instance.zig");
@@ -41,9 +41,9 @@ var g_transfer_queue: c.VkQueue = undefined;
 var g_surface: c.VkSurfaceKHR = undefined;
 var g_swap_chain: swap_chain.SwapChain = undefined;
 var g_main_render_pass: c.VkRenderPass = undefined;
-var g_graphics_command_pool: *CommandPool = undefined;
-var g_transfer_command_pool: *CommandPool = undefined;
-var g_command_buffers: *CommandBuffers = undefined;
+var g_graphics_command_pool: c.VkCommandPool = undefined;
+var g_transfer_command_pool: c.VkCommandPool = undefined;
+var g_command_buffers: command_buffers.CommandBuffers = undefined;
 var g_debug_messenger: ?c.VkDebugUtilsMessengerEXT = null;
 var g_uniform_registry: *UniformRegistry = undefined;
 var g_descriptor_pool: c.VkDescriptorPool = undefined;
@@ -287,23 +287,17 @@ pub fn init(
 
     try swap_chain.createFrameBuffers(&g_swap_chain, g_main_render_pass);
 
-    g_graphics_command_pool = try g_allocator.create(CommandPool);
-    errdefer g_allocator.destroy(g_graphics_command_pool);
-    g_graphics_command_pool.* = try CommandPool.init(device.queue_family_indices.graphics_family.?);
-    errdefer g_graphics_command_pool.deinit();
+    g_graphics_command_pool = try command_pool.create(device.queue_family_indices.graphics_family.?);
+    errdefer command_pool.destroy(g_graphics_command_pool);
 
-    g_transfer_command_pool = try g_allocator.create(CommandPool);
-    errdefer g_allocator.destroy(g_transfer_command_pool);
-    g_transfer_command_pool.* = try CommandPool.init(device.queue_family_indices.transfer_family.?);
-    errdefer g_transfer_command_pool.deinit();
+    g_transfer_command_pool = try command_pool.create(device.queue_family_indices.transfer_family.?);
+    errdefer command_pool.destroy(g_transfer_command_pool);
 
-    g_command_buffers = try g_allocator.create(CommandBuffers);
-    errdefer g_allocator.destroy(g_command_buffers);
-    g_command_buffers.* = try CommandBuffers.init(
+    g_command_buffers = try command_buffers.create(
         g_graphics_command_pool,
         MaxFramesInFlight,
     );
-    errdefer g_command_buffers.deinit();
+    errdefer command_buffers.destroy(&g_command_buffers);
 
     const semaphore_create_info = std.mem.zeroInit(
         c.VkSemaphoreCreateInfo,
@@ -406,14 +400,9 @@ pub fn deinit() void {
     }
     g_pipelines.deinit();
 
-    g_command_buffers.deinit();
-    g_allocator.destroy(g_command_buffers);
-
-    g_graphics_command_pool.deinit();
-    g_allocator.destroy(g_graphics_command_pool);
-
-    g_transfer_command_pool.deinit();
-    g_allocator.destroy(g_transfer_command_pool);
+    command_buffers.destroy(&g_command_buffers);
+    command_pool.destroy(g_graphics_command_pool);
+    command_pool.destroy(g_transfer_command_pool);
 
     render_pass.destroy(g_main_render_pass);
     swap_chain.destroy(&g_swap_chain);
@@ -796,7 +785,7 @@ pub fn draw(
 
     var program = &g_programs[g_current_program.?];
     program.pushDescriptorSet(
-        g_command_buffers,
+        &g_command_buffers,
         g_current_frame,
         &g_textures,
     ) catch {
@@ -840,7 +829,7 @@ pub fn drawIndexed(
 
     var program = &g_programs[g_current_program.?];
     program.pushDescriptorSet(
-        g_command_buffers,
+        &g_command_buffers,
         g_current_frame,
         &g_textures,
     ) catch {

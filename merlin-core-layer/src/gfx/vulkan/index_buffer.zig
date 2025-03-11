@@ -11,7 +11,7 @@ pub const IndexBuffer = struct {
     index_type: gfx.IndexType,
 
     pub fn init(
-        command_pool: *const vk.CommandPool,
+        command_pool: c.VkCommandPool,
         queue: c.VkQueue,
         data: []const u8,
         index_type: gfx.IndexType,

@@ -222,7 +222,7 @@ pub const Program = struct {
 
     pub fn pushDescriptorSet(
         self: *Self,
-        command_buffers: *const vk.CommandBuffers,
+        command_buffers: *const vk.command_buffers.CommandBuffers,
         index: u32,
         textures: []vk.Texture,
     ) !void {

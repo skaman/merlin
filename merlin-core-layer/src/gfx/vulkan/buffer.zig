@@ -56,18 +56,18 @@ pub const Buffer = struct {
 
     pub fn copyFromBuffer(
         self: *Self,
-        command_pool: *const vk.CommandPool,
+        command_pool: c.VkCommandPool,
         queue: c.VkQueue,
         src_buffer: c.VkBuffer,
         size: c.VkDeviceSize,
     ) !void {
         std.debug.assert(src_buffer != null);
 
-        var command_buffer = try vk.CommandBuffers.init(
+        var command_buffer = try vk.command_buffers.create(
             command_pool,
             1,
         );
-        defer command_buffer.deinit();
+        defer vk.command_buffers.destroy(&command_buffer);
 
         try command_buffer.begin(0, true);
 

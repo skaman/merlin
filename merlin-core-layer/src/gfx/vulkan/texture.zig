@@ -68,7 +68,7 @@ pub const Texture = struct {
 
     pub fn init(
         arena_allocator: std.mem.Allocator,
-        command_pool: *const vk.CommandPool,
+        command_pool: c.VkCommandPool,
         g_transfer_queue: c.VkQueue,
         reader: std.io.AnyReader,
     ) !Self {
@@ -107,7 +107,7 @@ pub const Texture = struct {
                 vk.device.physical_device,
                 vk.device.handle,
                 g_transfer_queue,
-                command_pool.handle,
+                command_pool,
                 vk.instance.allocation_callbacks,
                 &vk.device.ktx_vulkan_functions,
             ),

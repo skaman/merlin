@@ -11,7 +11,7 @@ pub const VertexBuffer = struct {
     layout: gfx.VertexLayout,
 
     pub fn init(
-        command_pool: *const vk.CommandPool,
+        command_pool: c.VkCommandPool,
         queue: c.VkQueue,
         layout: gfx.VertexLayout,
         data: []const u8,

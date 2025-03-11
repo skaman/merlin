@@ -4,52 +4,18 @@ const c = @import("../../c.zig").c;
 const gfx = @import("../gfx.zig");
 const vk = @import("vulkan.zig");
 
-pub const CommandBuffers = struct {
-    const Self = @This();
-    const MaxCommandBuffers = 16;
+const MaxCommandBuffers = 16;
 
-    command_pool: *const vk.CommandPool,
+// *********************************************************************************************
+// CommandBuffers
+// *********************************************************************************************
+
+pub const CommandBuffers = struct {
+    command_pool: c.VkCommandPool,
     handles: [MaxCommandBuffers]c.VkCommandBuffer,
     count: u32,
 
-    pub fn init(
-        command_pool: *const vk.CommandPool,
-        count: u32,
-    ) !Self {
-        std.debug.assert(count <= MaxCommandBuffers);
-
-        var handles: [MaxCommandBuffers]c.VkCommandBuffer = undefined;
-        const allocate_info = std.mem.zeroInit(
-            c.VkCommandBufferAllocateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-                .commandPool = command_pool.handle,
-                .level = c.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-                .commandBufferCount = count,
-            },
-        );
-
-        try vk.device.allocateCommandBuffers(
-            &allocate_info,
-            &handles,
-        );
-
-        return .{
-            .command_pool = command_pool,
-            .handles = handles,
-            .count = count,
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        vk.device.freeCommandBuffers(
-            self.command_pool.handle,
-            self.count,
-            &self.handles,
-        );
-    }
-
-    pub fn begin(self: *Self, index: u32, one_time_submit: bool) !void {
+    pub fn begin(self: *CommandBuffers, index: u32, one_time_submit: bool) !void {
         std.debug.assert(index < self.count);
 
         var begin_info = std.mem.zeroInit(
@@ -66,20 +32,20 @@ pub const CommandBuffers = struct {
         try vk.device.beginCommandBuffer(self.handles[index], &begin_info);
     }
 
-    pub fn end(self: *Self, index: u32) !void {
+    pub fn end(self: *CommandBuffers, index: u32) !void {
         std.debug.assert(index < self.count);
 
         try vk.device.endCommandBuffer(self.handles[index]);
     }
 
-    pub fn reset(self: *Self, index: u32) !void {
+    pub fn reset(self: *CommandBuffers, index: u32) !void {
         std.debug.assert(index < self.count);
 
         try vk.device.resetCommandBuffer(self.handles[index], 0);
     }
 
     pub fn beginRenderPass(
-        self: *Self,
+        self: *CommandBuffers,
         index: u32,
         render_pass: c.VkRenderPass,
         framebuffer: c.VkFramebuffer,
@@ -117,13 +83,13 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn endRenderPass(self: *Self, index: u32) void {
+    pub fn endRenderPass(self: *CommandBuffers, index: u32) void {
         std.debug.assert(index < self.count);
 
         vk.device.cmdEndRenderPass(self.handles[index]);
     }
 
-    pub fn setViewport(self: *Self, index: u32, viewport: *const c.VkViewport) void {
+    pub fn setViewport(self: *CommandBuffers, index: u32, viewport: *const c.VkViewport) void {
         std.debug.assert(index < self.count);
 
         vk.device.cmdSetViewport(
@@ -134,7 +100,7 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn setScissor(self: *Self, index: u32, scissor: *const c.VkRect2D) void {
+    pub fn setScissor(self: *CommandBuffers, index: u32, scissor: *const c.VkRect2D) void {
         std.debug.assert(index < self.count);
 
         vk.device.cmdSetScissor(
@@ -145,7 +111,7 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn bindPipeline(self: *Self, index: u32, pipeline: c.VkPipeline) void {
+    pub fn bindPipeline(self: *CommandBuffers, index: u32, pipeline: c.VkPipeline) void {
         std.debug.assert(pipeline != null);
         std.debug.assert(index < self.count);
 
@@ -157,7 +123,7 @@ pub const CommandBuffers = struct {
     }
 
     pub fn bindVertexBuffer(
-        self: *Self,
+        self: *CommandBuffers,
         index: u32,
         buffer: c.VkBuffer,
         offsets: [*c]c.VkDeviceSize,
@@ -177,7 +143,7 @@ pub const CommandBuffers = struct {
     }
 
     pub fn bindIndexBuffer(
-        self: *Self,
+        self: *CommandBuffers,
         index: u32,
         buffer: c.VkBuffer,
         offset: c.VkDeviceSize,
@@ -195,7 +161,7 @@ pub const CommandBuffers = struct {
     }
 
     pub fn bindDescriptorSets(
-        self: *Self,
+        self: *CommandBuffers,
         index: u32,
         pipeline_layout: c.VkPipelineLayout,
         first_set: u32,
@@ -221,7 +187,7 @@ pub const CommandBuffers = struct {
     }
 
     pub fn pushDescriptorSet(
-        self: *const Self,
+        self: *const CommandBuffers,
         index: u32,
         pipeline_layout: c.VkPipelineLayout,
         set: u32,
@@ -243,7 +209,7 @@ pub const CommandBuffers = struct {
     }
 
     pub fn draw(
-        self: *Self,
+        self: *CommandBuffers,
         index: u32,
         vertex_count: u32,
         instance_count: u32,
@@ -262,7 +228,7 @@ pub const CommandBuffers = struct {
     }
 
     pub fn drawIndexed(
-        self: *Self,
+        self: *CommandBuffers,
         index: u32,
         index_count: u32,
         instance_count: u32,
@@ -283,7 +249,7 @@ pub const CommandBuffers = struct {
     }
 
     pub fn copyBuffer(
-        self: *Self,
+        self: *CommandBuffers,
         index: u32,
         src_buffer: c.VkBuffer,
         dst_buffer: c.VkBuffer,
@@ -304,3 +270,41 @@ pub const CommandBuffers = struct {
         );
     }
 };
+
+// *********************************************************************************************
+// Public API
+// *********************************************************************************************
+
+pub fn create(command_pool: c.VkCommandPool, count: u32) !CommandBuffers {
+    std.debug.assert(count <= MaxCommandBuffers);
+
+    var handles: [MaxCommandBuffers]c.VkCommandBuffer = undefined;
+    const allocate_info = std.mem.zeroInit(
+        c.VkCommandBufferAllocateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            .commandPool = command_pool,
+            .level = c.VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            .commandBufferCount = count,
+        },
+    );
+
+    try vk.device.allocateCommandBuffers(
+        &allocate_info,
+        &handles,
+    );
+
+    return CommandBuffers{
+        .command_pool = command_pool,
+        .handles = handles,
+        .count = count,
+    };
+}
+
+pub fn destroy(command_buffers: *CommandBuffers) void {
+    vk.device.freeCommandBuffers(
+        command_buffers.command_pool,
+        command_buffers.count,
+        &command_buffers.handles,
+    );
+}
