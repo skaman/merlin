@@ -28,7 +28,6 @@ pub const Program = struct {
     pipeline_layout: c.VkPipelineLayout,
     vertex_shader: *const vk.Shader,
     fragment_shader: *const vk.Shader,
-    uniform_registry: *vk.UniformRegistry,
     descriptor_pool: c.VkDescriptorPool,
     descriptor_set_layout: c.VkDescriptorSetLayout,
 
@@ -42,7 +41,6 @@ pub const Program = struct {
         allocator: std.mem.Allocator,
         vertex_shader: *const vk.Shader,
         fragment_shader: *const vk.Shader,
-        uniform_registry: *vk.UniformRegistry,
         descriptor_pool: c.VkDescriptorPool,
     ) !Self {
         var layouts: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorSetLayoutBinding = undefined;
@@ -156,7 +154,7 @@ pub const Program = struct {
         var uniform_handles: [vk.Pipeline.MaxDescriptorSetBindings]gfx.UniformHandle = undefined;
         errdefer {
             for (0..layout_count) |binding_index| {
-                uniform_registry.destroy(uniform_handles[binding_index]);
+                vk.uniform_registry.destroy(uniform_handles[binding_index]);
             }
         }
 
@@ -169,10 +167,10 @@ pub const Program = struct {
 
             switch (descriptor_type) {
                 c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
-                    uniform_handles[binding_index] = try uniform_registry.createBuffer(name, size);
+                    uniform_handles[binding_index] = try vk.uniform_registry.createBuffer(name, size);
                 },
                 c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
-                    uniform_handles[binding_index] = try uniform_registry.createCombinedSampler(name);
+                    uniform_handles[binding_index] = try vk.uniform_registry.createCombinedSampler(name);
                 },
                 else => {
                     vk.log.err(
@@ -199,7 +197,6 @@ pub const Program = struct {
             .pipeline_layout = pipeline_layout,
             .vertex_shader = vertex_shader,
             .fragment_shader = fragment_shader,
-            .uniform_registry = uniform_registry,
             .descriptor_pool = descriptor_pool,
             .descriptor_set_layout = descriptor_set_layout,
             .uniform_handles = uniform_handles,
@@ -211,7 +208,7 @@ pub const Program = struct {
 
     pub fn deinit(self: *Self) void {
         for (0..self.layout_count) |binding_index| {
-            self.uniform_registry.destroy(self.uniform_handles[binding_index]);
+            vk.uniform_registry.destroy(self.uniform_handles[binding_index]);
         }
 
         vk.device.destroyPipelineLayout(self.pipeline_layout);
@@ -231,13 +228,13 @@ pub const Program = struct {
             switch (self.descriptor_types[binding_index]) {
                 c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
                     self.write_descriptor_sets[binding_index].pBufferInfo = &.{
-                        .buffer = self.uniform_registry.entries[handle].uniform.buffer[index].buffer.handle,
+                        .buffer = vk.uniform_registry.getBuffer(handle, index),
                         .offset = 0,
-                        .range = self.uniform_registry.entries[handle].uniform.buffer_size,
+                        .range = vk.uniform_registry.getBufferSize(handle),
                     };
                 },
                 c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
-                    const texture_handle = self.uniform_registry.entries[handle].combined_sampler.texture;
+                    const texture_handle = vk.uniform_registry.getCombinedSamplerTexture(handle);
                     if (texture_handle) |texture_handle_value| {
                         const texture = &textures[texture_handle_value];
                         self.write_descriptor_sets[binding_index].pImageInfo = &.{

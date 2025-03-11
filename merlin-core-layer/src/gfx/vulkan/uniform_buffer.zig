@@ -7,17 +7,17 @@ const vk = @import("vulkan.zig");
 pub const UniformBuffer = struct {
     const Self = @This();
 
-    buffer: vk.Buffer,
+    buffer: vk.buffer.Buffer,
     mapped_data: [*c]u8,
     mapped_data_size: u32,
 
     pub fn init(size: u32) !Self {
-        var buffer = try vk.Buffer.init(
+        var buffer = try vk.buffer.create(
             size,
             c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         );
-        errdefer buffer.deinit();
+        errdefer vk.buffer.destroy(&buffer);
 
         var mapped_data: [*c]u8 = undefined;
         try vk.device.mapMemory(
@@ -38,7 +38,7 @@ pub const UniformBuffer = struct {
 
     pub fn deinit(self: *Self) void {
         vk.device.unmapMemory(self.buffer.memory);
-        self.buffer.deinit();
+        vk.buffer.destroy(&self.buffer);
     }
 
     pub fn update(self: *Self, data: []const u8) void {

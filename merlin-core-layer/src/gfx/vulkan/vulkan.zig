@@ -4,7 +4,7 @@ const builtin = @import("builtin");
 const c = @import("../../c.zig").c;
 const utils = @import("../../utils.zig");
 const gfx = @import("../gfx.zig");
-pub const Buffer = @import("buffer.zig").Buffer;
+pub const buffer = @import("buffer.zig");
 pub const command_buffers = @import("command_buffers.zig");
 pub const command_pool = @import("command_pool.zig");
 pub const device = @import("device.zig");
@@ -18,8 +18,8 @@ pub const Shader = @import("shader.zig").Shader;
 pub const surface = @import("surface.zig");
 pub const swap_chain = @import("swap_chain.zig");
 pub const Texture = @import("texture.zig").Texture;
+pub const uniform_registry = @import("uniform_registry.zig");
 pub const UniformBuffer = @import("uniform_buffer.zig").UniformBuffer;
-pub const UniformRegistry = @import("uniform_registry.zig").UniformRegistry;
 pub const VertexBuffer = @import("vertex_buffer.zig").VertexBuffer;
 
 pub const log = std.log.scoped(.gfx_vk);
@@ -45,7 +45,6 @@ var g_graphics_command_pool: c.VkCommandPool = undefined;
 var g_transfer_command_pool: c.VkCommandPool = undefined;
 var g_command_buffers: command_buffers.CommandBuffers = undefined;
 var g_debug_messenger: ?c.VkDebugUtilsMessengerEXT = null;
-var g_uniform_registry: *UniformRegistry = undefined;
 var g_descriptor_pool: c.VkDescriptorPool = undefined;
 
 var m_shaders: [gfx.MaxShaderHandles]Shader = undefined;
@@ -333,11 +332,8 @@ pub fn init(
 
     g_pipelines = .init(g_allocator);
 
-    g_uniform_registry = try g_allocator.create(UniformRegistry);
-    errdefer g_allocator.destroy(g_uniform_registry);
-
-    g_uniform_registry.* = try UniformRegistry.init(g_allocator);
-    errdefer g_uniform_registry.deinit();
+    try uniform_registry.init(g_allocator);
+    errdefer uniform_registry.deinit();
 
     const pool_size = std.mem.zeroInit(
         c.VkDescriptorPoolSize,
@@ -385,8 +381,7 @@ pub fn deinit() void {
 
     device.destroyDescriptorPool(g_descriptor_pool);
 
-    g_uniform_registry.deinit();
-    g_allocator.destroy(g_uniform_registry);
+    uniform_registry.deinit();
 
     for (0..MaxFramesInFlight) |i| {
         device.destroySemaphore(g_image_available_semaphores[i]);
@@ -478,7 +473,6 @@ pub fn createProgram(
         g_allocator,
         &m_shaders[vertex_shader],
         &m_shaders[fragment_shader],
-        g_uniform_registry,
         g_descriptor_pool,
     );
 
@@ -561,7 +555,7 @@ pub fn createUniformBuffer(
     name: []const u8,
     size: u32,
 ) !gfx.UniformHandle {
-    const handle = try g_uniform_registry.createBuffer(name, size);
+    const handle = try uniform_registry.createBuffer(name, size);
 
     log.debug("Created uniform buffer:", .{});
     log.debug("  - Handle: {d}", .{handle});
@@ -570,7 +564,7 @@ pub fn createUniformBuffer(
 }
 
 pub fn destroyUniformBuffer(handle: gfx.UniformHandle) void {
-    g_uniform_registry.destroy(handle);
+    uniform_registry.destroy(handle);
 
     log.debug("Destroyed uniform buffer with handle {d}", .{handle});
 }
@@ -579,11 +573,11 @@ pub fn updateUniformBuffer(
     handle: gfx.UniformHandle,
     data: []const u8,
 ) !void {
-    try g_uniform_registry.updateBuffer(handle, g_current_frame, data);
+    try uniform_registry.updateBuffer(handle, g_current_frame, data);
 }
 
 pub fn createCombinedSampler(name: []const u8) !gfx.UniformHandle {
-    const handle = try g_uniform_registry.createCombinedSampler(name);
+    const handle = try uniform_registry.createCombinedSampler(name);
 
     log.debug("Created combined sampler:", .{});
     log.debug("  - Handle: {d}", .{handle});
@@ -592,7 +586,7 @@ pub fn createCombinedSampler(name: []const u8) !gfx.UniformHandle {
 }
 
 pub fn destroyCombinedSampler(handle: gfx.UniformHandle) void {
-    g_uniform_registry.destroy(handle);
+    uniform_registry.destroy(handle);
 
     log.debug("Destroyed combined sampler with handle {d}", .{handle});
 }
@@ -752,10 +746,7 @@ pub fn bindIndexBuffer(index_buffer: gfx.IndexBufferHandle) void {
 }
 
 pub fn bindTexture(texture: gfx.TextureHandle, uniform: gfx.UniformHandle) void {
-    g_uniform_registry.updateCombinedSampler(
-        uniform,
-        texture,
-    ) catch {
+    uniform_registry.updateCombinedSampler(uniform, texture) catch {
         log.err("Failed to update Vulkan combined sampler", .{});
     };
 }
