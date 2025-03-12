@@ -11,7 +11,7 @@ const vk = @import("vulkan.zig");
 
 const UniformBufferEntry = struct {
     name: []const u8,
-    buffer: [vk.MaxFramesInFlight]vk.UniformBuffer,
+    buffer: [vk.MaxFramesInFlight]vk.uniform_buffer.UniformBuffer,
     buffer_count: u32,
     buffer_size: u32,
     ref_count: u32,
@@ -70,15 +70,15 @@ pub fn createBuffer(name: []const u8, size: u32) !gfx.UniformHandle {
     errdefer _ = name_map.remove(name_copy);
 
     var buffer_count: u32 = 0;
-    var buffer: [vk.MaxFramesInFlight]vk.UniformBuffer = undefined;
+    var buffer: [vk.MaxFramesInFlight]vk.uniform_buffer.UniformBuffer = undefined;
 
     errdefer {
         for (0..buffer_count) |i| {
-            buffer[i].deinit();
+            vk.uniform_buffer.destroy(&buffer[i]);
         }
     }
     inline for (0..vk.MaxFramesInFlight) |i| {
-        buffer[i] = try vk.UniformBuffer.init(size);
+        buffer[i] = try vk.uniform_buffer.create(size);
         buffer_count += 1;
     }
 
@@ -191,7 +191,7 @@ pub fn destroy(handle: gfx.UniformHandle) void {
                 allocator.free(uniform.name);
 
                 for (0..uniform.buffer_count) |i| {
-                    uniform.buffer[i].deinit();
+                    vk.uniform_buffer.destroy(&uniform.buffer[i]);
                 }
 
                 handles.free(handle);

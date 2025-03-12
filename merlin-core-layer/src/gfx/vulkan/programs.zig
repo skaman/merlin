@@ -19,9 +19,9 @@ const Program = struct {
     descriptor_pool: c.VkDescriptorPool,
     descriptor_set_layout: c.VkDescriptorSetLayout,
 
-    uniform_handles: [vk.Pipeline.MaxDescriptorSetBindings]gfx.UniformHandle,
-    write_descriptor_sets: [vk.Pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet,
-    descriptor_types: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorType,
+    uniform_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.UniformHandle,
+    write_descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet,
+    descriptor_types: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorType,
 
     layout_count: u32,
 };
@@ -76,9 +76,9 @@ pub fn create(
     fragment_shader: gfx.ShaderHandle,
     descriptor_pool: c.VkDescriptorPool,
 ) !gfx.ProgramHandle {
-    var layouts: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorSetLayoutBinding = undefined;
-    var layout_names: [vk.Pipeline.MaxDescriptorSetBindings][]const u8 = undefined;
-    var layout_sizes: [vk.Pipeline.MaxDescriptorSetBindings]u32 = undefined;
+    var layouts: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorSetLayoutBinding = undefined;
+    var layout_names: [vk.pipeline.MaxDescriptorSetBindings][]const u8 = undefined;
+    var layout_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32 = undefined;
     var layout_count: u32 = 0;
 
     const vertex_shader_descriptor_sets = vk.shaders.getDescriptorSets(vertex_shader);
@@ -181,9 +181,9 @@ pub fn create(
         descriptor_set_layouts[i] = descriptor_set_layout;
     }
 
-    var write_descriptor_sets: [vk.Pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet = undefined;
-    var descriptor_types: [vk.Pipeline.MaxDescriptorSetBindings]c.VkDescriptorType = undefined;
-    var uniform_handles: [vk.Pipeline.MaxDescriptorSetBindings]gfx.UniformHandle = undefined;
+    var write_descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet = undefined;
+    var descriptor_types: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorType = undefined;
+    var uniform_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.UniformHandle = undefined;
     errdefer {
         for (0..layout_count) |binding_index| {
             vk.uniform_registry.destroy(uniform_handles[binding_index]);
@@ -276,7 +276,6 @@ pub fn pushDescriptorSet(
     handle: gfx.ProgramHandle,
     command_buffers: *const vk.command_buffers.CommandBuffers,
     index: u32,
-    textures: []vk.Texture,
 ) !void {
     const program = &programs[handle];
     for (0..program.layout_count) |binding_index| {
@@ -292,11 +291,10 @@ pub fn pushDescriptorSet(
             c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
                 const texture_handle = vk.uniform_registry.getCombinedSamplerTexture(uniform_handle);
                 if (texture_handle) |texture_handle_value| {
-                    const texture = &textures[texture_handle_value];
                     program.write_descriptor_sets[binding_index].pImageInfo = &.{
-                        .imageLayout = texture.ktx_texture.imageLayout,
-                        .imageView = texture.image_view,
-                        .sampler = texture.sampler,
+                        .imageLayout = vk.textures.getImageLayout(texture_handle_value),
+                        .imageView = vk.textures.getImageView(texture_handle_value),
+                        .sampler = vk.textures.getSampler(texture_handle_value),
                     };
                 } else {
                     vk.log.err("Texture handle is null for descriptor {d}", .{binding_index});

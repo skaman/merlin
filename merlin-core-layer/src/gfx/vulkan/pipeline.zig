@@ -4,6 +4,9 @@ const c = @import("../../c.zig").c;
 const gfx = @import("../gfx.zig");
 const vk = @import("vulkan.zig");
 
+pub const MaxVertexAttributes = 16;
+pub const MaxDescriptorSetBindings = 16;
+
 const SizeTable = [_][4]u8{
     [_]u8{ 1, 2, 4, 4 }, // uint_8
     [_]u8{ 4, 4, 4, 4 }, // uint_10
@@ -12,250 +15,244 @@ const SizeTable = [_][4]u8{
     [_]u8{ 4, 8, 12, 16 }, // float
 };
 
-pub const Pipeline = struct {
-    const Self = @This();
-    pub const MaxVertexAttributes = 16;
-    pub const MaxDescriptorSetBindings = 16;
+const AttributeType = [_][4][2]c.VkFormat{
+    // uint_8
+    [_][2]c.VkFormat{
+        [_]c.VkFormat{ c.VK_FORMAT_R8_UINT, c.VK_FORMAT_R8_UNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R8G8_UINT, c.VK_FORMAT_R8G8_UNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R8G8B8A8_UINT, c.VK_FORMAT_R8G8B8A8_UNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R8G8B8A8_UINT, c.VK_FORMAT_R8G8B8A8_UNORM },
+    },
 
-    const AttributeType = [_][4][2]c.VkFormat{
-        // uint_8
-        [_][2]c.VkFormat{
-            [_]c.VkFormat{ c.VK_FORMAT_R8_UINT, c.VK_FORMAT_R8_UNORM },
-            [_]c.VkFormat{ c.VK_FORMAT_R8G8_UINT, c.VK_FORMAT_R8G8_UNORM },
-            [_]c.VkFormat{ c.VK_FORMAT_R8G8B8A8_UINT, c.VK_FORMAT_R8G8B8A8_UNORM },
-            [_]c.VkFormat{ c.VK_FORMAT_R8G8B8A8_UINT, c.VK_FORMAT_R8G8B8A8_UNORM },
-        },
+    // uint_10
+    [_][2]c.VkFormat{
+        [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
+        [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
+        [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
+        [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
+    },
+    // int_16
+    [_][2]c.VkFormat{
+        [_]c.VkFormat{ c.VK_FORMAT_R16_SINT, c.VK_FORMAT_R16_SNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R16G16_SINT, c.VK_FORMAT_R16G16_SNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R16G16B16_SINT, c.VK_FORMAT_R16G16B16_SNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R16G16B16A16_SINT, c.VK_FORMAT_R16G16B16A16_SNORM },
+    },
+    // half
+    [_][2]c.VkFormat{
+        [_]c.VkFormat{ c.VK_FORMAT_R16_SFLOAT, c.VK_FORMAT_R16_SFLOAT },
+        [_]c.VkFormat{ c.VK_FORMAT_R16G16_SFLOAT, c.VK_FORMAT_R16G16_SFLOAT },
+        [_]c.VkFormat{ c.VK_FORMAT_R16G16B16_SFLOAT, c.VK_FORMAT_R16G16B16_SFLOAT },
+        [_]c.VkFormat{ c.VK_FORMAT_R16G16B16A16_SFLOAT, c.VK_FORMAT_R16G16B16A16_SFLOAT },
+    },
+    // float
+    [_][2]c.VkFormat{
+        [_]c.VkFormat{ c.VK_FORMAT_R32_SFLOAT, c.VK_FORMAT_R32_SFLOAT },
+        [_]c.VkFormat{ c.VK_FORMAT_R32G32_SFLOAT, c.VK_FORMAT_R32G32_SFLOAT },
+        [_]c.VkFormat{ c.VK_FORMAT_R32G32B32_SFLOAT, c.VK_FORMAT_R32G32B32_SFLOAT },
+        [_]c.VkFormat{ c.VK_FORMAT_R32G32B32A32_SFLOAT, c.VK_FORMAT_R32G32B32A32_SFLOAT },
+    },
+};
 
-        // uint_10
-        [_][2]c.VkFormat{
-            [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
-            [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
-            [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
-            [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
+// *********************************************************************************************
+// Public API
+// *********************************************************************************************
+
+pub fn create(
+    program: gfx.ProgramHandle,
+    render_pass: c.VkRenderPass,
+    vertex_layout: gfx.VertexLayout,
+) !c.VkPipeline {
+    const binding_description = std.mem.zeroInit(
+        c.VkVertexInputBindingDescription,
+        .{
+            .binding = 0,
+            .stride = vertex_layout.stride,
+            .inputRate = c.VK_VERTEX_INPUT_RATE_VERTEX,
         },
-        // int_16
-        [_][2]c.VkFormat{
-            [_]c.VkFormat{ c.VK_FORMAT_R16_SINT, c.VK_FORMAT_R16_SNORM },
-            [_]c.VkFormat{ c.VK_FORMAT_R16G16_SINT, c.VK_FORMAT_R16G16_SNORM },
-            [_]c.VkFormat{ c.VK_FORMAT_R16G16B16_SINT, c.VK_FORMAT_R16G16B16_SNORM },
-            [_]c.VkFormat{ c.VK_FORMAT_R16G16B16A16_SINT, c.VK_FORMAT_R16G16B16A16_SNORM },
+    );
+
+    const vertex_shader = vk.programs.getVertexShader(program);
+    const fragment_shader = vk.programs.getFragmentShader(program);
+
+    var attribute_descriptions: [MaxVertexAttributes]c.VkVertexInputAttributeDescription = undefined;
+    var attribute_count: u32 = 0;
+    for (vk.shaders.getInputAttributes(vertex_shader)) |input_attribute| {
+        const attribute_data = vertex_layout.attributes[@intFromEnum(input_attribute.attribute)];
+        if (attribute_data.num == 0) {
+            std.log.warn("Attribute {} not found in vertex layout", .{input_attribute.attribute});
+            continue;
+        }
+
+        std.debug.assert(attribute_data.num > 0);
+        std.debug.assert(attribute_data.num <= AttributeType.len);
+
+        attribute_descriptions[attribute_count] = .{
+            .location = @intCast(input_attribute.location),
+            .binding = 0,
+            .format = AttributeType[@intFromEnum(attribute_data.type)][@intCast(attribute_data.num - 1)][@intFromBool(attribute_data.normalized)],
+            .offset = vertex_layout.offsets[@intFromEnum(input_attribute.attribute)],
+        };
+
+        attribute_count += 1;
+    }
+
+    const vertex_input_info = std.mem.zeroInit(
+        c.VkPipelineVertexInputStateCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
+            .vertexBindingDescriptionCount = 1,
+            .pVertexBindingDescriptions = &binding_description,
+            .vertexAttributeDescriptionCount = attribute_count,
+            .pVertexAttributeDescriptions = &attribute_descriptions,
         },
-        // half
-        [_][2]c.VkFormat{
-            [_]c.VkFormat{ c.VK_FORMAT_R16_SFLOAT, c.VK_FORMAT_R16_SFLOAT },
-            [_]c.VkFormat{ c.VK_FORMAT_R16G16_SFLOAT, c.VK_FORMAT_R16G16_SFLOAT },
-            [_]c.VkFormat{ c.VK_FORMAT_R16G16B16_SFLOAT, c.VK_FORMAT_R16G16B16_SFLOAT },
-            [_]c.VkFormat{ c.VK_FORMAT_R16G16B16A16_SFLOAT, c.VK_FORMAT_R16G16B16A16_SFLOAT },
+    );
+
+    const input_assembly = std.mem.zeroInit(
+        c.VkPipelineInputAssemblyStateCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
+            .topology = c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+            .primitiveRestartEnable = c.VK_FALSE,
         },
-        // float
-        [_][2]c.VkFormat{
-            [_]c.VkFormat{ c.VK_FORMAT_R32_SFLOAT, c.VK_FORMAT_R32_SFLOAT },
-            [_]c.VkFormat{ c.VK_FORMAT_R32G32_SFLOAT, c.VK_FORMAT_R32G32_SFLOAT },
-            [_]c.VkFormat{ c.VK_FORMAT_R32G32B32_SFLOAT, c.VK_FORMAT_R32G32B32_SFLOAT },
-            [_]c.VkFormat{ c.VK_FORMAT_R32G32B32A32_SFLOAT, c.VK_FORMAT_R32G32B32A32_SFLOAT },
+    );
+
+    const viewport_state = std.mem.zeroInit(
+        c.VkPipelineViewportStateCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
+            .viewportCount = 1,
+            //.pViewports = &viewport,
+            .scissorCount = 1,
+            //.pScissors = &scissor,
+        },
+    );
+
+    const rasterizer = std.mem.zeroInit(
+        c.VkPipelineRasterizationStateCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
+            .depthClampEnable = c.VK_FALSE,
+            .rasterizerDiscardEnable = c.VK_FALSE,
+            .polygonMode = c.VK_POLYGON_MODE_FILL,
+            .lineWidth = 1.0,
+            .cullMode = c.VK_CULL_MODE_BACK_BIT,
+            .frontFace = c.VK_FRONT_FACE_CLOCKWISE,
+            .depthBiasEnable = c.VK_FALSE,
+        },
+    );
+
+    const multisampling = std.mem.zeroInit(
+        c.VkPipelineMultisampleStateCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
+            .sampleShadingEnable = c.VK_FALSE,
+            .rasterizationSamples = c.VK_SAMPLE_COUNT_1_BIT,
+        },
+    );
+
+    const color_blend_attachment = std.mem.zeroInit(
+        c.VkPipelineColorBlendAttachmentState,
+        .{
+            .colorWriteMask = c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT | c.VK_COLOR_COMPONENT_B_BIT | c.VK_COLOR_COMPONENT_A_BIT,
+            .blendEnable = c.VK_FALSE,
+        },
+    );
+
+    const color_blending = std.mem.zeroInit(
+        c.VkPipelineColorBlendStateCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
+            .logicOpEnable = c.VK_FALSE,
+            .logicOp = c.VK_LOGIC_OP_COPY,
+            .attachmentCount = 1,
+            .pAttachments = &color_blend_attachment,
+        },
+    );
+
+    const dynamic_states = [_]c.VkDynamicState{
+        c.VK_DYNAMIC_STATE_VIEWPORT,
+        c.VK_DYNAMIC_STATE_SCISSOR,
+    };
+
+    const dynamic_state = std.mem.zeroInit(
+        c.VkPipelineDynamicStateCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
+            .dynamicStateCount = @as(u32, dynamic_states.len),
+            .pDynamicStates = &dynamic_states,
+        },
+    );
+
+    const stages = [_]c.VkPipelineShaderStageCreateInfo{
+        c.VkPipelineShaderStageCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
+            .module = vk.shaders.getShaderModule(vertex_shader),
+            .pName = "main",
+        },
+        c.VkPipelineShaderStageCreateInfo{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+            .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .module = vk.shaders.getShaderModule(fragment_shader),
+            .pName = "main",
         },
     };
 
-    handle: c.VkPipeline,
+    const pipeline_create_info = std.mem.zeroInit(
+        c.VkGraphicsPipelineCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            .stageCount = 2,
+            .pStages = &stages,
+            .pVertexInputState = &vertex_input_info,
+            .pInputAssemblyState = &input_assembly,
+            .pViewportState = &viewport_state,
+            .pRasterizationState = &rasterizer,
+            .pMultisampleState = &multisampling,
+            .pColorBlendState = &color_blending,
+            .pDynamicState = &dynamic_state,
+            .layout = vk.programs.getPipelineLayout(program),
+            .renderPass = render_pass,
+            .subpass = 0,
+            //.basePipelineHandle = c.VK_NULL_HANDLE,
+        },
+    );
 
-    pub fn init(
-        program: gfx.ProgramHandle,
-        render_pass: c.VkRenderPass,
-        vertex_layout: gfx.VertexLayout,
-    ) !Self {
-        const binding_description = std.mem.zeroInit(
-            c.VkVertexInputBindingDescription,
-            .{
-                .binding = 0,
-                .stride = vertex_layout.stride,
-                .inputRate = c.VK_VERTEX_INPUT_RATE_VERTEX,
-            },
-        );
+    var pipeline: c.VkPipeline = undefined;
+    try vk.device.createGraphicsPipelines(
+        null,
+        1,
+        &pipeline_create_info,
+        &pipeline,
+    );
 
-        const vertex_shader = vk.programs.getVertexShader(program);
-        const fragment_shader = vk.programs.getFragmentShader(program);
-
-        var attribute_descriptions: [MaxVertexAttributes]c.VkVertexInputAttributeDescription = undefined;
-        var attribute_count: u32 = 0;
-        for (vk.shaders.getInputAttributes(vertex_shader)) |input_attribute| {
-            const attribute_data = vertex_layout.attributes[@intFromEnum(input_attribute.attribute)];
-            if (attribute_data.num == 0) {
-                std.log.warn("Attribute {} not found in vertex layout", .{input_attribute.attribute});
-                continue;
-            }
-
-            std.debug.assert(attribute_data.num > 0);
-            std.debug.assert(attribute_data.num <= AttributeType.len);
-
-            attribute_descriptions[attribute_count] = .{
-                .location = @intCast(input_attribute.location),
-                .binding = 0,
-                .format = AttributeType[@intFromEnum(attribute_data.type)][@intCast(attribute_data.num - 1)][@intFromBool(attribute_data.normalized)],
-                .offset = vertex_layout.offsets[@intFromEnum(input_attribute.attribute)],
-            };
-
-            attribute_count += 1;
-        }
-
-        const vertex_input_info = std.mem.zeroInit(
-            c.VkPipelineVertexInputStateCreateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
-                .vertexBindingDescriptionCount = 1,
-                .pVertexBindingDescriptions = &binding_description,
-                .vertexAttributeDescriptionCount = attribute_count,
-                .pVertexAttributeDescriptions = &attribute_descriptions,
-            },
-        );
-
-        const input_assembly = std.mem.zeroInit(
-            c.VkPipelineInputAssemblyStateCreateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
-                .topology = c.VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-                .primitiveRestartEnable = c.VK_FALSE,
-            },
-        );
-
-        const viewport_state = std.mem.zeroInit(
-            c.VkPipelineViewportStateCreateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
-                .viewportCount = 1,
-                //.pViewports = &viewport,
-                .scissorCount = 1,
-                //.pScissors = &scissor,
-            },
-        );
-
-        const rasterizer = std.mem.zeroInit(
-            c.VkPipelineRasterizationStateCreateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
-                .depthClampEnable = c.VK_FALSE,
-                .rasterizerDiscardEnable = c.VK_FALSE,
-                .polygonMode = c.VK_POLYGON_MODE_FILL,
-                .lineWidth = 1.0,
-                .cullMode = c.VK_CULL_MODE_BACK_BIT,
-                .frontFace = c.VK_FRONT_FACE_CLOCKWISE,
-                .depthBiasEnable = c.VK_FALSE,
-            },
-        );
-
-        const multisampling = std.mem.zeroInit(
-            c.VkPipelineMultisampleStateCreateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-                .sampleShadingEnable = c.VK_FALSE,
-                .rasterizationSamples = c.VK_SAMPLE_COUNT_1_BIT,
-            },
-        );
-
-        const color_blend_attachment = std.mem.zeroInit(
-            c.VkPipelineColorBlendAttachmentState,
-            .{
-                .colorWriteMask = c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT | c.VK_COLOR_COMPONENT_B_BIT | c.VK_COLOR_COMPONENT_A_BIT,
-                .blendEnable = c.VK_FALSE,
-            },
-        );
-
-        const color_blending = std.mem.zeroInit(
-            c.VkPipelineColorBlendStateCreateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO,
-                .logicOpEnable = c.VK_FALSE,
-                .logicOp = c.VK_LOGIC_OP_COPY,
-                .attachmentCount = 1,
-                .pAttachments = &color_blend_attachment,
-            },
-        );
-
-        const dynamic_states = [_]c.VkDynamicState{
-            c.VK_DYNAMIC_STATE_VIEWPORT,
-            c.VK_DYNAMIC_STATE_SCISSOR,
-        };
-
-        const dynamic_state = std.mem.zeroInit(
-            c.VkPipelineDynamicStateCreateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO,
-                .dynamicStateCount = @as(u32, dynamic_states.len),
-                .pDynamicStates = &dynamic_states,
-            },
-        );
-
-        const stages = [_]c.VkPipelineShaderStageCreateInfo{
-            c.VkPipelineShaderStageCreateInfo{
-                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
-                .module = vk.shaders.getShaderModule(vertex_shader),
-                .pName = "main",
-            },
-            c.VkPipelineShaderStageCreateInfo{
-                .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
-                .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .module = vk.shaders.getShaderModule(fragment_shader),
-                .pName = "main",
-            },
-        };
-
-        const pipeline_create_info = std.mem.zeroInit(
-            c.VkGraphicsPipelineCreateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
-                .stageCount = 2,
-                .pStages = &stages,
-                .pVertexInputState = &vertex_input_info,
-                .pInputAssemblyState = &input_assembly,
-                .pViewportState = &viewport_state,
-                .pRasterizationState = &rasterizer,
-                .pMultisampleState = &multisampling,
-                .pColorBlendState = &color_blending,
-                .pDynamicState = &dynamic_state,
-                .layout = vk.programs.getPipelineLayout(program),
-                .renderPass = render_pass,
-                .subpass = 0,
-                //.basePipelineHandle = c.VK_NULL_HANDLE,
-            },
-        );
-
-        var pipeline: c.VkPipeline = undefined;
-        try vk.device.createGraphicsPipelines(
-            null,
-            1,
-            &pipeline_create_info,
-            &pipeline,
-        );
-
-        vk.log.debug("Pipeline created:", .{});
+    vk.log.debug("Pipeline created:", .{});
+    vk.log.debug(
+        "  - Binding Description 0: binding={d}, stride={d}, inputRate={s}",
+        .{
+            binding_description.binding,
+            binding_description.stride,
+            c.string_VkVertexInputRate(binding_description.inputRate),
+        },
+    );
+    for (0..attribute_count) |index| {
+        const attribute = attribute_descriptions[index];
         vk.log.debug(
-            "  - Binding Description 0: binding={d}, stride={d}, inputRate={s}",
+            "  - Attribute Description {d}: location={d}, binding={d}, format={s}, offset={d}",
             .{
-                binding_description.binding,
-                binding_description.stride,
-                c.string_VkVertexInputRate(binding_description.inputRate),
+                index,
+                attribute.location,
+                attribute.binding,
+                c.string_VkFormat(attribute.format),
+                attribute.offset,
             },
         );
-        for (0..attribute_count) |index| {
-            const attribute = attribute_descriptions[index];
-            vk.log.debug(
-                "  - Attribute Description {d}: location={d}, binding={d}, format={s}, offset={d}",
-                .{
-                    index,
-                    attribute.location,
-                    attribute.binding,
-                    c.string_VkFormat(attribute.format),
-                    attribute.offset,
-                },
-            );
-        }
-
-        return .{
-            .handle = pipeline,
-        };
     }
 
-    pub fn deinit(self: *Self) void {
-        vk.device.destroyPipeline(self.handle);
-    }
-};
+    return pipeline;
+}
+
+pub fn destroy(pipeline: c.VkPipeline) void {
+    vk.device.destroyPipeline(pipeline);
+}

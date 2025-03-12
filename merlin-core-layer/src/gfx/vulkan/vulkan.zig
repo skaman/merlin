@@ -11,16 +11,16 @@ pub const device = @import("device.zig");
 pub const index_buffers = @import("index_buffers.zig");
 pub const instance = @import("instance.zig");
 pub const library = @import("library.zig");
-pub const Pipeline = @import("pipeline.zig").Pipeline;
+pub const pipeline = @import("pipeline.zig");
 pub const programs = @import("programs.zig");
 pub const render_pass = @import("render_pass.zig");
 pub const shaders = @import("shaders.zig");
 pub const surface = @import("surface.zig");
 pub const swap_chain = @import("swap_chain.zig");
-pub const Texture = @import("texture.zig").Texture;
+pub const textures = @import("textures.zig");
+pub const uniform_buffer = @import("uniform_buffer.zig");
 pub const uniform_registry = @import("uniform_registry.zig");
-pub const UniformBuffer = @import("uniform_buffer.zig").UniformBuffer;
-pub const VertexBuffer = @import("vertex_buffer.zig").VertexBuffer;
+pub const vertex_buffers = @import("vertex_buffers.zig");
 
 pub const log = std.log.scoped(.gfx_vk);
 
@@ -47,14 +47,7 @@ var g_command_buffers: command_buffers.CommandBuffers = undefined;
 var g_debug_messenger: ?c.VkDebugUtilsMessengerEXT = null;
 var g_descriptor_pool: c.VkDescriptorPool = undefined;
 
-var g_pipelines: std.AutoHashMap(PipelineKey, Pipeline) = undefined;
-var g_vertex_buffers: [gfx.MaxVertexBufferHandles]VertexBuffer = undefined;
-var g_textures: [gfx.MaxTextureHandles]Texture = undefined;
-
-var g_vertex_buffers_to_destroy: [gfx.MaxProgramHandles]VertexBuffer = undefined;
-var g_vertex_buffers_to_destroy_count: u32 = 0;
-var g_textures_to_destroy: [gfx.MaxTextureHandles]Texture = undefined;
-var g_textures_to_destroy_count: u32 = 0;
+var g_pipelines: std.AutoHashMap(PipelineKey, c.VkPipeline) = undefined;
 
 var g_image_available_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
 var g_render_finished_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
@@ -69,9 +62,6 @@ var g_current_index_buffer: ?gfx.IndexBufferHandle = null;
 var g_framebuffer_width: u32 = 0;
 var g_framebuffer_height: u32 = 0;
 var g_framebuffer_invalidated: bool = false;
-
-var g_vertex_buffer_handles: utils.HandlePool(gfx.VertexBufferHandle, gfx.MaxVertexBufferHandles) = undefined;
-var g_texture_handles: utils.HandlePool(gfx.TextureHandle, gfx.MaxTextureHandles) = undefined;
 
 pub fn debugCallback(
     message_severity: c.VkDebugUtilsMessageSeverityFlagBitsEXT,
@@ -146,19 +136,11 @@ fn setupDebugMessenger(options: *const gfx.Options) !?c.VkDebugUtilsMessengerEXT
 }
 
 fn destroyPendingResources() void {
-    for (0..g_vertex_buffers_to_destroy_count) |i| {
-        g_vertex_buffers_to_destroy[i].deinit();
-    }
-    g_vertex_buffers_to_destroy_count = 0;
-
+    vertex_buffers.destroyPendingResources();
     index_buffers.destroyPendingResources();
     programs.destroyPendingResources();
     shaders.destroyPendingResources();
-
-    for (0..g_textures_to_destroy_count) |i| {
-        g_textures_to_destroy[i].deinit();
-    }
-    g_textures_to_destroy_count = 0;
+    textures.destroyPendingResources();
 }
 
 fn recreateSwapChain() !void {
@@ -185,23 +167,23 @@ fn recreateSwapChain() !void {
 fn getPipeline(
     program: gfx.ProgramHandle,
     layout: *gfx.VertexLayout,
-) !Pipeline {
+) !c.VkPipeline {
     const key = PipelineKey{
         .program = program,
         .layout = layout.*,
     };
-    var pipeline = g_pipelines.get(key);
-    if (pipeline != null) {
-        return pipeline.?;
+    var pipeline_value = g_pipelines.get(key);
+    if (pipeline_value != null) {
+        return pipeline_value.?;
     }
 
-    pipeline = try Pipeline.init(
+    pipeline_value = try pipeline.create(
         program,
         g_main_render_pass,
         layout.*,
     );
-    try g_pipelines.put(key, pipeline.?);
-    return pipeline.?;
+    try g_pipelines.put(key, pipeline_value.?);
+    return pipeline_value.?;
 }
 
 pub fn init(
@@ -333,12 +315,11 @@ pub fn init(
     try device.createDescriptorPool(&pool_info, &g_descriptor_pool);
     errdefer device.destroyDescriptorPool(g_descriptor_pool);
 
-    g_vertex_buffer_handles = .init();
-    g_texture_handles = .init();
-
+    vertex_buffers.init();
     index_buffers.init();
     programs.init();
     shaders.init();
+    textures.init();
 }
 
 pub fn deinit() void {
@@ -350,12 +331,11 @@ pub fn deinit() void {
 
     destroyPendingResources();
 
+    vertex_buffers.deinit();
     index_buffers.deinit();
     programs.deinit();
     shaders.deinit();
-
-    g_vertex_buffer_handles.deinit();
-    g_texture_handles.deinit();
+    textures.deinit();
 
     device.destroyDescriptorPool(g_descriptor_pool);
 
@@ -368,8 +348,8 @@ pub fn deinit() void {
     }
 
     var iterator = g_pipelines.valueIterator();
-    while (iterator.next()) |pipeline| {
-        pipeline.deinit();
+    while (iterator.next()) |pipeline_value| {
+        pipeline.destroy(pipeline_value.*);
     }
     g_pipelines.deinit();
 
@@ -433,29 +413,16 @@ pub fn createVertexBuffer(
     data: []const u8,
     layout: gfx.VertexLayout,
 ) !gfx.VertexBufferHandle {
-    const handle = try g_vertex_buffer_handles.alloc();
-    errdefer g_vertex_buffer_handles.free(handle);
-
-    g_vertex_buffers[handle] = try VertexBuffer.init(
+    return vertex_buffers.create(
         g_transfer_command_pool,
         g_transfer_queue,
         layout,
         data,
     );
-
-    log.debug("Created vertex buffer:", .{});
-    log.debug("  - Handle: {d}", .{handle});
-
-    return handle;
 }
 
 pub fn destroyVertexBuffer(handle: gfx.VertexBufferHandle) void {
-    g_vertex_buffers_to_destroy[g_vertex_buffers_to_destroy_count] = g_vertex_buffers[handle];
-    g_vertex_buffers_to_destroy_count += 1;
-
-    g_vertex_buffer_handles.free(handle);
-
-    log.debug("Destroyed vertex buffer with handle {d}", .{handle});
+    vertex_buffers.destroy(handle);
 }
 
 pub fn createIndexBuffer(
@@ -515,29 +482,16 @@ pub fn destroyCombinedSampler(handle: gfx.UniformHandle) void {
 }
 
 pub fn createTexture(reader: std.io.AnyReader) !gfx.TextureHandle {
-    const handle = try g_texture_handles.alloc();
-    errdefer g_texture_handles.free(handle);
-
-    g_textures[handle] = try Texture.init(
+    return textures.create(
         g_arena_allocator,
         g_transfer_command_pool,
         g_transfer_queue,
         reader,
     );
-
-    log.debug("Created texture:", .{});
-    log.debug("  - Handle: {d}", .{handle});
-
-    return handle;
 }
 
 pub fn destroyTexture(handle: gfx.TextureHandle) void {
-    g_textures_to_destroy[g_textures_to_destroy_count] = g_textures[handle];
-    g_textures_to_destroy_count += 1;
-
-    g_texture_handles.free(handle);
-
-    log.debug("Destroyed texture with handle {d}", .{handle});
+    return textures.destroy(handle);
 }
 
 pub fn beginFrame() !bool {
@@ -683,17 +637,16 @@ pub fn draw(
     std.debug.assert(g_current_program != null);
     std.debug.assert(g_current_vertex_buffer != null);
 
-    const vertex_buffer = &g_vertex_buffers[g_current_vertex_buffer.?];
-    const pipeline = getPipeline(g_current_program.?, &vertex_buffer.layout) catch {
+    const pipeline_value = getPipeline(g_current_program.?, vertex_buffers.getLayout(g_current_vertex_buffer.?)) catch {
         log.err("Failed to bind Vulkan program: {d}", .{g_current_program.?});
         return;
     };
-    g_command_buffers.bindPipeline(g_current_frame, pipeline.handle);
+    g_command_buffers.bindPipeline(g_current_frame, pipeline_value);
 
     var offsets = [_]c.VkDeviceSize{0};
     g_command_buffers.bindVertexBuffer(
         g_current_frame,
-        vertex_buffer.buffer.handle,
+        vertex_buffers.getBuffer(g_current_vertex_buffer.?),
         @ptrCast(&offsets),
     );
 
@@ -701,7 +654,6 @@ pub fn draw(
         g_current_program.?,
         &g_command_buffers,
         g_current_frame,
-        &g_textures,
     ) catch {
         log.err("Failed to bind Vulkan descriptor set", .{});
         return;
@@ -727,17 +679,16 @@ pub fn drawIndexed(
     std.debug.assert(g_current_vertex_buffer != null);
     std.debug.assert(g_current_index_buffer != null);
 
-    const vertex_buffer = &g_vertex_buffers[g_current_vertex_buffer.?];
-    const pipeline = getPipeline(g_current_program.?, &vertex_buffer.layout) catch {
+    const pipeline_value = getPipeline(g_current_program.?, vertex_buffers.getLayout(g_current_vertex_buffer.?)) catch {
         log.err("Failed to bind Vulkan program: {d}", .{g_current_program.?});
         return;
     };
-    g_command_buffers.bindPipeline(g_current_frame, pipeline.handle);
+    g_command_buffers.bindPipeline(g_current_frame, pipeline_value);
 
     var offsets = [_]c.VkDeviceSize{0};
     g_command_buffers.bindVertexBuffer(
         g_current_frame,
-        vertex_buffer.buffer.handle,
+        vertex_buffers.getBuffer(g_current_vertex_buffer.?),
         @ptrCast(&offsets),
     );
 
@@ -745,7 +696,6 @@ pub fn drawIndexed(
         g_current_program.?,
         &g_command_buffers,
         g_current_frame,
-        &g_textures,
     ) catch {
         log.err("Failed to bind Vulkan descriptor set", .{});
         return;

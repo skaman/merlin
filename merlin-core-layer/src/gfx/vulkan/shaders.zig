@@ -11,9 +11,9 @@ const vk = @import("vulkan.zig");
 
 const Shader = struct {
     handle: c.VkShaderModule,
-    input_attributes: [vk.Pipeline.MaxVertexAttributes]gfx.ShaderInputAttribute,
+    input_attributes: [vk.pipeline.MaxVertexAttributes]gfx.ShaderInputAttribute,
     input_attribute_count: u8,
-    descriptor_sets: [vk.Pipeline.MaxDescriptorSetBindings]gfx.DescriptorSet,
+    descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]gfx.DescriptorSet,
     descriptor_set_count: u8,
 };
 
@@ -41,12 +41,12 @@ pub fn deinit() void {
 }
 
 pub fn create(data: *const gfx.ShaderData) !gfx.ShaderHandle {
-    if (data.input_attributes.len > vk.Pipeline.MaxVertexAttributes) {
+    if (data.input_attributes.len > vk.pipeline.MaxVertexAttributes) {
         vk.log.err("Input attributes count exceeds maximum vertex attributes", .{});
         return error.MaxVertexAttributesExceeded;
     }
 
-    if (data.descriptor_sets.len > vk.Pipeline.MaxDescriptorSetBindings) {
+    if (data.descriptor_sets.len > vk.pipeline.MaxDescriptorSetBindings) {
         vk.log.err("Descriptor sets count exceeds maximum descriptor sets", .{});
         return error.MaxDescriptorSetsExceeded;
     }
