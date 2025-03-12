@@ -8,13 +8,13 @@ pub const buffer = @import("buffer.zig");
 pub const command_buffers = @import("command_buffers.zig");
 pub const command_pool = @import("command_pool.zig");
 pub const device = @import("device.zig");
-pub const IndexBuffer = @import("index_buffer.zig").IndexBuffer;
+pub const index_buffers = @import("index_buffers.zig");
 pub const instance = @import("instance.zig");
 pub const library = @import("library.zig");
 pub const Pipeline = @import("pipeline.zig").Pipeline;
-pub const Program = @import("program.zig").Program;
+pub const programs = @import("programs.zig");
 pub const render_pass = @import("render_pass.zig");
-pub const Shader = @import("shader.zig").Shader;
+pub const shaders = @import("shaders.zig");
 pub const surface = @import("surface.zig");
 pub const swap_chain = @import("swap_chain.zig");
 pub const Texture = @import("texture.zig").Texture;
@@ -47,22 +47,12 @@ var g_command_buffers: command_buffers.CommandBuffers = undefined;
 var g_debug_messenger: ?c.VkDebugUtilsMessengerEXT = null;
 var g_descriptor_pool: c.VkDescriptorPool = undefined;
 
-var m_shaders: [gfx.MaxShaderHandles]Shader = undefined;
-var g_programs: [gfx.MaxProgramHandles]Program = undefined;
 var g_pipelines: std.AutoHashMap(PipelineKey, Pipeline) = undefined;
 var g_vertex_buffers: [gfx.MaxVertexBufferHandles]VertexBuffer = undefined;
-var g_index_buffers: [gfx.MaxIndexBufferHandles]IndexBuffer = undefined;
-//var g_uniform_buffers: [gfx.MaxUniformHandles]*UniformRegistry.Entry = undefined;
 var g_textures: [gfx.MaxTextureHandles]Texture = undefined;
 
 var g_vertex_buffers_to_destroy: [gfx.MaxProgramHandles]VertexBuffer = undefined;
 var g_vertex_buffers_to_destroy_count: u32 = 0;
-var g_index_buffers_to_destroy: [gfx.MaxProgramHandles]IndexBuffer = undefined;
-var g_index_buffers_to_destroy_count: u32 = 0;
-var g_programs_to_destroy: [gfx.MaxProgramHandles]Program = undefined;
-var g_programs_to_destroy_count: u32 = 0;
-var g_shaders_to_destroy: [gfx.MaxShaderHandles]Shader = undefined;
-var g_shaders_to_destroy_count: u32 = 0;
 var g_textures_to_destroy: [gfx.MaxTextureHandles]Texture = undefined;
 var g_textures_to_destroy_count: u32 = 0;
 
@@ -80,10 +70,7 @@ var g_framebuffer_width: u32 = 0;
 var g_framebuffer_height: u32 = 0;
 var g_framebuffer_invalidated: bool = false;
 
-var g_shader_handles: utils.HandlePool(gfx.ShaderHandle, gfx.MaxShaderHandles) = undefined;
-var g_program_handles: utils.HandlePool(gfx.ProgramHandle, gfx.MaxProgramHandles) = undefined;
 var g_vertex_buffer_handles: utils.HandlePool(gfx.VertexBufferHandle, gfx.MaxVertexBufferHandles) = undefined;
-var g_index_buffer_handles: utils.HandlePool(gfx.IndexBufferHandle, gfx.MaxIndexBufferHandles) = undefined;
 var g_texture_handles: utils.HandlePool(gfx.TextureHandle, gfx.MaxTextureHandles) = undefined;
 
 pub fn debugCallback(
@@ -164,20 +151,9 @@ fn destroyPendingResources() void {
     }
     g_vertex_buffers_to_destroy_count = 0;
 
-    for (0..g_index_buffers_to_destroy_count) |i| {
-        g_index_buffers_to_destroy[i].deinit();
-    }
-    g_index_buffers_to_destroy_count = 0;
-
-    for (0..g_programs_to_destroy_count) |i| {
-        g_programs_to_destroy[i].deinit();
-    }
-    g_programs_to_destroy_count = 0;
-
-    for (0..g_shaders_to_destroy_count) |i| {
-        g_shaders_to_destroy[i].deinit();
-    }
-    g_shaders_to_destroy_count = 0;
+    index_buffers.destroyPendingResources();
+    programs.destroyPendingResources();
+    shaders.destroyPendingResources();
 
     for (0..g_textures_to_destroy_count) |i| {
         g_textures_to_destroy[i].deinit();
@@ -220,7 +196,7 @@ fn getPipeline(
     }
 
     pipeline = try Pipeline.init(
-        &g_programs[program],
+        program,
         g_main_render_pass,
         layout.*,
     );
@@ -357,11 +333,12 @@ pub fn init(
     try device.createDescriptorPool(&pool_info, &g_descriptor_pool);
     errdefer device.destroyDescriptorPool(g_descriptor_pool);
 
-    g_shader_handles = .init();
-    g_program_handles = .init();
     g_vertex_buffer_handles = .init();
-    g_index_buffer_handles = .init();
     g_texture_handles = .init();
+
+    index_buffers.init();
+    programs.init();
+    shaders.init();
 }
 
 pub fn deinit() void {
@@ -373,10 +350,11 @@ pub fn deinit() void {
 
     destroyPendingResources();
 
-    g_shader_handles.deinit();
-    g_program_handles.deinit();
+    index_buffers.deinit();
+    programs.deinit();
+    shaders.deinit();
+
     g_vertex_buffer_handles.deinit();
-    g_index_buffer_handles.deinit();
     g_texture_handles.deinit();
 
     device.destroyDescriptorPool(g_descriptor_pool);
@@ -428,69 +406,27 @@ pub fn setFramebufferSize(size: [2]u32) void {
 }
 
 pub fn createShader(data: *const gfx.ShaderData) !gfx.ShaderHandle {
-    const handle = try g_shader_handles.alloc();
-    errdefer g_shader_handles.free(handle);
-
-    m_shaders[handle] = try Shader.init(data);
-
-    log.debug("Created {s} shader:", .{switch (data.type) {
-        .vertex => "vertex",
-        .fragment => "fragment",
-    }});
-    log.debug("  - Handle: {d}", .{handle});
-
-    for (data.input_attributes) |input_attribute| {
-        log.debug("  - Attribute {d}: {}", .{ input_attribute.location, input_attribute.attribute });
-    }
-
-    for (data.descriptor_sets) |descriptor_set| {
-        log.debug("  - Descriptor set {d}:", .{descriptor_set.set});
-        for (descriptor_set.bindings) |binding| {
-            log.debug("    Binding {d}: {s} {}", .{ binding.binding, binding.name, binding.type });
-        }
-    }
-
-    return handle;
+    return shaders.create(data);
 }
 
 pub fn destroyShader(handle: gfx.ShaderHandle) void {
-    g_shaders_to_destroy[g_shaders_to_destroy_count] = m_shaders[handle];
-    g_shaders_to_destroy_count += 1;
-
-    g_shader_handles.free(handle);
-
-    log.debug("Destroyed shader with handle {d}", .{handle});
+    shaders.destroy(handle);
 }
 
 pub fn createProgram(
     vertex_shader: gfx.ShaderHandle,
     fragment_shader: gfx.ShaderHandle,
 ) !gfx.ProgramHandle {
-    const handle = try g_program_handles.alloc();
-    errdefer g_program_handles.free(handle);
-
-    g_programs[handle] = try Program.init(
+    return programs.create(
         g_allocator,
-        &m_shaders[vertex_shader],
-        &m_shaders[fragment_shader],
+        vertex_shader,
+        fragment_shader,
         g_descriptor_pool,
     );
-
-    log.debug("Created program:", .{});
-    log.debug("  - Handle: {d}", .{handle});
-    log.debug("  - Vertex shader handle: {d}", .{vertex_shader});
-    log.debug("  - Fragment shader handle: {d}", .{fragment_shader});
-
-    return handle;
 }
 
 pub fn destroyProgram(handle: gfx.ProgramHandle) void {
-    g_programs_to_destroy[g_programs_to_destroy_count] = g_programs[handle];
-    g_programs_to_destroy_count += 1;
-
-    g_program_handles.free(handle);
-
-    log.debug("Destroyed program with handle {d}", .{handle});
+    programs.destroy(handle);
 }
 
 pub fn createVertexBuffer(
@@ -526,29 +462,16 @@ pub fn createIndexBuffer(
     data: []const u8,
     index_type: gfx.IndexType,
 ) !gfx.IndexBufferHandle {
-    const handle = try g_index_buffer_handles.alloc();
-    errdefer g_index_buffer_handles.free(handle);
-
-    g_index_buffers[handle] = try IndexBuffer.init(
+    return index_buffers.create(
         g_transfer_command_pool,
         g_transfer_queue,
         data,
         index_type,
     );
-
-    log.debug("Created index buffer:", .{});
-    log.debug("  - Handle: {d}", .{handle});
-
-    return handle;
 }
 
 pub fn destroyIndexBuffer(handle: gfx.IndexBufferHandle) void {
-    g_index_buffers_to_destroy[g_index_buffers_to_destroy_count] = g_index_buffers[handle];
-    g_index_buffers_to_destroy_count += 1;
-
-    g_index_buffer_handles.free(handle);
-
-    log.debug("Destroyed index buffer with handle {d}", .{handle});
+    index_buffers.destroy(handle);
 }
 
 pub fn createUniformBuffer(
@@ -741,8 +664,8 @@ pub fn bindVertexBuffer(vertex_buffer: gfx.VertexBufferHandle) void {
     g_current_vertex_buffer = vertex_buffer;
 }
 
-pub fn bindIndexBuffer(index_buffer: gfx.IndexBufferHandle) void {
-    g_current_index_buffer = index_buffer;
+pub fn bindIndexBuffer(handle: gfx.IndexBufferHandle) void {
+    g_current_index_buffer = handle;
 }
 
 pub fn bindTexture(texture: gfx.TextureHandle, uniform: gfx.UniformHandle) void {
@@ -774,8 +697,8 @@ pub fn draw(
         @ptrCast(&offsets),
     );
 
-    var program = &g_programs[g_current_program.?];
-    program.pushDescriptorSet(
+    programs.pushDescriptorSet(
+        g_current_program.?,
         &g_command_buffers,
         g_current_frame,
         &g_textures,
@@ -818,8 +741,8 @@ pub fn drawIndexed(
         @ptrCast(&offsets),
     );
 
-    var program = &g_programs[g_current_program.?];
-    program.pushDescriptorSet(
+    programs.pushDescriptorSet(
+        g_current_program.?,
         &g_command_buffers,
         g_current_frame,
         &g_textures,
@@ -828,7 +751,7 @@ pub fn drawIndexed(
         return;
     };
 
-    const index_type: c_uint = switch (g_index_buffers[g_current_index_buffer.?].index_type) {
+    const index_type: c_uint = switch (index_buffers.getIndexType(g_current_index_buffer.?)) {
         gfx.IndexType.u8 => c.VK_INDEX_TYPE_UINT8_EXT,
         gfx.IndexType.u16 => c.VK_INDEX_TYPE_UINT16,
         gfx.IndexType.u32 => c.VK_INDEX_TYPE_UINT32,
@@ -836,7 +759,7 @@ pub fn drawIndexed(
 
     g_command_buffers.bindIndexBuffer(
         g_current_frame,
-        g_index_buffers[g_current_index_buffer.?].buffer.handle,
+        index_buffers.getBuffer(g_current_index_buffer.?),
         0,
         index_type,
     );

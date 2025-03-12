@@ -59,7 +59,7 @@ pub const Pipeline = struct {
     handle: c.VkPipeline,
 
     pub fn init(
-        program: *const vk.Program,
+        program: gfx.ProgramHandle,
         render_pass: c.VkRenderPass,
         vertex_layout: gfx.VertexLayout,
     ) !Self {
@@ -72,10 +72,12 @@ pub const Pipeline = struct {
             },
         );
 
+        const vertex_shader = vk.programs.getVertexShader(program);
+        const fragment_shader = vk.programs.getFragmentShader(program);
+
         var attribute_descriptions: [MaxVertexAttributes]c.VkVertexInputAttributeDescription = undefined;
         var attribute_count: u32 = 0;
-        for (0..program.vertex_shader.input_attribute_count) |index| {
-            const input_attribute = program.vertex_shader.input_attributes[index];
+        for (vk.shaders.getInputAttributes(vertex_shader)) |input_attribute| {
             const attribute_data = vertex_layout.attributes[@intFromEnum(input_attribute.attribute)];
             if (attribute_data.num == 0) {
                 std.log.warn("Attribute {} not found in vertex layout", .{input_attribute.attribute});
@@ -186,13 +188,13 @@ pub const Pipeline = struct {
             c.VkPipelineShaderStageCreateInfo{
                 .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                 .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
-                .module = program.vertex_shader.handle,
+                .module = vk.shaders.getShaderModule(vertex_shader),
                 .pName = "main",
             },
             c.VkPipelineShaderStageCreateInfo{
                 .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
                 .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-                .module = program.fragment_shader.handle,
+                .module = vk.shaders.getShaderModule(fragment_shader),
                 .pName = "main",
             },
         };
@@ -210,7 +212,7 @@ pub const Pipeline = struct {
                 .pMultisampleState = &multisampling,
                 .pColorBlendState = &color_blending,
                 .pDynamicState = &dynamic_state,
-                .layout = program.pipeline_layout,
+                .layout = vk.programs.getPipelineLayout(program),
                 .renderPass = render_pass,
                 .subpass = 0,
                 //.basePipelineHandle = c.VK_NULL_HANDLE,
