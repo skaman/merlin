@@ -130,13 +130,12 @@ fn chooseSwapExtent(
 // *********************************************************************************************
 
 pub fn create(
-    allocator: std.mem.Allocator,
     surface: c.VkSurfaceKHR,
     width: u32,
     height: u32,
 ) !SwapChain {
     var swap_chain_support = try SwapChainSupportDetails.init(
-        allocator,
+        vk.arena,
         vk.device.physical_device,
         surface,
     );
@@ -206,16 +205,16 @@ pub fn create(
     vk.log.debug("  - Present mode: {s}", .{c.string_VkPresentModeKHR(present_mode)});
 
     const swap_chain_images = try vk.device.getSwapchainImagesKHRAlloc(
-        allocator,
+        vk.gpa,
         swap_chain,
     );
-    errdefer allocator.free(swap_chain_images);
+    errdefer vk.gpa.free(swap_chain_images);
 
-    var swap_chain_image_views = try allocator.alloc(
+    var swap_chain_image_views = try vk.gpa.alloc(
         c.VkImageView,
         swap_chain_images.len,
     );
-    errdefer allocator.free(swap_chain_image_views);
+    errdefer vk.gpa.free(swap_chain_image_views);
 
     @memset(swap_chain_image_views, null);
     errdefer {
@@ -257,7 +256,7 @@ pub fn create(
     }
 
     return SwapChain{
-        .allocator = allocator,
+        .allocator = vk.gpa,
         .handle = swap_chain,
         .images = swap_chain_images,
         .image_views = swap_chain_image_views,

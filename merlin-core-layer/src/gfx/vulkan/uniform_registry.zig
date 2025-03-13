@@ -32,7 +32,6 @@ const UniformEntry = union(gfx.DescriptorBindType) {
 // Globals
 // *********************************************************************************************
 
-var allocator: std.mem.Allocator = undefined;
 var name_map: std.StringHashMap(gfx.UniformHandle) = undefined;
 var entries: [gfx.MaxUniformHandles]UniformEntry = undefined;
 var handles: utils.HandlePool(gfx.UniformHandle, gfx.MaxUniformHandles) = undefined;
@@ -41,9 +40,8 @@ var handles: utils.HandlePool(gfx.UniformHandle, gfx.MaxUniformHandles) = undefi
 // Public API
 // *********************************************************************************************
 
-pub fn init(allocator_: std.mem.Allocator) !void {
-    allocator = allocator_;
-    name_map = .init(allocator);
+pub fn init() !void {
+    name_map = .init(vk.gpa);
     handles = .init();
 }
 
@@ -60,8 +58,8 @@ pub fn createBuffer(name: []const u8, size: u32) !gfx.UniformHandle {
         return value;
     }
 
-    const name_copy = try allocator.dupe(u8, name);
-    errdefer allocator.free(name_copy);
+    const name_copy = try vk.gpa.dupe(u8, name);
+    errdefer vk.gpa.free(name_copy);
 
     const handle = try handles.alloc();
     errdefer handles.free(handle);
@@ -133,8 +131,8 @@ pub fn createCombinedSampler(name: []const u8) !gfx.UniformHandle {
         return value;
     }
 
-    const name_copy = try allocator.dupe(u8, name);
-    errdefer allocator.free(name_copy);
+    const name_copy = try vk.gpa.dupe(u8, name);
+    errdefer vk.gpa.free(name_copy);
 
     const handle = try handles.alloc();
     errdefer handles.free(handle);
@@ -188,7 +186,7 @@ pub fn destroy(handle: gfx.UniformHandle) void {
                 vk.log.debug("  - Name: {s}", .{uniform.name});
 
                 _ = name_map.remove(uniform.name);
-                allocator.free(uniform.name);
+                vk.gpa.free(uniform.name);
 
                 for (0..uniform.buffer_count) |i| {
                     vk.uniform_buffer.destroy(&uniform.buffer[i]);
@@ -207,7 +205,7 @@ pub fn destroy(handle: gfx.UniformHandle) void {
                 vk.log.debug("  - Name: {s}", .{combined_sampler.name});
 
                 _ = name_map.remove(combined_sampler.name);
-                allocator.free(combined_sampler.name);
+                vk.gpa.free(combined_sampler.name);
 
                 handles.free(handle);
             }

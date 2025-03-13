@@ -106,13 +106,8 @@ fn validateLayers(
 // Public API
 // *********************************************************************************************
 
-pub fn init(
-    allocator: std.mem.Allocator,
-    options: *const gfx.Options,
-) !void {
-    var extensions = std.ArrayList([*:0]const u8).init(allocator);
-    defer extensions.deinit();
-
+pub fn init(options: *const gfx.Options) !void {
+    var extensions = std.ArrayList([*:0]const u8).init(vk.arena);
     try extensions.append(c.VK_KHR_SURFACE_EXTENSION_NAME);
     switch (builtin.target.os.tag) {
         .windows => {
@@ -138,21 +133,10 @@ pub fn init(
         try extensions.append(c.VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
-    try validateExtensions(
-        allocator,
-        extensions.items,
-    );
+    try validateExtensions(vk.arena, extensions.items);
 
-    var layers = try vk.prepareValidationLayers(
-        allocator,
-        options,
-    );
-    defer layers.deinit();
-
-    try validateLayers(
-        allocator,
-        layers.items,
-    );
+    const layers = try vk.prepareValidationLayers(vk.arena, options);
+    try validateLayers(vk.arena, layers.items);
 
     const application_info = std.mem.zeroInit(
         c.VkApplicationInfo,

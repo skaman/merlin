@@ -98,14 +98,14 @@ pub fn deinit() void {
 }
 
 pub fn create(
-    arena_allocator: std.mem.Allocator,
     command_pool: c.VkCommandPool,
     transfer_queue: c.VkQueue,
     reader: std.io.AnyReader,
 ) !gfx.TextureHandle {
+    // TODO: use a specialized arena?
     // TODO: Optimize this without using a temporary buffer?
     const data = try reader.readAllAlloc(
-        arena_allocator,
+        vk.arena,
         MaxBufferSize,
     );
 

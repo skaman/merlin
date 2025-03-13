@@ -2,7 +2,7 @@ const std = @import("std");
 
 const gfx = @import("../gfx.zig");
 
-pub fn init(_: std.mem.Allocator, _: std.mem.Allocator, _: *const gfx.Options) !void {}
+pub fn init(_: std.mem.Allocator, _: *const gfx.Options) !void {}
 pub fn deinit() void {}
 pub fn getSwapchainSize() [2]u32 {
     return .{ 0, 0 };

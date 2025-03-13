@@ -178,7 +178,7 @@ pub const MaxUniformHandles = 512;
 pub const MaxTextureHandles = 512;
 
 const VTab = struct {
-    init: *const fn (allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator, options: *const Options) anyerror!void,
+    init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
     getSwapchainSize: *const fn () [2]u32,
     setFramebufferSize: *const fn (size: [2]u32) void,
@@ -310,7 +310,7 @@ pub fn init(
     errdefer g_arena.deinit();
     g_arena_allocator = g_arena.allocator();
 
-    try g_v_tab.init(g_allocator, g_arena_allocator, &options);
+    try g_v_tab.init(g_allocator, &options);
     errdefer g_v_tab.deinit();
 
     g_renderer_type = options.renderer_type;

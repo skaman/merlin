@@ -10,9 +10,6 @@ const vk = @import("vulkan.zig");
 // *********************************************************************************************
 
 const Program = struct {
-    const Self = @This();
-
-    allocator: std.mem.Allocator,
     pipeline_layout: c.VkPipelineLayout,
     vertex_shader: gfx.ShaderHandle,
     fragment_shader: gfx.ShaderHandle,
@@ -71,7 +68,6 @@ pub fn deinit() void {
 }
 
 pub fn create(
-    allocator: std.mem.Allocator,
     vertex_shader: gfx.ShaderHandle,
     fragment_shader: gfx.ShaderHandle,
     descriptor_pool: c.VkDescriptorPool,
@@ -228,7 +224,6 @@ pub fn create(
     errdefer program_handles.free(handle);
 
     programs[handle] = .{
-        .allocator = allocator,
         .pipeline_layout = pipeline_layout,
         .vertex_shader = vertex_shader,
         .fragment_shader = fragment_shader,

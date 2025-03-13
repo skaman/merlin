@@ -278,15 +278,12 @@ fn checkDeviceExtensionSupport(
 // *********************************************************************************************
 
 pub fn init(
-    allocator: std.mem.Allocator,
     options: *const gfx.Options,
     surface: c.VkSurfaceKHR,
 ) !void {
     dispatch = try vk.library.load(Dispatch, vk.instance.handle);
 
-    const physical_devices = try vk.instance.enumeratePhysicalDevicesAlloc(allocator);
-    defer allocator.free(physical_devices);
-
+    const physical_devices = try vk.instance.enumeratePhysicalDevicesAlloc(vk.arena);
     if (physical_devices.len == 0) {
         vk.log.err("No Vulkan physical devices found", .{});
         return error.NoPhysicalDevicesFound;
@@ -303,7 +300,7 @@ pub fn init(
     var selected_physical_device_properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
     for (physical_devices, 0..) |current_physical_device, index| {
         const score = try rateDeviceSuitability(
-            allocator,
+            vk.arena,
             surface,
             current_physical_device,
             &device_required_extensions,
@@ -366,13 +363,12 @@ pub fn init(
     }
 
     queue_family_indices = try findQueueFamilies(
-        allocator,
+        vk.gpa,
         surface,
         selected_physical_device,
     );
 
-    var unique_queue_families = std.AutoHashMap(u32, void).init(allocator);
-    defer unique_queue_families.deinit();
+    var unique_queue_families = std.AutoHashMap(u32, void).init(vk.arena);
     try unique_queue_families.put(queue_family_indices.graphics_family.?, void{});
     try unique_queue_families.put(queue_family_indices.present_family.?, void{});
     try unique_queue_families.put(queue_family_indices.transfer_family.?, void{});
@@ -385,9 +381,7 @@ pub fn init(
     vk.log.debug("  - Present queue family: {d}", .{queue_family_indices.present_family.?});
     vk.log.debug("  - Transer queue family: {d}", .{queue_family_indices.transfer_family.?});
 
-    var device_queue_create_infos = std.ArrayList(c.VkDeviceQueueCreateInfo).init(allocator);
-    defer device_queue_create_infos.deinit();
-
+    var device_queue_create_infos = std.ArrayList(c.VkDeviceQueueCreateInfo).init(vk.arena);
     const queue_priorities = [_]f32{1.0};
     var unique_queue_iterator = unique_queue_families.keyIterator();
     while (unique_queue_iterator.next()) |queue_family| {
@@ -410,11 +404,7 @@ pub fn init(
     );
     vk.instance.getPhysicalDeviceFeatures2(selected_physical_device, &physical_device_features);
 
-    const validation_layers = try vk.prepareValidationLayers(
-        allocator,
-        options,
-    );
-    defer validation_layers.deinit();
+    const validation_layers = try vk.prepareValidationLayers(vk.arena, options);
 
     const device_create_info = std.mem.zeroInit(
         c.VkDeviceCreateInfo,
