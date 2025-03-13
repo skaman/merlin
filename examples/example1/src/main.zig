@@ -49,6 +49,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     try mcl.init(
+        allocator,
         .{
             .window_title = "Example 1",
             .enable_vulkan_debug = true,

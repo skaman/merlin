@@ -600,6 +600,8 @@ pub fn endFrame() !void {
     }
 
     current_frame = (current_frame + 1) % MaxFramesInFlight;
+
+    _ = arena_impl.reset(.retain_capacity);
 }
 
 pub fn setViewport(position: [2]u32, size: [2]u32) void {

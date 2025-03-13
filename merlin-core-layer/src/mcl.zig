@@ -19,6 +19,7 @@ pub const Options = struct {
 };
 
 pub fn init(
+    allocator: std.mem.Allocator,
     options: Options,
 ) !void {
     try platform.init(
@@ -36,6 +37,7 @@ pub fn init(
     const framebuffer_size = platform.getDefaultWindowFramebufferSize();
 
     try gfx.init(
+        allocator,
         .{
             .renderer_type = .vulkan,
             .app_name = options.app_name,

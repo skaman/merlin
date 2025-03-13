@@ -209,18 +209,16 @@ const VTab = struct {
     drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32) void,
 };
 
-var g_gpa: std.heap.GeneralPurposeAllocator(.{}) = undefined;
-var g_allocator: std.mem.Allocator = undefined;
+pub var gpa: std.mem.Allocator = undefined;
+var arena_impl: std.heap.ArenaAllocator = undefined;
+pub var arena: std.mem.Allocator = undefined;
 
-var g_arena: std.heap.ArenaAllocator = undefined;
-var g_arena_allocator: std.mem.Allocator = undefined;
+var initialized: bool = false;
+var current_renderer: RendererType = undefined;
 
-var g_initialized: bool = false;
-var g_renderer_type: RendererType = undefined;
+var mvp_uniform_handle: UniformHandle = undefined;
 
-var g_mvp_uniform_handle: UniformHandle = undefined;
-
-var g_v_tab: VTab = undefined;
+var v_tab: VTab = undefined;
 
 fn getVTab(
     renderer_type: RendererType,
@@ -296,86 +294,83 @@ fn getVTab(
 }
 
 pub fn init(
+    allocator: std.mem.Allocator,
     options: Options,
 ) !void {
     log.debug("Initializing renderer", .{});
 
-    g_v_tab = try getVTab(options.renderer_type);
+    gpa = allocator;
 
-    g_gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    errdefer _ = g_gpa.deinit();
-    g_allocator = g_gpa.allocator();
+    arena_impl = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    errdefer arena_impl.deinit();
+    arena = arena_impl.allocator();
 
-    g_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    errdefer g_arena.deinit();
-    g_arena_allocator = g_arena.allocator();
+    v_tab = try getVTab(options.renderer_type);
 
-    try g_v_tab.init(g_allocator, &options);
-    errdefer g_v_tab.deinit();
+    try v_tab.init(gpa, &options);
+    errdefer v_tab.deinit();
 
-    g_renderer_type = options.renderer_type;
+    current_renderer = options.renderer_type;
 
-    g_initialized = true;
+    initialized = true;
 
-    g_mvp_uniform_handle = try createUniformBuffer("u_mvp", @sizeOf(ModelViewProj));
+    mvp_uniform_handle = try createUniformBuffer("u_mvp", @sizeOf(ModelViewProj));
 }
 
 pub fn deinit() void {
-    std.debug.assert(g_initialized);
+    std.debug.assert(initialized);
 
     log.debug("Deinitializing renderer", .{});
 
-    destroyUniformBuffer(g_mvp_uniform_handle);
+    destroyUniformBuffer(mvp_uniform_handle);
 
-    g_v_tab.deinit();
+    v_tab.deinit();
+    arena_impl.deinit();
 
-    g_arena.deinit();
-    _ = g_gpa.deinit();
-
-    g_initialized = false;
+    initialized = false;
 }
 
 pub fn getSwapchainSize() [2]u32 {
-    std.debug.assert(g_initialized);
-    return g_v_tab.getSwapchainSize();
+    std.debug.assert(initialized);
+    return v_tab.getSwapchainSize();
 }
 
 pub fn setFramebufferSize(size: [2]u32) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.setFramebufferSize(size);
+    std.debug.assert(initialized);
+    v_tab.setFramebufferSize(size);
 }
 
 pub fn setModelViewProj(mvp: ModelViewProj) void {
-    std.debug.assert(g_initialized);
+    std.debug.assert(initialized);
 
     const ptr: [*]const u8 = @ptrCast(&mvp);
     updateUniformBuffer(
-        g_mvp_uniform_handle,
+        mvp_uniform_handle,
         ptr[0..@sizeOf(ModelViewProj)],
     );
 }
 
 pub fn createShader(reader: std.io.AnyReader) !ShaderHandle {
-    std.debug.assert(g_initialized);
+    std.debug.assert(initialized);
 
     try utils.Serializer.checkHeader(reader, ShaderMagic, ShaderVersion);
     const shader_data = try utils.Serializer.read(
         ShaderData,
-        g_arena_allocator,
+        arena,
         reader,
     );
 
-    return try g_v_tab.createShader(&shader_data);
+    return try v_tab.createShader(&shader_data);
 }
 
 pub fn createShaderFromMemory(data: []const u8) !ShaderHandle {
-    std.debug.assert(g_initialized);
+    std.debug.assert(initialized);
     var stream = std.io.fixedBufferStream(data);
     return try createShader(stream.reader().any());
 }
 
 pub fn createShaderFromFile(path: []const u8) !ShaderHandle {
-    std.debug.assert(g_initialized);
+    std.debug.assert(initialized);
 
     var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
@@ -384,74 +379,74 @@ pub fn createShaderFromFile(path: []const u8) !ShaderHandle {
 }
 
 pub fn destroyShader(handle: ShaderHandle) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.destroyShader(handle);
+    std.debug.assert(initialized);
+    v_tab.destroyShader(handle);
 }
 
 pub fn createProgram(vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) !ProgramHandle {
-    std.debug.assert(g_initialized);
-    return try g_v_tab.createProgram(vertex_shader, fragment_shader);
+    std.debug.assert(initialized);
+    return try v_tab.createProgram(vertex_shader, fragment_shader);
 }
 
 pub fn destroyProgram(handle: ProgramHandle) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.destroyProgram(handle);
+    std.debug.assert(initialized);
+    v_tab.destroyProgram(handle);
 }
 
 pub fn createVertexBuffer(data: []const u8, layout: VertexLayout) !VertexBufferHandle {
-    std.debug.assert(g_initialized);
-    return try g_v_tab.createVertexBuffer(data, layout);
+    std.debug.assert(initialized);
+    return try v_tab.createVertexBuffer(data, layout);
 }
 
 pub fn destroyVertexBuffer(handle: VertexBufferHandle) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.destroyVertexBuffer(handle);
+    std.debug.assert(initialized);
+    v_tab.destroyVertexBuffer(handle);
 }
 
 pub fn createIndexBuffer(data: []const u8, index_type: IndexType) !IndexBufferHandle {
-    std.debug.assert(g_initialized);
-    return try g_v_tab.createIndexBuffer(data, index_type);
+    std.debug.assert(initialized);
+    return try v_tab.createIndexBuffer(data, index_type);
 }
 
 pub fn destroyIndexBuffer(handle: IndexBufferHandle) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.destroyIndexBuffer(handle);
+    std.debug.assert(initialized);
+    v_tab.destroyIndexBuffer(handle);
 }
 
 pub fn createUniformBuffer(name: []const u8, size: u32) !UniformHandle {
-    std.debug.assert(g_initialized);
-    return try g_v_tab.createUniformBuffer(name, size);
+    std.debug.assert(initialized);
+    return try v_tab.createUniformBuffer(name, size);
 }
 
 pub fn destroyUniformBuffer(handle: UniformHandle) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.destroyUniformBuffer(handle);
+    std.debug.assert(initialized);
+    v_tab.destroyUniformBuffer(handle);
 }
 
 pub fn updateUniformBuffer(handle: UniformHandle, data: []const u8) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.updateUniformBuffer(handle, data) catch |err| {
+    std.debug.assert(initialized);
+    v_tab.updateUniformBuffer(handle, data) catch |err| {
         log.err("Failed to update uniform buffer: {}", .{err});
     };
 }
 
 pub fn createCombinedSampler(name: []const u8) !UniformHandle {
-    std.debug.assert(g_initialized);
-    return try g_v_tab.createCombinedSampler(name);
+    std.debug.assert(initialized);
+    return try v_tab.createCombinedSampler(name);
 }
 
 pub fn destroyCombinedSampler(handle: UniformHandle) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.destroyCombinedSampler(handle);
+    std.debug.assert(initialized);
+    v_tab.destroyCombinedSampler(handle);
 }
 
 pub fn createTexture(reader: std.io.AnyReader) !TextureHandle {
-    std.debug.assert(g_initialized);
-    return try g_v_tab.createTexture(reader);
+    std.debug.assert(initialized);
+    return try v_tab.createTexture(reader);
 }
 
 pub fn createTextureFromFile(path: []const u8) !TextureHandle {
-    std.debug.assert(g_initialized);
+    std.debug.assert(initialized);
 
     var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
@@ -460,51 +455,51 @@ pub fn createTextureFromFile(path: []const u8) !TextureHandle {
 }
 
 pub fn destroyTexture(handle: TextureHandle) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.destroyTexture(handle);
+    std.debug.assert(initialized);
+    v_tab.destroyTexture(handle);
 }
 
 pub fn beginFrame() !bool {
-    std.debug.assert(g_initialized);
-    return g_v_tab.beginFrame();
+    std.debug.assert(initialized);
+    return v_tab.beginFrame();
 }
 
 pub fn endFrame() !void {
-    std.debug.assert(g_initialized);
+    std.debug.assert(initialized);
 
-    const result = g_v_tab.endFrame();
-    _ = g_arena.reset(.retain_capacity);
+    const result = v_tab.endFrame();
+    _ = arena_impl.reset(.retain_capacity);
     return result;
 }
 
 pub fn setViewport(position: [2]u32, size: [2]u32) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.setViewport(position, size);
+    std.debug.assert(initialized);
+    v_tab.setViewport(position, size);
 }
 
 pub fn setScissor(position: [2]u32, size: [2]u32) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.setScissor(position, size);
+    std.debug.assert(initialized);
+    v_tab.setScissor(position, size);
 }
 
 pub fn bindProgram(handle: ProgramHandle) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.bindProgram(handle);
+    std.debug.assert(initialized);
+    v_tab.bindProgram(handle);
 }
 
 pub fn bindVertexBuffer(handle: VertexBufferHandle) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.bindVertexBuffer(handle);
+    std.debug.assert(initialized);
+    v_tab.bindVertexBuffer(handle);
 }
 
 pub fn bindIndexBuffer(handle: IndexBufferHandle) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.bindIndexBuffer(handle);
+    std.debug.assert(initialized);
+    v_tab.bindIndexBuffer(handle);
 }
 
 pub fn bindTexture(texture: TextureHandle, uniform: UniformHandle) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.bindTexture(texture, uniform);
+    std.debug.assert(initialized);
+    v_tab.bindTexture(texture, uniform);
 }
 
 pub fn draw(
@@ -513,8 +508,8 @@ pub fn draw(
     first_vertex: u32,
     first_instance: u32,
 ) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.draw(
+    std.debug.assert(initialized);
+    v_tab.draw(
         vertex_count,
         instance_count,
         first_vertex,
@@ -529,8 +524,8 @@ pub fn drawIndexed(
     vertex_offset: i32,
     first_instance: u32,
 ) void {
-    std.debug.assert(g_initialized);
-    g_v_tab.drawIndexed(
+    std.debug.assert(initialized);
+    v_tab.drawIndexed(
         index_count,
         instance_count,
         first_index,
