@@ -5,10 +5,22 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const merlin_core_layer = b.dependency("merlin_core_layer", .{});
-    const clap = b.dependency("clap", .{});
-    const libshaderc = b.dependency("libshaderc", .{});
-    const spirv_reflect = b.dependency("spirv_reflect", .{});
+    const merlin_core_layer = b.dependency("merlin_core_layer", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const clap = b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const libshaderc = b.dependency("libshaderc", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const spirv_reflect = b.dependency("spirv_reflect", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const shaderc_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),

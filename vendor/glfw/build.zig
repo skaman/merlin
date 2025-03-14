@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) void {
     });
 
     lib.addIncludePath(b.path("upstream/include"));
-    lib.addIncludePath(b.path("wayland"));
+    //lib.addIncludePath(b.path("wayland"));
     lib.linkLibC();
 
     const src_dir = "upstream/src/";
@@ -63,11 +63,11 @@ pub fn build(b: *std.Build) void {
             });
         },
         .macos => {
-            if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
-                lib.addFrameworkPath(system_sdk.path("macos12/System/Library/Frameworks"));
-                lib.addSystemIncludePath(system_sdk.path("macos12/usr/include"));
-                lib.addLibraryPath(system_sdk.path("macos12/usr/lib"));
-            }
+            //if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
+            //    lib.addFrameworkPath(system_sdk.path("macos12/System/Library/Frameworks"));
+            //    lib.addSystemIncludePath(system_sdk.path("macos12/usr/include"));
+            //    lib.addLibraryPath(system_sdk.path("macos12/usr/lib"));
+            //}
             lib.linkSystemLibrary("objc");
             lib.linkFramework("IOKit");
             lib.linkFramework("CoreFoundation");
@@ -105,17 +105,17 @@ pub fn build(b: *std.Build) void {
             });
         },
         .linux => {
-            if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
-                lib.addSystemIncludePath(system_sdk.path("linux/include"));
-                lib.addSystemIncludePath(system_sdk.path("linux/include/wayland"));
-                lib.addIncludePath(b.path(src_dir ++ "wayland"));
+            //if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
+            //    lib.addSystemIncludePath(system_sdk.path("linux/include"));
+            //    lib.addSystemIncludePath(system_sdk.path("linux/include/wayland"));
+            //    lib.addIncludePath(b.path(src_dir ++ "wayland"));
 
-                if (target.result.cpu.arch.isX86()) {
-                    lib.addLibraryPath(system_sdk.path("linux/lib/x86_64-linux-gnu"));
-                } else {
-                    lib.addLibraryPath(system_sdk.path("linux/lib/aarch64-linux-gnu"));
-                }
-            }
+            //    if (target.result.cpu.arch.isX86()) {
+            //        lib.addLibraryPath(system_sdk.path("linux/lib/x86_64-linux-gnu"));
+            //    } else {
+            //        lib.addLibraryPath(system_sdk.path("linux/lib/aarch64-linux-gnu"));
+            //    }
+            //}
             lib.addCSourceFiles(.{
                 .files = &.{
                     src_dir ++ "platform.c",
@@ -170,6 +170,7 @@ pub fn build(b: *std.Build) void {
                     .flags = &.{},
                 });
                 lib.root_module.addCMacro("_GLFW_WAYLAND", "1");
+                lib.addIncludePath(b.path("../system/linux/wayland/include"));
             }
         },
         else => {},

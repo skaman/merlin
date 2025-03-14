@@ -2,13 +2,7 @@
     .name = "glfw",
     .version = "0.0.0",
 
-    .dependencies = .{
-        .system_sdk = .{
-            //.url = "https://github.com/zig-gamedev/system_sdk/archive/refs/tags/v0.2.1.zip",
-            .url = "https://github.com/samloeschen/system_sdk/archive/refs/heads/main.zip",
-            .hash = "122040b48744d9f8383507c3a842aced0097cbfa98ba400e05f9857eca4665f7b607",
-        },
-    },
+    .dependencies = .{},
 
     .paths = .{
         "build.zig",

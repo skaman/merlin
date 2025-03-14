@@ -5,8 +5,14 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const merlin_core_layer = b.dependency("merlin_core_layer", .{});
-    const clap = b.dependency("clap", .{});
+    const merlin_core_layer = b.dependency("merlin_core_layer", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const clap = b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const geometryc_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),

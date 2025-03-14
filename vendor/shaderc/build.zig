@@ -33,7 +33,10 @@ pub fn build(b: *std.Build) void {
         .flags = &.{"-DENABLE_HLSL"},
     });
 
-    const glslang = b.dependency("glslang", .{});
+    const glslang = b.dependency("glslang", .{
+        .target = target,
+        .optimize = optimize,
+    });
     lib.linkLibrary(glslang.artifact("glslang"));
 
     lib.addIncludePath(b.path("../glslang/upstream/"));

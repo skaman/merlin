@@ -5,11 +5,26 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const glfw = b.dependency("glfw", .{});
-    const vulkan_headers = b.dependency("vulkan_headers", .{});
-    const vulkan_utility_libraries = b.dependency("vulkan_utility_libraries", .{});
-    const ktx_software = b.dependency("ktx_software", .{});
-    const zmath = b.dependency("zmath", .{});
+    const glfw = b.dependency("glfw", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const vulkan_headers = b.dependency("vulkan_headers", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const vulkan_utility_libraries = b.dependency("vulkan_utility_libraries", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const ktx_software = b.dependency("ktx_software", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const zmath = b.dependency("zmath", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const merlin_core_layer_mod = b.addModule("merlin_core_layer", .{
         .root_source_file = b.path("src/mcl.zig"),
@@ -45,6 +60,12 @@ pub fn build(b: *std.Build) !void {
             merlin_core_layer_mod.addCMacro("VK_USE_PLATFORM_XCB_KHR", "");
             merlin_core_layer_mod.addCMacro("VK_USE_PLATFORM_XLIB_KHR", "");
             merlin_core_layer_mod.addCMacro("VK_USE_PLATFORM_WAYLAND_KHR", "");
+            merlin_core_layer.addIncludePath(b.path("../vendor/system/linux/xcb/include"));
+            merlin_core_layer.addIncludePath(b.path("../vendor/system/linux/x11/include"));
+            merlin_core_layer.addIncludePath(b.path("../vendor/system/linux/xorgproto/include"));
+            merlin_core_layer.addIncludePath(b.path("../vendor/system/linux/xrandr/include"));
+            merlin_core_layer.addIncludePath(b.path("../vendor/system/linux/xrender/include"));
+            merlin_core_layer.addIncludePath(b.path("../vendor/system/linux/wayland/include"));
         },
         .macos => {
             merlin_core_layer_mod.addCMacro("GLFW_EXPOSE_NATIVE_COCOA", "");

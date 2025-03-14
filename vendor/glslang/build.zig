@@ -84,10 +84,16 @@ pub fn build(b: *std.Build) void {
         .flags = &.{ "-DENABLE_OPT=true", "-DENABLE_SPIRV=true", "-DENABLE_HLSL=1" },
     });
 
-    const spirv_headers = b.dependency("spirv_headers", .{});
+    const spirv_headers = b.dependency("spirv_headers", .{
+        .target = target,
+        .optimize = optimize,
+    });
     lib.linkLibrary(spirv_headers.artifact("spirv_headers"));
 
-    const spirv_tools = b.dependency("spirv_tools", .{});
+    const spirv_tools = b.dependency("spirv_tools", .{
+        .target = target,
+        .optimize = optimize,
+    });
     lib.linkLibrary(spirv_tools.artifact("spirv_tools"));
 
     lib.addIncludePath(b.path("../spirv-tools/upstream/include"));

@@ -93,7 +93,10 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    const vulkan_headers = b.dependency("vulkan_headers", .{});
+    const vulkan_headers = b.dependency("vulkan_headers", .{
+        .target = target,
+        .optimize = optimize,
+    });
     lib.linkLibrary(vulkan_headers.artifact("vulkan_headers"));
 
     lib.addIncludePath(b.path("../vulkan-headers/upstream/include"));

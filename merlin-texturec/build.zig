@@ -5,11 +5,26 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const merlin_core_layer = b.dependency("merlin_core_layer", .{});
-    const clap = b.dependency("clap", .{});
-    const stb = b.dependency("stb", .{});
-    const vulkan_headers = b.dependency("vulkan_headers", .{});
-    const ktx_software = b.dependency("ktx_software", .{});
+    const merlin_core_layer = b.dependency("merlin_core_layer", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const clap = b.dependency("clap", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const stb = b.dependency("stb", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const vulkan_headers = b.dependency("vulkan_headers", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const ktx_software = b.dependency("ktx_software", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const texturec_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
