@@ -34,3 +34,6 @@
 [submodule "vendor/ktx-software/upstream"]
 	path = vendor/ktx-software/upstream
 	url = https://github.com/KhronosGroup/KTX-Software.git
+[submodule "vendor/zmesh"]
+	path = vendor/zmesh
+	url = https://github.com/zig-gamedev/zmesh.git
