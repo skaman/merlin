@@ -5,16 +5,21 @@ const gfx = mcl.gfx;
 const zm = mcl.zmath;
 const platform = mcl.platform;
 
-const Vertices = [_][7]f32{
-    [_]f32{ -0.5, -0.5, 1.0, 0.0, 0.0, 1.0, 0.0 },
-    [_]f32{ 0.5, -0.5, 0.0, 1.0, 0.0, 0.0, 0.0 },
-    [_]f32{ 0.5, 0.5, 0.0, 0.0, 1.0, 0.0, 1.0 },
-    [_]f32{ -0.5, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0 },
+const Vertices = [_][8]f32{
+    [_]f32{ -0.5, -0.5, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0 },
+    [_]f32{ 0.5, -0.5, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0 },
+    [_]f32{ 0.5, 0.5, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0 },
+    [_]f32{ -0.5, 0.5, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0 },
+
+    [_]f32{ -0.5, -0.5, -0.5, 1.0, 0.0, 0.0, 1.0, 0.0 },
+    [_]f32{ 0.5, -0.5, -0.5, 0.0, 1.0, 0.0, 0.0, 0.0 },
+    [_]f32{ 0.5, 0.5, -0.5, 0.0, 0.0, 1.0, 0.0, 1.0 },
+    [_]f32{ -0.5, 0.5, -0.5, 1.0, 1.0, 1.0, 1.0, 1.0 },
 };
 
 const Indices = [_]u16{
-    0, 1, 2,
-    2, 3, 0,
+    0, 1, 2, 2, 3, 0,
+    4, 5, 6, 6, 7, 4,
 };
 
 fn getAssetPath(allocator: std.mem.Allocator, asset_name: []const u8) ![]const u8 {
@@ -76,7 +81,7 @@ pub fn main() !void {
     defer gfx.destroyTexture(texture_handle);
 
     var vertex_layout = gfx.VertexLayout.init();
-    vertex_layout.add(.position, 2, .float, false, false);
+    vertex_layout.add(.position, 3, .float, false, false);
     vertex_layout.add(.color_0, 3, .float, false, false);
     vertex_layout.add(.tex_coord_0, 2, .float, false, false);
 
@@ -113,9 +118,6 @@ pub fn main() !void {
             fps_timer -= 1.0;
         }
 
-        const window_size = platform.getDefaultWindowFramebufferSize();
-        gfx.setFramebufferSize(window_size);
-
         const result = gfx.beginFrame() catch |err| {
             std.log.err("Failed to begin frame: {}", .{err});
             continue;
@@ -147,7 +149,7 @@ pub fn main() !void {
         gfx.bindVertexBuffer(vertex_buffer_handle);
         gfx.bindIndexBuffer(index_buffer_handle);
         gfx.bindTexture(texture_handle, sampler_handle);
-        gfx.drawIndexed(6, 1, 0, 0, 0);
+        gfx.drawIndexed(Indices.len, 1, 0, 0, 0);
 
         gfx.endFrame() catch |err| {
             std.log.err("Failed to end frame: {}", .{err});

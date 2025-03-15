@@ -23,6 +23,7 @@ pub fn init(
     options: Options,
 ) !void {
     try platform.init(
+        allocator,
         .{
             .type = .glfw,
             .window = .{
@@ -34,18 +35,11 @@ pub fn init(
     );
     errdefer platform.deinit();
 
-    const framebuffer_size = platform.getDefaultWindowFramebufferSize();
-
     try gfx.init(
         allocator,
         .{
             .renderer_type = .vulkan,
             .app_name = options.app_name,
-            .window_type = platform.getNativeWindowHandleType(),
-            .window = platform.getNativeDefaultWindowHandle(),
-            .display = platform.getNativeDisplayHandle(),
-            .framebuffer_width = framebuffer_size[0],
-            .framebuffer_height = framebuffer_size[1],
             .enable_vulkan_debug = options.enable_vulkan_debug,
         },
     );

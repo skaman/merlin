@@ -47,6 +47,7 @@ fn addTextures(
         const tool_step = b.addRunArtifact(merlin_texturec_exe);
         tool_step.addArg("-m");
         tool_step.addArg("-c");
+        tool_step.addArg("-s");
         tool_step.addFileArg(b.path(texture));
         const output = tool_step.addOutputFileArg(output_slice);
 

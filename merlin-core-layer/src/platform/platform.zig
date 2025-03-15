@@ -6,6 +6,13 @@ const noop = @import("noop.zig");
 
 pub const log = std.log.scoped(.gfx);
 
+pub const WindowHandle = u16;
+pub const MaxWindowHandles = 64;
+
+// *********************************************************************************************
+// Structs and Enums
+// *********************************************************************************************
+
 const Type = enum {
     noop,
     glfw,
@@ -28,7 +35,7 @@ pub const NativeWindowHandleType = enum(u8) {
 };
 
 const VTab = struct {
-    init: *const fn (allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator) anyerror!void,
+    init: *const fn (allocator: std.mem.Allocator) anyerror!void,
     deinit: *const fn () void,
     createWindow: *const fn (handle: WindowHandle, options: *const WindowOptions) anyerror!void,
     destroyWindow: *const fn (handle: WindowHandle) void,
@@ -40,19 +47,14 @@ const VTab = struct {
     getNativeDisplayHandle: *const fn () ?*anyopaque,
 };
 
-pub const WindowHandle = u16;
-pub const MaxWindowHandles = 64;
+// *********************************************************************************************
+// Globals
+// *********************************************************************************************
 
-var g_gpa: std.heap.GeneralPurposeAllocator(.{}) = undefined;
-var g_allocator: std.mem.Allocator = undefined;
+var default_window_handle: WindowHandle = 0;
+var window_handles: utils.HandlePool(WindowHandle, MaxWindowHandles) = undefined;
 
-var g_arena: std.heap.ArenaAllocator = undefined;
-var g_arena_allocator: std.mem.Allocator = undefined;
-
-var g_default_window_handle: WindowHandle = 0;
-var g_window_handles: utils.HandlePool(WindowHandle, MaxWindowHandles) = .init();
-
-var g_platform_v_tab: VTab = undefined;
+var v_tab: VTab = undefined;
 
 fn getVTab(
     platform_type: Type,
@@ -86,94 +88,75 @@ fn getVTab(
 }
 
 pub fn init(
+    allocator: std.mem.Allocator,
     options: Options,
 ) !void {
     log.debug("Initializing platform", .{});
 
-    g_platform_v_tab = try getVTab(options.type);
+    v_tab = try getVTab(options.type);
+    window_handles = .init();
 
-    g_gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    errdefer _ = g_gpa.deinit();
-    g_allocator = g_gpa.allocator();
+    try v_tab.init(allocator);
+    errdefer v_tab.deinit();
 
-    g_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    errdefer g_arena.deinit();
-    g_arena_allocator = g_arena.allocator();
-
-    try g_platform_v_tab.init(g_allocator, g_arena_allocator);
-    errdefer g_platform_v_tab.deinit();
-
-    g_default_window_handle = try createWindow(options.window);
+    default_window_handle = try createWindow(options.window);
 }
 
 pub fn deinit() void {
     log.debug("Deinitializing platform", .{});
 
-    destroyWindow(g_default_window_handle);
+    destroyWindow(default_window_handle);
 
-    g_platform_v_tab.deinit();
+    v_tab.deinit();
 
-    g_arena.deinit();
-    _ = g_gpa.deinit();
+    window_handles.deinit();
 }
 
-pub fn createWindow(
-    options: WindowOptions,
-) !WindowHandle {
-    const handle = try g_window_handles.alloc();
-    errdefer g_window_handles.free(handle);
+pub fn createWindow(options: WindowOptions) !WindowHandle {
+    const handle = try window_handles.alloc();
+    errdefer window_handles.free(handle);
 
-    try g_platform_v_tab.createWindow(handle, &options);
+    try v_tab.createWindow(handle, &options);
     return handle;
 }
 
-pub fn destroyWindow(
-    handle: WindowHandle,
-) void {
-    g_platform_v_tab.destroyWindow(handle);
-    g_window_handles.free(handle);
+pub fn destroyWindow(handle: WindowHandle) void {
+    v_tab.destroyWindow(handle);
+    window_handles.free(handle);
 }
 
-pub fn getWindowFramebufferSize(
-    handle: WindowHandle,
-) [2]u32 {
-    return g_platform_v_tab.getWindowFramebufferSize(handle);
+pub inline fn getWindowFramebufferSize(handle: WindowHandle) [2]u32 {
+    return v_tab.getWindowFramebufferSize(handle);
 }
 
-pub fn getDefaultWindowFramebufferSize() [2]u32 {
-    return getWindowFramebufferSize(g_default_window_handle);
+pub inline fn getDefaultWindowFramebufferSize() [2]u32 {
+    return getWindowFramebufferSize(default_window_handle);
 }
 
-pub fn shouldCloseWindow(
-    handle: WindowHandle,
-) bool {
-    return g_platform_v_tab.shouldCloseWindow(handle);
+pub inline fn shouldCloseWindow(handle: WindowHandle) bool {
+    return v_tab.shouldCloseWindow(handle);
 }
 
-pub fn shouldCloseDefaultWindow() bool {
-    return shouldCloseWindow(g_default_window_handle);
+pub inline fn shouldCloseDefaultWindow() bool {
+    return shouldCloseWindow(default_window_handle);
 }
 
-pub fn pollEvents() void {
-    _ = g_arena.reset(.retain_capacity);
-
-    g_platform_v_tab.pollEvents();
+pub inline fn pollEvents() void {
+    v_tab.pollEvents();
 }
 
-pub fn getNativeWindowHandleType() NativeWindowHandleType {
-    return g_platform_v_tab.getNativeWindowHandleType();
+pub inline fn getNativeWindowHandleType() NativeWindowHandleType {
+    return v_tab.getNativeWindowHandleType();
 }
 
-pub fn getNativeWindowHandle(
-    handle: WindowHandle,
-) ?*anyopaque {
-    return g_platform_v_tab.getNativeWindowHandle(handle);
+pub inline fn getNativeWindowHandle(handle: WindowHandle) ?*anyopaque {
+    return v_tab.getNativeWindowHandle(handle);
 }
 
-pub fn getNativeDefaultWindowHandle() ?*anyopaque {
-    return getNativeWindowHandle(g_default_window_handle);
+pub inline fn getNativeDefaultWindowHandle() ?*anyopaque {
+    return getNativeWindowHandle(default_window_handle);
 }
 
-pub fn getNativeDisplayHandle() ?*anyopaque {
-    return g_platform_v_tab.getNativeDisplayHandle();
+pub inline fn getNativeDisplayHandle() ?*anyopaque {
+    return v_tab.getNativeDisplayHandle();
 }

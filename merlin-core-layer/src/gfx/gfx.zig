@@ -9,14 +9,34 @@ const vulkan = @import("vulkan/vulkan.zig");
 
 pub const log = std.log.scoped(.gfx);
 
+// *********************************************************************************************
+// Constants
+// *********************************************************************************************
+
+pub const ShaderMagic = @as(u32, @bitCast([_]u8{ 'M', 'S', 'H', 'A' }));
+pub const ShaderVersion: u8 = 1;
+
+pub const ShaderHandle = u16;
+pub const ProgramHandle = u16;
+pub const VertexBufferHandle = u16;
+pub const IndexBufferHandle = u16;
+pub const UniformHandle = u16;
+pub const TextureHandle = u16;
+
+pub const MaxShaderHandles = 512;
+pub const MaxProgramHandles = 512;
+pub const MaxVertexBufferHandles = 512;
+pub const MaxIndexBufferHandles = 512;
+pub const MaxUniformHandles = 512;
+pub const MaxTextureHandles = 512;
+
+// *********************************************************************************************
+// Structs and Enums
+// *********************************************************************************************
+
 pub const Options = struct {
     renderer_type: RendererType,
     app_name: []const u8,
-    window_type: platform.NativeWindowHandleType,
-    window: ?*anyopaque,
-    display: ?*anyopaque,
-    framebuffer_width: u32,
-    framebuffer_height: u32,
 
     enable_vulkan_debug: bool = false,
 };
@@ -160,28 +180,10 @@ pub const ModelViewProj = struct {
     proj: zm.Mat align(16),
 };
 
-pub const ShaderMagic = @as(u32, @bitCast([_]u8{ 'M', 'S', 'H', 'A' }));
-pub const ShaderVersion: u8 = 1;
-
-pub const ShaderHandle = u16;
-pub const ProgramHandle = u16;
-pub const VertexBufferHandle = u16;
-pub const IndexBufferHandle = u16;
-pub const UniformHandle = u16;
-pub const TextureHandle = u16;
-
-pub const MaxShaderHandles = 512;
-pub const MaxProgramHandles = 512;
-pub const MaxVertexBufferHandles = 512;
-pub const MaxIndexBufferHandles = 512;
-pub const MaxUniformHandles = 512;
-pub const MaxTextureHandles = 512;
-
 const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
     getSwapchainSize: *const fn () [2]u32,
-    setFramebufferSize: *const fn (size: [2]u32) void,
     createShader: *const fn (data: *const ShaderData) anyerror!ShaderHandle,
     destroyShader: *const fn (handle: ShaderHandle) void,
     createProgram: *const fn (vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!ProgramHandle,
@@ -209,6 +211,10 @@ const VTab = struct {
     drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32) void,
 };
 
+// *********************************************************************************************
+// Globals
+// *********************************************************************************************
+
 pub var gpa: std.mem.Allocator = undefined;
 var arena_impl: std.heap.ArenaAllocator = undefined;
 pub var arena: std.mem.Allocator = undefined;
@@ -220,16 +226,17 @@ var mvp_uniform_handle: UniformHandle = undefined;
 
 var v_tab: VTab = undefined;
 
-fn getVTab(
-    renderer_type: RendererType,
-) !VTab {
+// *********************************************************************************************
+// Private API
+// *********************************************************************************************
+
+fn getVTab(renderer_type: RendererType) !VTab {
     switch (renderer_type) {
         RendererType.noop => {
             return VTab{
                 .init = noop.init,
                 .deinit = noop.deinit,
                 .getSwapchainSize = noop.getSwapchainSize,
-                .setFramebufferSize = noop.setFramebufferSize,
                 .createShader = noop.createShader,
                 .destroyShader = noop.destroyShader,
                 .createProgram = noop.createProgram,
@@ -262,7 +269,6 @@ fn getVTab(
                 .init = vulkan.init,
                 .deinit = vulkan.deinit,
                 .getSwapchainSize = vulkan.getSwapchainSize,
-                .setFramebufferSize = vulkan.setFramebufferSize,
                 .createShader = vulkan.createShader,
                 .destroyShader = vulkan.destroyShader,
                 .createProgram = vulkan.createProgram,
@@ -292,6 +298,10 @@ fn getVTab(
         },
     }
 }
+
+// *********************************************************************************************
+// Public API
+// *********************************************************************************************
 
 pub fn init(
     allocator: std.mem.Allocator,
@@ -330,17 +340,12 @@ pub fn deinit() void {
     initialized = false;
 }
 
-pub fn getSwapchainSize() [2]u32 {
+pub inline fn getSwapchainSize() [2]u32 {
     std.debug.assert(initialized);
     return v_tab.getSwapchainSize();
 }
 
-pub fn setFramebufferSize(size: [2]u32) void {
-    std.debug.assert(initialized);
-    v_tab.setFramebufferSize(size);
-}
-
-pub fn setModelViewProj(mvp: ModelViewProj) void {
+pub inline fn setModelViewProj(mvp: ModelViewProj) void {
     std.debug.assert(initialized);
 
     const ptr: [*]const u8 = @ptrCast(&mvp);
@@ -378,69 +383,69 @@ pub fn createShaderFromFile(path: []const u8) !ShaderHandle {
     return try createShader(file.reader().any());
 }
 
-pub fn destroyShader(handle: ShaderHandle) void {
+pub inline fn destroyShader(handle: ShaderHandle) void {
     std.debug.assert(initialized);
     v_tab.destroyShader(handle);
 }
 
-pub fn createProgram(vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) !ProgramHandle {
+pub inline fn createProgram(vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) !ProgramHandle {
     std.debug.assert(initialized);
     return try v_tab.createProgram(vertex_shader, fragment_shader);
 }
 
-pub fn destroyProgram(handle: ProgramHandle) void {
+pub inline fn destroyProgram(handle: ProgramHandle) void {
     std.debug.assert(initialized);
     v_tab.destroyProgram(handle);
 }
 
-pub fn createVertexBuffer(data: []const u8, layout: VertexLayout) !VertexBufferHandle {
+pub inline fn createVertexBuffer(data: []const u8, layout: VertexLayout) !VertexBufferHandle {
     std.debug.assert(initialized);
     return try v_tab.createVertexBuffer(data, layout);
 }
 
-pub fn destroyVertexBuffer(handle: VertexBufferHandle) void {
+pub inline fn destroyVertexBuffer(handle: VertexBufferHandle) void {
     std.debug.assert(initialized);
     v_tab.destroyVertexBuffer(handle);
 }
 
-pub fn createIndexBuffer(data: []const u8, index_type: IndexType) !IndexBufferHandle {
+pub inline fn createIndexBuffer(data: []const u8, index_type: IndexType) !IndexBufferHandle {
     std.debug.assert(initialized);
     return try v_tab.createIndexBuffer(data, index_type);
 }
 
-pub fn destroyIndexBuffer(handle: IndexBufferHandle) void {
+pub inline fn destroyIndexBuffer(handle: IndexBufferHandle) void {
     std.debug.assert(initialized);
     v_tab.destroyIndexBuffer(handle);
 }
 
-pub fn createUniformBuffer(name: []const u8, size: u32) !UniformHandle {
+pub inline fn createUniformBuffer(name: []const u8, size: u32) !UniformHandle {
     std.debug.assert(initialized);
     return try v_tab.createUniformBuffer(name, size);
 }
 
-pub fn destroyUniformBuffer(handle: UniformHandle) void {
+pub inline fn destroyUniformBuffer(handle: UniformHandle) void {
     std.debug.assert(initialized);
     v_tab.destroyUniformBuffer(handle);
 }
 
-pub fn updateUniformBuffer(handle: UniformHandle, data: []const u8) void {
+pub inline fn updateUniformBuffer(handle: UniformHandle, data: []const u8) void {
     std.debug.assert(initialized);
     v_tab.updateUniformBuffer(handle, data) catch |err| {
         log.err("Failed to update uniform buffer: {}", .{err});
     };
 }
 
-pub fn createCombinedSampler(name: []const u8) !UniformHandle {
+pub inline fn createCombinedSampler(name: []const u8) !UniformHandle {
     std.debug.assert(initialized);
     return try v_tab.createCombinedSampler(name);
 }
 
-pub fn destroyCombinedSampler(handle: UniformHandle) void {
+pub inline fn destroyCombinedSampler(handle: UniformHandle) void {
     std.debug.assert(initialized);
     v_tab.destroyCombinedSampler(handle);
 }
 
-pub fn createTexture(reader: std.io.AnyReader) !TextureHandle {
+pub inline fn createTexture(reader: std.io.AnyReader) !TextureHandle {
     std.debug.assert(initialized);
     return try v_tab.createTexture(reader);
 }
@@ -454,17 +459,17 @@ pub fn createTextureFromFile(path: []const u8) !TextureHandle {
     return try createTexture(file.reader().any());
 }
 
-pub fn destroyTexture(handle: TextureHandle) void {
+pub inline fn destroyTexture(handle: TextureHandle) void {
     std.debug.assert(initialized);
     v_tab.destroyTexture(handle);
 }
 
-pub fn beginFrame() !bool {
+pub inline fn beginFrame() !bool {
     std.debug.assert(initialized);
     return v_tab.beginFrame();
 }
 
-pub fn endFrame() !void {
+pub inline fn endFrame() !void {
     std.debug.assert(initialized);
 
     const result = v_tab.endFrame();
@@ -472,37 +477,37 @@ pub fn endFrame() !void {
     return result;
 }
 
-pub fn setViewport(position: [2]u32, size: [2]u32) void {
+pub inline fn setViewport(position: [2]u32, size: [2]u32) void {
     std.debug.assert(initialized);
     v_tab.setViewport(position, size);
 }
 
-pub fn setScissor(position: [2]u32, size: [2]u32) void {
+pub inline fn setScissor(position: [2]u32, size: [2]u32) void {
     std.debug.assert(initialized);
     v_tab.setScissor(position, size);
 }
 
-pub fn bindProgram(handle: ProgramHandle) void {
+pub inline fn bindProgram(handle: ProgramHandle) void {
     std.debug.assert(initialized);
     v_tab.bindProgram(handle);
 }
 
-pub fn bindVertexBuffer(handle: VertexBufferHandle) void {
+pub inline fn bindVertexBuffer(handle: VertexBufferHandle) void {
     std.debug.assert(initialized);
     v_tab.bindVertexBuffer(handle);
 }
 
-pub fn bindIndexBuffer(handle: IndexBufferHandle) void {
+pub inline fn bindIndexBuffer(handle: IndexBufferHandle) void {
     std.debug.assert(initialized);
     v_tab.bindIndexBuffer(handle);
 }
 
-pub fn bindTexture(texture: TextureHandle, uniform: UniformHandle) void {
+pub inline fn bindTexture(texture: TextureHandle, uniform: UniformHandle) void {
     std.debug.assert(initialized);
     v_tab.bindTexture(texture, uniform);
 }
 
-pub fn draw(
+pub inline fn draw(
     vertex_count: u32,
     instance_count: u32,
     first_vertex: u32,
@@ -517,7 +522,7 @@ pub fn draw(
     );
 }
 
-pub fn drawIndexed(
+pub inline fn drawIndexed(
     index_count: u32,
     instance_count: u32,
     first_index: u32,

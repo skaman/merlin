@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const c = @import("../../c.zig").c;
+const platform = @import("../../platform/platform.zig");
 const gfx = @import("../gfx.zig");
 const vk = @import("vulkan.zig");
 
@@ -114,7 +115,7 @@ pub fn init(options: *const gfx.Options) !void {
             try extensions.append(c.VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
         },
         .linux => {
-            if (options.window_type == .wayland) {
+            if (platform.getNativeWindowHandleType() == .wayland) {
                 try extensions.append(c.VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
             } else {
                 try extensions.append(c.VK_KHR_XCB_SURFACE_EXTENSION_NAME);
@@ -207,7 +208,7 @@ pub fn deinit() void {
     dispatch.DestroyInstance(handle, allocation_callbacks);
 }
 
-pub fn createDevice(
+pub inline fn createDevice(
     physical_device: c.VkPhysicalDevice,
     create_info: *const c.VkDeviceCreateInfo,
     device: *c.VkDevice,
@@ -224,7 +225,7 @@ pub fn createDevice(
         ),
     );
 }
-pub fn enumerateDeviceExtensionProperties(
+pub inline fn enumerateDeviceExtensionProperties(
     physical_device: c.VkPhysicalDevice,
     layer_name: [*c]const u8,
     count: *u32,
@@ -232,15 +233,14 @@ pub fn enumerateDeviceExtensionProperties(
 ) !void {
     std.debug.assert(physical_device != null);
 
-    const result = dispatch.EnumerateDeviceExtensionProperties(
-        physical_device,
-        layer_name,
-        count,
-        properties,
-    );
     try vk.checkVulkanError(
         "Failed to enumerate Vulkan device extension properties",
-        result,
+        dispatch.EnumerateDeviceExtensionProperties(
+            physical_device,
+            layer_name,
+            count,
+            properties,
+        ),
     );
 }
 
@@ -274,18 +274,17 @@ pub fn enumerateDeviceExtensionPropertiesAlloc(
     return result;
 }
 
-pub fn enumeratePhysicalDevices(
+pub inline fn enumeratePhysicalDevices(
     count: *u32,
     physical_devices: [*c]c.VkPhysicalDevice,
 ) !void {
-    const result = dispatch.EnumeratePhysicalDevices(
-        handle,
-        count,
-        physical_devices,
-    );
     try vk.checkVulkanError(
         "Failed to enumerate Vulkan physical devices",
-        result,
+        dispatch.EnumeratePhysicalDevices(
+            handle,
+            count,
+            physical_devices,
+        ),
     );
 }
 
@@ -309,7 +308,7 @@ pub fn enumeratePhysicalDevicesAlloc(allocator: std.mem.Allocator) ![]c.VkPhysic
     return result;
 }
 
-pub fn getPhysicalDeviceFeatures2(
+pub inline fn getPhysicalDeviceFeatures2(
     physical_device: c.VkPhysicalDevice,
     features: *c.VkPhysicalDeviceFeatures2,
 ) void {
@@ -317,7 +316,7 @@ pub fn getPhysicalDeviceFeatures2(
     dispatch.GetPhysicalDeviceFeatures2(physical_device, features);
 }
 
-pub fn getPhysicalDeviceFormatProperties(
+pub inline fn getPhysicalDeviceFormatProperties(
     physical_device: c.VkPhysicalDevice,
     format: c.VkFormat,
     format_properties: *c.VkFormatProperties,
@@ -326,7 +325,7 @@ pub fn getPhysicalDeviceFormatProperties(
     dispatch.GetPhysicalDeviceFormatProperties(physical_device, format, format_properties);
 }
 
-pub fn getPhysicalDeviceImageFormatProperties(
+pub inline fn getPhysicalDeviceImageFormatProperties(
     physical_device: c.VkPhysicalDevice,
     format: c.VkFormat,
     image_type: c.VkImageType,
@@ -351,7 +350,7 @@ pub fn getPhysicalDeviceImageFormatProperties(
     );
 }
 
-pub fn getPhysicalDeviceMemoryProperties(
+pub inline fn getPhysicalDeviceMemoryProperties(
     physical_device: c.VkPhysicalDevice,
     memory_properties: *c.VkPhysicalDeviceMemoryProperties,
 ) void {
@@ -359,7 +358,7 @@ pub fn getPhysicalDeviceMemoryProperties(
     dispatch.GetPhysicalDeviceMemoryProperties(physical_device, memory_properties);
 }
 
-pub fn getPhysicalDeviceProperties(
+pub inline fn getPhysicalDeviceProperties(
     physical_device: c.VkPhysicalDevice,
     properties: *c.VkPhysicalDeviceProperties,
 ) void {
@@ -367,13 +366,17 @@ pub fn getPhysicalDeviceProperties(
     dispatch.GetPhysicalDeviceProperties(physical_device, properties);
 }
 
-pub fn getPhysicalDeviceQueueFamilyProperties(
+pub inline fn getPhysicalDeviceQueueFamilyProperties(
     physical_device: c.VkPhysicalDevice,
     count: *u32,
     queue_family_properties: [*c]c.VkQueueFamilyProperties,
 ) void {
     std.debug.assert(physical_device != null);
-    dispatch.GetPhysicalDeviceQueueFamilyProperties(physical_device, count, queue_family_properties);
+    dispatch.GetPhysicalDeviceQueueFamilyProperties(
+        physical_device,
+        count,
+        queue_family_properties,
+    );
 }
 
 pub fn getPhysicalDeviceQueueFamilyPropertiesAlloc(
@@ -383,7 +386,11 @@ pub fn getPhysicalDeviceQueueFamilyPropertiesAlloc(
     std.debug.assert(physical_device != null);
 
     var count: u32 = undefined;
-    getPhysicalDeviceQueueFamilyProperties(physical_device, &count, null);
+    getPhysicalDeviceQueueFamilyProperties(
+        physical_device,
+        &count,
+        null,
+    );
 
     const result = try allocator.alloc(
         c.VkQueueFamilyProperties,
@@ -399,7 +406,7 @@ pub fn getPhysicalDeviceQueueFamilyPropertiesAlloc(
     return result;
 }
 
-pub fn getPhysicalDeviceSurfaceCapabilitiesKHR(
+pub inline fn getPhysicalDeviceSurfaceCapabilitiesKHR(
     physical_device: c.VkPhysicalDevice,
     surface: c.VkSurfaceKHR,
     capabilities: *c.VkSurfaceCapabilitiesKHR,
@@ -417,7 +424,7 @@ pub fn getPhysicalDeviceSurfaceCapabilitiesKHR(
     );
 }
 
-pub fn getPhysicalDeviceSurfaceFormatsKHR(
+pub inline fn getPhysicalDeviceSurfaceFormatsKHR(
     physical_device: c.VkPhysicalDevice,
     surface: c.VkSurfaceKHR,
     count: *u32,
@@ -426,19 +433,18 @@ pub fn getPhysicalDeviceSurfaceFormatsKHR(
     std.debug.assert(physical_device != null);
     std.debug.assert(surface != null);
 
-    const result = dispatch.GetPhysicalDeviceSurfaceFormatsKHR(
-        physical_device,
-        surface,
-        count,
-        formats,
-    );
     try vk.checkVulkanError(
         "Failed to get physical device surface formats",
-        result,
+        dispatch.GetPhysicalDeviceSurfaceFormatsKHR(
+            physical_device,
+            surface,
+            count,
+            formats,
+        ),
     );
 }
 
-pub fn getPhysicalDeviceSurfacePresentModesKHR(
+pub inline fn getPhysicalDeviceSurfacePresentModesKHR(
     physical_device: c.VkPhysicalDevice,
     surface: c.VkSurfaceKHR,
     count: *u32,
@@ -447,15 +453,14 @@ pub fn getPhysicalDeviceSurfacePresentModesKHR(
     std.debug.assert(physical_device != null);
     std.debug.assert(surface != null);
 
-    const result = dispatch.GetPhysicalDeviceSurfacePresentModesKHR(
-        physical_device,
-        surface,
-        count,
-        present_modes,
-    );
     try vk.checkVulkanError(
         "Failed to get physical device surface present modes",
-        result,
+        dispatch.GetPhysicalDeviceSurfacePresentModesKHR(
+            physical_device,
+            surface,
+            count,
+            present_modes,
+        ),
     );
 }
 
@@ -493,7 +498,7 @@ pub fn getPhysicalDeviceSurfacePresentModesKHRAlloc(
     return result;
 }
 
-pub fn getPhysicalDeviceSurfaceSupportKHR(
+pub inline fn getPhysicalDeviceSurfaceSupportKHR(
     physical_device: c.VkPhysicalDevice,
     queue_family_index: u32,
     surface: c.VkSurfaceKHR,
@@ -547,7 +552,7 @@ pub fn getPhysicalDeviceSurfaceFormatsKHRAlloc(
     return result;
 }
 
-pub fn createDebugUtilsMessengerEXT(
+pub inline fn createDebugUtilsMessengerEXT(
     create_info: *const c.VkDebugUtilsMessengerCreateInfoEXT,
     messenger: *c.VkDebugUtilsMessengerEXT,
 ) !void {
@@ -564,7 +569,7 @@ pub fn createDebugUtilsMessengerEXT(
     );
 }
 
-pub fn destroyDebugUtilsMessengerEXT(messenger: c.VkDebugUtilsMessengerEXT) void {
+pub inline fn destroyDebugUtilsMessengerEXT(messenger: c.VkDebugUtilsMessengerEXT) void {
     std.debug.assert(debug_dispatch != null);
 
     debug_dispatch.?.DestroyDebugUtilsMessengerEXT(

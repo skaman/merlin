@@ -15,7 +15,7 @@ pub const CommandBuffers = struct {
     handles: [MaxCommandBuffers]c.VkCommandBuffer,
     count: u32,
 
-    pub fn begin(self: *CommandBuffers, index: u32, one_time_submit: bool) !void {
+    pub inline fn begin(self: *CommandBuffers, index: u32, one_time_submit: bool) !void {
         std.debug.assert(index < self.count);
 
         var begin_info = std.mem.zeroInit(
@@ -32,19 +32,19 @@ pub const CommandBuffers = struct {
         try vk.device.beginCommandBuffer(self.handles[index], &begin_info);
     }
 
-    pub fn end(self: *CommandBuffers, index: u32) !void {
+    pub inline fn end(self: *CommandBuffers, index: u32) !void {
         std.debug.assert(index < self.count);
 
         try vk.device.endCommandBuffer(self.handles[index]);
     }
 
-    pub fn reset(self: *CommandBuffers, index: u32) !void {
+    pub inline fn reset(self: *CommandBuffers, index: u32) !void {
         std.debug.assert(index < self.count);
 
         try vk.device.resetCommandBuffer(self.handles[index], 0);
     }
 
-    pub fn beginRenderPass(
+    pub inline fn beginRenderPass(
         self: *CommandBuffers,
         index: u32,
         render_pass: c.VkRenderPass,
@@ -54,6 +54,20 @@ pub const CommandBuffers = struct {
         std.debug.assert(framebuffer != null);
         std.debug.assert(render_pass != null);
         std.debug.assert(index < self.count);
+
+        const clear_values = [_]c.VkClearValue{
+            .{
+                .color = .{
+                    .float32 = [_]f32{ 0.0, 0.0, 0.0, 1.0 },
+                },
+            },
+            .{
+                .depthStencil = .{
+                    .depth = 1.0,
+                    .stencil = 0,
+                },
+            },
+        };
 
         const begin_info = std.mem.zeroInit(
             c.VkRenderPassBeginInfo,
@@ -65,14 +79,8 @@ pub const CommandBuffers = struct {
                     .offset = .{ .x = 0, .y = 0 },
                     .extent = extent,
                 },
-                .clearValueCount = 1,
-                .pClearValues = &[_]c.VkClearValue{
-                    .{
-                        .color = .{
-                            .float32 = [_]f32{ 0.0, 0.0, 0.0, 1.0 },
-                        },
-                    },
-                },
+                .clearValueCount = clear_values.len,
+                .pClearValues = &clear_values,
             },
         );
 
@@ -83,13 +91,13 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn endRenderPass(self: *CommandBuffers, index: u32) void {
+    pub inline fn endRenderPass(self: *CommandBuffers, index: u32) void {
         std.debug.assert(index < self.count);
 
         vk.device.cmdEndRenderPass(self.handles[index]);
     }
 
-    pub fn setViewport(self: *CommandBuffers, index: u32, viewport: *const c.VkViewport) void {
+    pub inline fn setViewport(self: *CommandBuffers, index: u32, viewport: *const c.VkViewport) void {
         std.debug.assert(index < self.count);
 
         vk.device.cmdSetViewport(
@@ -100,7 +108,7 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn setScissor(self: *CommandBuffers, index: u32, scissor: *const c.VkRect2D) void {
+    pub inline fn setScissor(self: *CommandBuffers, index: u32, scissor: *const c.VkRect2D) void {
         std.debug.assert(index < self.count);
 
         vk.device.cmdSetScissor(
@@ -111,7 +119,7 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn bindPipeline(self: *CommandBuffers, index: u32, pipeline: c.VkPipeline) void {
+    pub inline fn bindPipeline(self: *CommandBuffers, index: u32, pipeline: c.VkPipeline) void {
         std.debug.assert(pipeline != null);
         std.debug.assert(index < self.count);
 
@@ -122,7 +130,7 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn bindVertexBuffer(
+    pub inline fn bindVertexBuffer(
         self: *CommandBuffers,
         index: u32,
         buffer: c.VkBuffer,
@@ -142,7 +150,7 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn bindIndexBuffer(
+    pub inline fn bindIndexBuffer(
         self: *CommandBuffers,
         index: u32,
         buffer: c.VkBuffer,
@@ -160,7 +168,7 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn bindDescriptorSets(
+    pub inline fn bindDescriptorSets(
         self: *CommandBuffers,
         index: u32,
         pipeline_layout: c.VkPipelineLayout,
@@ -186,7 +194,7 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn pushDescriptorSet(
+    pub inline fn pushDescriptorSet(
         self: *const CommandBuffers,
         index: u32,
         pipeline_layout: c.VkPipelineLayout,
@@ -208,7 +216,7 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn draw(
+    pub inline fn draw(
         self: *CommandBuffers,
         index: u32,
         vertex_count: u32,
@@ -227,7 +235,7 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn drawIndexed(
+    pub inline fn drawIndexed(
         self: *CommandBuffers,
         index: u32,
         index_count: u32,
@@ -248,7 +256,7 @@ pub const CommandBuffers = struct {
         );
     }
 
-    pub fn copyBuffer(
+    pub inline fn copyBuffer(
         self: *CommandBuffers,
         index: u32,
         src_buffer: c.VkBuffer,
@@ -267,6 +275,35 @@ pub const CommandBuffers = struct {
             dst_buffer,
             region_count,
             regions,
+        );
+    }
+
+    pub inline fn pipelineBarrier(
+        self: *CommandBuffers,
+        index: u32,
+        src_stage_mask: c.VkPipelineStageFlags,
+        dst_stage_mask: c.VkPipelineStageFlags,
+        dependency_flags: c.VkDependencyFlags,
+        memory_barrier_count: u32,
+        memory_barriers: [*c]const c.VkMemoryBarrier,
+        buffer_memory_barrier_count: u32,
+        buffer_memory_barriers: [*c]const c.VkBufferMemoryBarrier,
+        image_memory_barrier_count: u32,
+        image_memory_barriers: [*c]const c.VkImageMemoryBarrier,
+    ) void {
+        std.debug.assert(index < self.count);
+
+        vk.device.cmdPipelineBarrier(
+            self.handles[index],
+            src_stage_mask,
+            dst_stage_mask,
+            dependency_flags,
+            memory_barrier_count,
+            memory_barriers,
+            buffer_memory_barrier_count,
+            buffer_memory_barriers,
+            image_memory_barrier_count,
+            image_memory_barriers,
         );
     }
 };

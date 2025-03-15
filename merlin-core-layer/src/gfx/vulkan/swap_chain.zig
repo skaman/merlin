@@ -73,9 +73,7 @@ pub const SwapChain = struct {
 // Private API
 // *********************************************************************************************
 
-fn chooseSwapSurfaceFormat(
-    formats: []c.VkSurfaceFormatKHR,
-) c.VkSurfaceFormatKHR {
+fn chooseSwapSurfaceFormat(formats: []c.VkSurfaceFormatKHR) c.VkSurfaceFormatKHR {
     for (formats) |format| {
         if (format.format == c.VK_FORMAT_B8G8R8A8_SRGB and
             format.colorSpace == c.VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
@@ -86,9 +84,7 @@ fn chooseSwapSurfaceFormat(
     return formats[0];
 }
 
-fn chooseSwapPresentMode(
-    present_modes: []c.VkPresentModeKHR,
-) c.VkPresentModeKHR {
+fn chooseSwapPresentMode(present_modes: []c.VkPresentModeKHR) c.VkPresentModeKHR {
     for (present_modes) |present_mode| {
         if (present_mode == c.VK_PRESENT_MODE_MAILBOX_KHR) {
             return present_mode;
@@ -285,6 +281,7 @@ pub fn destroy(swapchain: *SwapChain) void {
 pub fn createFrameBuffers(
     swapchain: *SwapChain,
     render_pass: c.VkRenderPass,
+    depth_image_view: c.VkImageView,
 ) !void {
     swapchain.frame_buffers = try swapchain.allocator.alloc(
         c.VkFramebuffer,
@@ -292,14 +289,14 @@ pub fn createFrameBuffers(
     );
 
     for (swapchain.image_views, 0..) |image_view, index| {
-        const attachments = [1]c.VkImageView{image_view};
+        const attachments = [2]c.VkImageView{ image_view, depth_image_view };
 
         const frame_buffer_create_info = std.mem.zeroInit(
             c.VkFramebufferCreateInfo,
             .{
                 .sType = c.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
                 .renderPass = render_pass,
-                .attachmentCount = 1,
+                .attachmentCount = attachments.len,
                 .pAttachments = &attachments,
                 .width = swapchain.extent.width,
                 .height = swapchain.extent.height,

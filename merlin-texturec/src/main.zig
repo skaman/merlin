@@ -31,6 +31,7 @@ const Params = clap.parseParamsComptime(
     \\-m, --mipmaps             Generate image mipmaps.
     \\-e, --edge <EDGE>         Mipmaps resizing edge mode (clamp, reflect, wrap, zero). Default is clamp.
     \\-f, --filter <FILTER>     Mipmaps resizing filter mode (auto, box, triangle, cubicbspline, catmullrom, mitchell, pointsample). Default is auto.
+    \\-s, --srgb                Use sRGB color space.
     \\<IN_FILE>                 Source file.
     \\<OUT_FILE>                Output file.
 );
@@ -62,6 +63,7 @@ const Options = struct {
     mipmaps: bool,
     edge: c.stbir_edge,
     filter: c.stbir_filter,
+    srgb: bool,
 };
 
 fn parseEdgeOption(writer: anytype, value: []const u8) !c.stbir_edge {
@@ -167,6 +169,7 @@ pub fn main() !void {
         .mipmaps = res.args.mipmaps != 0,
         .edge = if (res.args.edge) |value| try parseEdgeOption(std_err, value) else c.STBIR_EDGE_CLAMP,
         .filter = if (res.args.filter) |value| try parseFilterOption(std_err, value) else c.STBIR_FILTER_DEFAULT,
+        .srgb = res.args.srgb != 0,
     };
 
     try std_out.print("Texture compiler:\n", .{});
@@ -180,13 +183,19 @@ pub fn main() !void {
     try std_out.print("  - Mipmaps generation: {}\n", .{options.mipmaps});
     try std_out.print("  - Edge: {}\n", .{options.edge});
     try std_out.print("  - Filter: {}\n", .{options.filter});
+    try std_out.print("  - sRGB: {}\n", .{options.srgb});
 
     const image = try Image.init(options.input_file);
     defer image.deinit();
 
-    try std_out.print("Image: {d}x{d} {d} channels ({})\n", .{ image.width, image.height, image.channels, image.channel_size });
+    try std_out.print("Image: {d}x{d} {d} channels ({})\n", .{
+        image.width,
+        image.height,
+        image.channels,
+        image.channel_size,
+    });
 
-    const texture = try createTexture(&image, false);
+    const texture = try createTexture(&image, options.srgb);
     defer c.ktxTexture2_Destroy(texture);
 
     try checkKtxError(
@@ -208,7 +217,6 @@ pub fn main() !void {
             &image,
             0,
             0,
-            false,
             &options,
             texture,
         );
@@ -247,7 +255,6 @@ fn genMipmaps(
     image: *const Image,
     layer: u32,
     face_slice: u32,
-    srgb: bool,
     options: *const Options,
     texture: *c.ktxTexture2,
 ) !void {
@@ -266,7 +273,7 @@ fn genMipmaps(
         var data_type: c.stbir_datatype = undefined;
         switch (image.channel_size) {
             .channel_u8 => {
-                data_type = if (srgb) c.STBIR_TYPE_UINT8_SRGB else c.STBIR_TYPE_UINT8;
+                data_type = if (options.srgb) c.STBIR_TYPE_UINT8_SRGB else c.STBIR_TYPE_UINT8;
             },
             .channel_u16 => {
                 data_type = c.STBIR_TYPE_UINT16;
@@ -446,6 +453,8 @@ const Image = struct {
         var channels: c_int = 0;
         var channel_size: ChannelSize = .channel_u8;
         var data: [*c]u8 = null;
+
+        c.stbi_set_flip_vertically_on_load(1);
 
         if (c.stbi_is_hdr(path.ptr) == 1) {
             data = c.stbi_load(

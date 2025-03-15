@@ -2,12 +2,15 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const c = @import("../../c.zig").c;
+const platform = @import("../../platform/platform.zig");
 const utils = @import("../../utils.zig");
 const gfx = @import("../gfx.zig");
 pub const buffer = @import("buffer.zig");
 pub const command_buffers = @import("command_buffers.zig");
 pub const command_pool = @import("command_pool.zig");
+pub const depth_image = @import("depth_image.zig");
 pub const device = @import("device.zig");
+pub const image = @import("image.zig");
 pub const index_buffers = @import("index_buffers.zig");
 pub const instance = @import("instance.zig");
 pub const library = @import("library.zig");
@@ -51,6 +54,7 @@ var transfer_queue: c.VkQueue = undefined;
 var main_surface: c.VkSurfaceKHR = undefined;
 var main_swap_chain: swap_chain.SwapChain = undefined;
 var main_render_pass: c.VkRenderPass = undefined;
+var main_depth_image: depth_image.DepthImage = undefined;
 var main_command_buffers: command_buffers.CommandBuffers = undefined;
 var main_descriptor_pool: c.VkDescriptorPool = undefined;
 
@@ -71,8 +75,6 @@ var current_program: ?gfx.ProgramHandle = null;
 var current_vertex_buffer: ?gfx.VertexBufferHandle = null;
 var current_index_buffer: ?gfx.IndexBufferHandle = null;
 
-var framebuffer_width: u32 = 0;
-var framebuffer_height: u32 = 0;
 var framebuffer_invalidated: bool = false;
 
 // *********************************************************************************************
@@ -111,23 +113,38 @@ fn destroyPendingResources() void {
 }
 
 fn recreateSwapChain() !void {
+    const framebuffer_size = platform.getDefaultWindowFramebufferSize();
+    const framebuffer_width = framebuffer_size[0];
+    const framebuffer_height = framebuffer_size[1];
+
     if (framebuffer_width == 0 or framebuffer_height == 0) {
         framebuffer_invalidated = true;
         return;
     }
 
-    device.deviceWaitIdle() catch {
-        log.err("Failed to wait for Vulkan device to become idle", .{});
-    };
+    try device.deviceWaitIdle();
 
+    depth_image.destroy(main_depth_image);
     swap_chain.destroy(&main_swap_chain);
+
     main_swap_chain = try swap_chain.create(
         main_surface,
         framebuffer_width,
         framebuffer_height,
     );
+    errdefer swap_chain.destroy(&main_swap_chain);
 
-    try swap_chain.createFrameBuffers(&main_swap_chain, main_render_pass);
+    main_depth_image = try depth_image.create(
+        framebuffer_width,
+        framebuffer_height,
+    );
+    errdefer depth_image.destroy(main_depth_image);
+
+    try swap_chain.createFrameBuffers(
+        &main_swap_chain,
+        main_render_pass,
+        main_depth_image.view,
+    );
 }
 
 fn getPipeline(
@@ -205,6 +222,29 @@ pub fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void 
     }
 }
 
+pub fn findMemoryTypeIndex(
+    memory_type_bits: u32,
+    property_flags: c.VkMemoryPropertyFlags,
+) !u32 {
+    var memory_properties: c.VkPhysicalDeviceMemoryProperties = undefined;
+    instance.getPhysicalDeviceMemoryProperties(
+        device.physical_device,
+        &memory_properties,
+    );
+
+    for (0..memory_properties.memoryTypeCount) |index| {
+        if (memory_type_bits & (@as(u32, 1) << @as(u5, @intCast(index))) != 0 and
+            memory_properties.memoryTypes[index].propertyFlags & property_flags == property_flags)
+        {
+            return @intCast(index);
+        }
+    }
+
+    log.err("Failed to find suitable memory type", .{});
+
+    return error.MemoryTypeNotFound;
+}
+
 // *********************************************************************************************
 // Public Renderer API
 // *********************************************************************************************
@@ -221,9 +261,6 @@ pub fn init(
     errdefer arena_impl.deinit();
     arena = arena_impl.allocator();
 
-    framebuffer_width = options.framebuffer_width;
-    framebuffer_height = options.framebuffer_height;
-
     try library.init();
     errdefer library.deinit();
 
@@ -232,7 +269,7 @@ pub fn init(
 
     debug_messenger = try setupDebugMessenger(options);
 
-    main_surface = try surface.create(options);
+    main_surface = try surface.create();
     errdefer surface.destroy(main_surface);
 
     try device.init(options, main_surface);
@@ -256,6 +293,10 @@ pub fn init(
         &transfer_queue,
     );
 
+    const framebuffer_size = platform.getDefaultWindowFramebufferSize();
+    const framebuffer_width = framebuffer_size[0];
+    const framebuffer_height = framebuffer_size[1];
+
     main_swap_chain = try swap_chain.create(
         main_surface,
         framebuffer_width,
@@ -266,7 +307,17 @@ pub fn init(
     main_render_pass = try render_pass.create(main_swap_chain.format);
     errdefer render_pass.destroy(main_render_pass);
 
-    try swap_chain.createFrameBuffers(&main_swap_chain, main_render_pass);
+    main_depth_image = try depth_image.create(
+        framebuffer_width,
+        framebuffer_height,
+    );
+    errdefer depth_image.destroy(main_depth_image);
+
+    try swap_chain.createFrameBuffers(
+        &main_swap_chain,
+        main_render_pass,
+        main_depth_image.view,
+    );
 
     graphics_command_pool = try command_pool.create(device.queue_family_indices.graphics_family.?);
     errdefer command_pool.destroy(graphics_command_pool);
@@ -382,6 +433,7 @@ pub fn deinit() void {
     command_pool.destroy(transfer_command_pool);
 
     render_pass.destroy(main_render_pass);
+    depth_image.destroy(main_depth_image);
     swap_chain.destroy(&main_swap_chain);
     surface.destroy(main_surface);
     device.deinit();
@@ -401,14 +453,6 @@ pub fn getSwapchainSize() [2]u32 {
         main_swap_chain.extent.width,
         main_swap_chain.extent.height,
     };
-}
-
-pub fn setFramebufferSize(size: [2]u32) void {
-    if (framebuffer_width != size[0] or framebuffer_height != size[1]) {
-        framebuffer_width = size[0];
-        framebuffer_height = size[1];
-        framebuffer_invalidated = true;
-    }
 }
 
 pub fn createShader(data: *const gfx.ShaderData) !gfx.ShaderHandle {
@@ -592,6 +636,11 @@ pub fn endFrame() !void {
             .pImageIndices = &current_image_index,
         },
     );
+
+    const framebuffer_size = platform.getDefaultWindowFramebufferSize();
+    if (main_swap_chain.extent.width != framebuffer_size[0] or main_swap_chain.extent.height != framebuffer_size[1]) {
+        framebuffer_invalidated = true;
+    }
 
     const result = try device.queuePresentKHR(present_queue, &present_info);
     if (result == c.VK_ERROR_OUT_OF_DATE_KHR or result == c.VK_SUBOPTIMAL_KHR or framebuffer_invalidated) {

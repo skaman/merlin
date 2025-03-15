@@ -503,7 +503,7 @@ pub fn acquireNextImageKHR(
     return result;
 }
 
-pub fn allocateCommandBuffers(
+pub inline fn allocateCommandBuffers(
     allocate_info: *const c.VkCommandBufferAllocateInfo,
     command_buffers: [*c]c.VkCommandBuffer,
 ) !void {
@@ -517,7 +517,7 @@ pub fn allocateCommandBuffers(
     );
 }
 
-pub fn allocateDescriptorSets(
+pub inline fn allocateDescriptorSets(
     allocate_info: *const c.VkDescriptorSetAllocateInfo,
     descriptor_sets: [*c]c.VkDescriptorSet,
 ) !void {
@@ -531,7 +531,7 @@ pub fn allocateDescriptorSets(
     );
 }
 
-pub fn allocateMemory(
+pub inline fn allocateMemory(
     allocate_info: *const c.VkMemoryAllocateInfo,
     memory: *c.VkDeviceMemory,
 ) !void {
@@ -546,7 +546,7 @@ pub fn allocateMemory(
     );
 }
 
-pub fn beginCommandBuffer(
+pub inline fn beginCommandBuffer(
     command_buffer: c.VkCommandBuffer,
     begin_info: *const c.VkCommandBufferBeginInfo,
 ) !void {
@@ -561,7 +561,7 @@ pub fn beginCommandBuffer(
     );
 }
 
-pub fn bindBufferMemory(
+pub inline fn bindBufferMemory(
     buffer: c.VkBuffer,
     memory: c.VkDeviceMemory,
     offset: c.VkDeviceSize,
@@ -580,7 +580,7 @@ pub fn bindBufferMemory(
     );
 }
 
-pub fn bindImageMemory(
+pub inline fn bindImageMemory(
     image: c.VkImage,
     memory: c.VkDeviceMemory,
     offset: c.VkDeviceSize,
@@ -599,7 +599,7 @@ pub fn bindImageMemory(
     );
 }
 
-pub fn cmdBeginRenderPass(
+pub inline fn cmdBeginRenderPass(
     command_buffer: c.VkCommandBuffer,
     begin_info: *const c.VkRenderPassBeginInfo,
     contents: c.VkSubpassContents,
@@ -613,7 +613,7 @@ pub fn cmdBeginRenderPass(
     );
 }
 
-pub fn cmdBindDescriptorSets(
+pub inline fn cmdBindDescriptorSets(
     command_buffer: c.VkCommandBuffer,
     pipeline_bind_point: c.VkPipelineBindPoint,
     layout: c.VkPipelineLayout,
@@ -638,7 +638,7 @@ pub fn cmdBindDescriptorSets(
     );
 }
 
-pub fn cmdBindIndexBuffer(
+pub inline fn cmdBindIndexBuffer(
     command_buffer: c.VkCommandBuffer,
     buffer: c.VkBuffer,
     offset: c.VkDeviceSize,
@@ -654,7 +654,7 @@ pub fn cmdBindIndexBuffer(
     );
 }
 
-pub fn cmdBindPipeline(
+pub inline fn cmdBindPipeline(
     command_buffer: c.VkCommandBuffer,
     pipeline_bind_point: c.VkPipelineBindPoint,
     pipeline: c.VkPipeline,
@@ -669,7 +669,7 @@ pub fn cmdBindPipeline(
     );
 }
 
-pub fn cmdBindVertexBuffers(
+pub inline fn cmdBindVertexBuffers(
     command_buffer: c.VkCommandBuffer,
     first_binding: u32,
     binding_count: u32,
@@ -687,7 +687,7 @@ pub fn cmdBindVertexBuffers(
     );
 }
 
-pub fn cmdBlitImage(
+pub inline fn cmdBlitImage(
     command_buffer: c.VkCommandBuffer,
     src_image: c.VkImage,
     src_image_layout: c.VkImageLayout,
@@ -713,7 +713,7 @@ pub fn cmdBlitImage(
     );
 }
 
-pub fn cmdCopyBuffer(
+pub inline fn cmdCopyBuffer(
     command_buffer: c.VkCommandBuffer,
     src_buffer: c.VkBuffer,
     dst_buffer: c.VkBuffer,
@@ -733,7 +733,7 @@ pub fn cmdCopyBuffer(
     );
 }
 
-pub fn cmdCopyBufferToImage(
+pub inline fn cmdCopyBufferToImage(
     command_buffer: c.VkCommandBuffer,
     src_buffer: c.VkBuffer,
     dst_image: c.VkImage,
@@ -755,7 +755,7 @@ pub fn cmdCopyBufferToImage(
     );
 }
 
-pub fn cmdDraw(
+pub inline fn cmdDraw(
     command_buffer: c.VkCommandBuffer,
     vertex_count: u32,
     instance_count: u32,
@@ -773,7 +773,7 @@ pub fn cmdDraw(
     );
 }
 
-pub fn cmdDrawIndexed(
+pub inline fn cmdDrawIndexed(
     command_buffer: c.VkCommandBuffer,
     index_count: u32,
     instance_count: u32,
@@ -793,12 +793,12 @@ pub fn cmdDrawIndexed(
     );
 }
 
-pub fn cmdEndRenderPass(command_buffer: c.VkCommandBuffer) void {
+pub inline fn cmdEndRenderPass(command_buffer: c.VkCommandBuffer) void {
     std.debug.assert(command_buffer != null);
     dispatch.CmdEndRenderPass(command_buffer);
 }
 
-pub fn cmdPipelineBarrier(
+pub inline fn cmdPipelineBarrier(
     command_buffer: c.VkCommandBuffer,
     src_stage_mask: c.VkPipelineStageFlags,
     dst_stage_mask: c.VkPipelineStageFlags,
@@ -825,7 +825,7 @@ pub fn cmdPipelineBarrier(
     );
 }
 
-pub fn cmdPushDescriptorSet(
+pub inline fn cmdPushDescriptorSet(
     command_buffer: c.VkCommandBuffer,
     pipeline_bind_point: c.VkPipelineBindPoint,
     layout: c.VkPipelineLayout,
@@ -846,7 +846,7 @@ pub fn cmdPushDescriptorSet(
     );
 }
 
-pub fn cmdSetScissor(
+pub inline fn cmdSetScissor(
     command_buffer: c.VkCommandBuffer,
     first_scissor: u32,
     scissor_count: u32,
@@ -861,7 +861,7 @@ pub fn cmdSetScissor(
     );
 }
 
-pub fn cmdSetViewport(
+pub inline fn cmdSetViewport(
     command_buffer: c.VkCommandBuffer,
     first_viewport: u32,
     viewport_count: u32,
@@ -876,7 +876,7 @@ pub fn cmdSetViewport(
     );
 }
 
-pub fn createBuffer(
+pub inline fn createBuffer(
     create_info: *const c.VkBufferCreateInfo,
     buffer: *c.VkBuffer,
 ) !void {
@@ -891,7 +891,7 @@ pub fn createBuffer(
     );
 }
 
-pub fn createCommandPool(
+pub inline fn createCommandPool(
     create_info: *const c.VkCommandPoolCreateInfo,
     command_pool: *c.VkCommandPool,
 ) !void {
@@ -906,7 +906,7 @@ pub fn createCommandPool(
     );
 }
 
-pub fn createDescriptorPool(
+pub inline fn createDescriptorPool(
     create_info: *const c.VkDescriptorPoolCreateInfo,
     descriptor_pool: *c.VkDescriptorPool,
 ) !void {
@@ -921,7 +921,7 @@ pub fn createDescriptorPool(
     );
 }
 
-pub fn createDescriptorSetLayout(
+pub inline fn createDescriptorSetLayout(
     create_info: *const c.VkDescriptorSetLayoutCreateInfo,
     descriptor_set_layout: *c.VkDescriptorSetLayout,
 ) !void {
@@ -936,7 +936,7 @@ pub fn createDescriptorSetLayout(
     );
 }
 
-pub fn createFence(
+pub inline fn createFence(
     create_info: *const c.VkFenceCreateInfo,
     fence: *c.VkFence,
 ) !void {
@@ -951,7 +951,7 @@ pub fn createFence(
     );
 }
 
-pub fn createFrameBuffer(
+pub inline fn createFrameBuffer(
     create_info: *const c.VkFramebufferCreateInfo,
     frame_buffer: *c.VkFramebuffer,
 ) !void {
@@ -966,7 +966,7 @@ pub fn createFrameBuffer(
     );
 }
 
-pub fn createGraphicsPipelines(
+pub inline fn createGraphicsPipelines(
     pipeline_cache: c.VkPipelineCache,
     create_info_count: u32,
     create_infos: [*c]const c.VkGraphicsPipelineCreateInfo,
@@ -985,7 +985,7 @@ pub fn createGraphicsPipelines(
     );
 }
 
-pub fn createImage(
+pub inline fn createImage(
     create_info: *const c.VkImageCreateInfo,
     image: *c.VkImage,
 ) !void {
@@ -1000,7 +1000,7 @@ pub fn createImage(
     );
 }
 
-pub fn createImageView(
+pub inline fn createImageView(
     create_info: *const c.VkImageViewCreateInfo,
     image_view: *c.VkImageView,
 ) !void {
@@ -1015,7 +1015,7 @@ pub fn createImageView(
     );
 }
 
-pub fn createPipelineLayout(
+pub inline fn createPipelineLayout(
     create_info: *const c.VkPipelineLayoutCreateInfo,
     pipeline_layout: *c.VkPipelineLayout,
 ) !void {
@@ -1030,7 +1030,7 @@ pub fn createPipelineLayout(
     );
 }
 
-pub fn createRenderPass(
+pub inline fn createRenderPass(
     create_info: *const c.VkRenderPassCreateInfo,
     render_pass: *c.VkRenderPass,
 ) !void {
@@ -1045,7 +1045,7 @@ pub fn createRenderPass(
     );
 }
 
-pub fn createSampler(
+pub inline fn createSampler(
     create_info: *const c.VkSamplerCreateInfo,
     sampler: *c.VkSampler,
 ) !void {
@@ -1060,7 +1060,7 @@ pub fn createSampler(
     );
 }
 
-pub fn createSemaphore(
+pub inline fn createSemaphore(
     create_info: *const c.VkSemaphoreCreateInfo,
     semaphore: *c.VkSemaphore,
 ) !void {
@@ -1075,7 +1075,7 @@ pub fn createSemaphore(
     );
 }
 
-pub fn createShaderModule(
+pub inline fn createShaderModule(
     create_info: *const c.VkShaderModuleCreateInfo,
     shader_module: *c.VkShaderModule,
 ) !void {
@@ -1090,7 +1090,7 @@ pub fn createShaderModule(
     );
 }
 
-pub fn createSwapchainKHR(
+pub inline fn createSwapchainKHR(
     create_info: *const c.VkSwapchainCreateInfoKHR,
     swapchain: *c.VkSwapchainKHR,
 ) !void {
@@ -1105,7 +1105,7 @@ pub fn createSwapchainKHR(
     );
 }
 
-pub fn destroyBuffer(buffer: c.VkBuffer) void {
+pub inline fn destroyBuffer(buffer: c.VkBuffer) void {
     std.debug.assert(buffer != null);
     dispatch.DestroyBuffer(
         handle,
@@ -1114,7 +1114,7 @@ pub fn destroyBuffer(buffer: c.VkBuffer) void {
     );
 }
 
-pub fn destroyCommandPool(command_pool: c.VkCommandPool) void {
+pub inline fn destroyCommandPool(command_pool: c.VkCommandPool) void {
     std.debug.assert(command_pool != null);
     dispatch.DestroyCommandPool(
         handle,
@@ -1123,7 +1123,7 @@ pub fn destroyCommandPool(command_pool: c.VkCommandPool) void {
     );
 }
 
-pub fn destroyDescriptorPool(descriptor_pool: c.VkDescriptorPool) void {
+pub inline fn destroyDescriptorPool(descriptor_pool: c.VkDescriptorPool) void {
     std.debug.assert(descriptor_pool != null);
     dispatch.DestroyDescriptorPool(
         handle,
@@ -1132,7 +1132,7 @@ pub fn destroyDescriptorPool(descriptor_pool: c.VkDescriptorPool) void {
     );
 }
 
-pub fn destroyDescriptorSetLayout(descriptor_set_layout: c.VkDescriptorSetLayout) void {
+pub inline fn destroyDescriptorSetLayout(descriptor_set_layout: c.VkDescriptorSetLayout) void {
     std.debug.assert(descriptor_set_layout != null);
     dispatch.DestroyDescriptorSetLayout(
         handle,
@@ -1141,7 +1141,7 @@ pub fn destroyDescriptorSetLayout(descriptor_set_layout: c.VkDescriptorSetLayout
     );
 }
 
-pub fn destroyFence(fence: c.VkFence) void {
+pub inline fn destroyFence(fence: c.VkFence) void {
     std.debug.assert(fence != null);
     dispatch.DestroyFence(
         handle,
@@ -1150,7 +1150,7 @@ pub fn destroyFence(fence: c.VkFence) void {
     );
 }
 
-pub fn destroyFrameBuffer(frame_buffer: c.VkFramebuffer) void {
+pub inline fn destroyFrameBuffer(frame_buffer: c.VkFramebuffer) void {
     std.debug.assert(frame_buffer != null);
     dispatch.DestroyFramebuffer(
         handle,
@@ -1159,7 +1159,7 @@ pub fn destroyFrameBuffer(frame_buffer: c.VkFramebuffer) void {
     );
 }
 
-pub fn destroyImage(image: c.VkImage) void {
+pub inline fn destroyImage(image: c.VkImage) void {
     std.debug.assert(image != null);
     dispatch.DestroyImage(
         handle,
@@ -1168,7 +1168,7 @@ pub fn destroyImage(image: c.VkImage) void {
     );
 }
 
-pub fn destroyImageView(image_view: c.VkImageView) void {
+pub inline fn destroyImageView(image_view: c.VkImageView) void {
     std.debug.assert(image_view != null);
     dispatch.DestroyImageView(
         handle,
@@ -1177,7 +1177,7 @@ pub fn destroyImageView(image_view: c.VkImageView) void {
     );
 }
 
-pub fn destroyPipeline(pipeline: c.VkPipeline) void {
+pub inline fn destroyPipeline(pipeline: c.VkPipeline) void {
     std.debug.assert(pipeline != null);
     dispatch.DestroyPipeline(
         handle,
@@ -1186,7 +1186,7 @@ pub fn destroyPipeline(pipeline: c.VkPipeline) void {
     );
 }
 
-pub fn destroyPipelineLayout(pipeline_layout: c.VkPipelineLayout) void {
+pub inline fn destroyPipelineLayout(pipeline_layout: c.VkPipelineLayout) void {
     std.debug.assert(pipeline_layout != null);
     dispatch.DestroyPipelineLayout(
         handle,
@@ -1195,7 +1195,7 @@ pub fn destroyPipelineLayout(pipeline_layout: c.VkPipelineLayout) void {
     );
 }
 
-pub fn destroyRenderPass(render_pass: c.VkRenderPass) void {
+pub inline fn destroyRenderPass(render_pass: c.VkRenderPass) void {
     std.debug.assert(render_pass != null);
     dispatch.DestroyRenderPass(
         handle,
@@ -1204,7 +1204,7 @@ pub fn destroyRenderPass(render_pass: c.VkRenderPass) void {
     );
 }
 
-pub fn destroySampler(sampler: c.VkSampler) void {
+pub inline fn destroySampler(sampler: c.VkSampler) void {
     std.debug.assert(sampler != null);
     dispatch.DestroySampler(
         handle,
@@ -1213,7 +1213,7 @@ pub fn destroySampler(sampler: c.VkSampler) void {
     );
 }
 
-pub fn destroySemaphore(semaphore: c.VkSemaphore) void {
+pub inline fn destroySemaphore(semaphore: c.VkSemaphore) void {
     std.debug.assert(semaphore != null);
     dispatch.DestroySemaphore(
         handle,
@@ -1222,7 +1222,7 @@ pub fn destroySemaphore(semaphore: c.VkSemaphore) void {
     );
 }
 
-pub fn destroyShaderModule(shader_module: c.VkShaderModule) void {
+pub inline fn destroyShaderModule(shader_module: c.VkShaderModule) void {
     std.debug.assert(shader_module != null);
     dispatch.DestroyShaderModule(
         handle,
@@ -1231,7 +1231,7 @@ pub fn destroyShaderModule(shader_module: c.VkShaderModule) void {
     );
 }
 
-pub fn destroySwapchainKHR(swapchain: c.VkSwapchainKHR) void {
+pub inline fn destroySwapchainKHR(swapchain: c.VkSwapchainKHR) void {
     std.debug.assert(swapchain != null);
     dispatch.DestroySwapchainKHR(
         handle,
@@ -1240,14 +1240,14 @@ pub fn destroySwapchainKHR(swapchain: c.VkSwapchainKHR) void {
     );
 }
 
-pub fn deviceWaitIdle() !void {
+pub inline fn deviceWaitIdle() !void {
     try vk.checkVulkanError(
         "Failed to wait for Vulkan device idle",
         dispatch.DeviceWaitIdle(handle),
     );
 }
 
-pub fn endCommandBuffer(command_buffer: c.VkCommandBuffer) !void {
+pub inline fn endCommandBuffer(command_buffer: c.VkCommandBuffer) !void {
     std.debug.assert(command_buffer != null);
     try vk.checkVulkanError(
         "Failed to end Vulkan command buffer",
@@ -1255,7 +1255,7 @@ pub fn endCommandBuffer(command_buffer: c.VkCommandBuffer) !void {
     );
 }
 
-pub fn freeCommandBuffers(
+pub inline fn freeCommandBuffers(
     command_pool: c.VkCommandPool,
     command_buffer_count: u32,
     command_buffers: [*c]const c.VkCommandBuffer,
@@ -1269,7 +1269,7 @@ pub fn freeCommandBuffers(
     );
 }
 
-pub fn freeDescriptorSets(
+pub inline fn freeDescriptorSets(
     descriptor_pool: c.VkDescriptorPool,
     descriptor_set_count: u32,
     descriptor_sets: [*c]c.VkDescriptorSet,
@@ -1286,7 +1286,7 @@ pub fn freeDescriptorSets(
     );
 }
 
-pub fn freeMemory(memory: c.VkDeviceMemory) void {
+pub inline fn freeMemory(memory: c.VkDeviceMemory) void {
     std.debug.assert(memory != null);
     dispatch.FreeMemory(
         handle,
@@ -1295,7 +1295,7 @@ pub fn freeMemory(memory: c.VkDeviceMemory) void {
     );
 }
 
-pub fn getBufferMemoryRequirements(
+pub inline fn getBufferMemoryRequirements(
     buffer: c.VkBuffer,
     requirements: *c.VkMemoryRequirements,
 ) void {
@@ -1307,7 +1307,7 @@ pub fn getBufferMemoryRequirements(
     );
 }
 
-pub fn getDeviceQueue(
+pub inline fn getDeviceQueue(
     queue_family_index: u32,
     queue_index: u32,
     queue: *c.VkQueue,
@@ -1320,7 +1320,7 @@ pub fn getDeviceQueue(
     );
 }
 
-pub fn getImageMemoryRequirements(
+pub inline fn getImageMemoryRequirements(
     image: c.VkImage,
     requirements: *c.VkMemoryRequirements,
 ) void {
@@ -1332,7 +1332,7 @@ pub fn getImageMemoryRequirements(
     );
 }
 
-pub fn getImageSubresourceLayout(
+pub inline fn getImageSubresourceLayout(
     image: c.VkImage,
     subresource: *c.VkImageSubresource,
     layout: *c.VkSubresourceLayout,
@@ -1346,7 +1346,7 @@ pub fn getImageSubresourceLayout(
     );
 }
 
-pub fn getSwapchainImagesKHR(
+pub inline fn getSwapchainImagesKHR(
     swapchain: c.VkSwapchainKHR,
     count: *u32,
     images: [*c]c.VkImage,
@@ -1390,7 +1390,7 @@ pub fn getSwapchainImagesKHRAlloc(
     return result;
 }
 
-pub fn mapMemory(
+pub inline fn mapMemory(
     memory: c.VkDeviceMemory,
     offset: c.VkDeviceSize,
     size: c.VkDeviceSize,
@@ -1413,7 +1413,7 @@ pub fn mapMemory(
     );
 }
 
-pub fn queuePresentKHR(
+pub inline fn queuePresentKHR(
     queue: c.VkQueue,
     present_info: *const c.VkPresentInfoKHR,
 ) !c.VkResult {
@@ -1434,7 +1434,7 @@ pub fn queuePresentKHR(
     return result;
 }
 
-pub fn queueSubmit(
+pub inline fn queueSubmit(
     queue: c.VkQueue,
     submit_count: u32,
     submits: [*c]const c.VkSubmitInfo,
@@ -1454,7 +1454,7 @@ pub fn queueSubmit(
     );
 }
 
-pub fn queueWaitIdle(queue: c.VkQueue) !void {
+pub inline fn queueWaitIdle(queue: c.VkQueue) !void {
     std.debug.assert(queue != null);
     try vk.checkVulkanError(
         "Failed to wait for Vulkan queue",
@@ -1462,7 +1462,7 @@ pub fn queueWaitIdle(queue: c.VkQueue) !void {
     );
 }
 
-pub fn resetCommandBuffer(
+pub inline fn resetCommandBuffer(
     command_buffer: c.VkCommandBuffer,
     flags: c.VkCommandBufferResetFlags,
 ) !void {
@@ -1476,7 +1476,7 @@ pub fn resetCommandBuffer(
     );
 }
 
-pub fn resetFences(
+pub inline fn resetFences(
     fence_count: u32,
     fences: [*c]c.VkFence,
 ) !void {
@@ -1490,7 +1490,7 @@ pub fn resetFences(
     );
 }
 
-pub fn unmapMemory(memory: c.VkDeviceMemory) void {
+pub inline fn unmapMemory(memory: c.VkDeviceMemory) void {
     std.debug.assert(memory != null);
     dispatch.UnmapMemory(
         handle,
@@ -1498,7 +1498,7 @@ pub fn unmapMemory(memory: c.VkDeviceMemory) void {
     );
 }
 
-pub fn updateDescriptorSets(
+pub inline fn updateDescriptorSets(
     descriptor_write_count: u32,
     descriptor_writes: [*c]const c.VkWriteDescriptorSet,
     descriptor_copy_count: u32,
@@ -1513,7 +1513,7 @@ pub fn updateDescriptorSets(
     );
 }
 
-pub fn waitForFences(
+pub inline fn waitForFences(
     fence_count: u32,
     fences: [*c]c.VkFence,
     wait_all: c.VkBool32,

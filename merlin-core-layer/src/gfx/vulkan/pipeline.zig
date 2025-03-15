@@ -151,6 +151,20 @@ pub fn create(
         },
     );
 
+    const depth_stencil = std.mem.zeroInit(
+        c.VkPipelineDepthStencilStateCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
+            .depthTestEnable = c.VK_TRUE,
+            .depthWriteEnable = c.VK_TRUE,
+            .depthCompareOp = c.VK_COMPARE_OP_LESS,
+            .depthBoundsTestEnable = c.VK_FALSE,
+            .stencilTestEnable = c.VK_FALSE,
+            .minDepthBounds = 0.0,
+            .maxDepthBounds = 1.0,
+        },
+    );
+
     const color_blend_attachment = std.mem.zeroInit(
         c.VkPipelineColorBlendAttachmentState,
         .{
@@ -210,6 +224,7 @@ pub fn create(
             .pViewportState = &viewport_state,
             .pRasterizationState = &rasterizer,
             .pMultisampleState = &multisampling,
+            .pDepthStencilState = &depth_stencil,
             .pColorBlendState = &color_blending,
             .pDynamicState = &dynamic_state,
             .layout = vk.programs.getPipelineLayout(program),

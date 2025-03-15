@@ -7,7 +7,6 @@ pub fn deinit() void {}
 pub fn getSwapchainSize() [2]u32 {
     return .{ 0, 0 };
 }
-pub fn setFramebufferSize(_: [2]u32) void {}
 pub fn createShader(_: *const gfx.ShaderData) !gfx.ShaderHandle {
     return 0;
 }

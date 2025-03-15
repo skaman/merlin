@@ -173,28 +173,15 @@ pub fn create(
     vk.log.debug("  - Image layout: {s}", .{c.string_VkImageLayout(texture.imageLayout)});
     vk.log.debug("  - View type: {s}", .{c.string_VkImageViewType(texture.viewType)});
 
-    const view_info = c.VkImageViewCreateInfo{
-        .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-        .image = texture.image,
-        .viewType = texture.viewType,
-        .format = texture.imageFormat,
-        .components = c.VkComponentMapping{
-            .r = c.VK_COMPONENT_SWIZZLE_IDENTITY,
-            .g = c.VK_COMPONENT_SWIZZLE_IDENTITY,
-            .b = c.VK_COMPONENT_SWIZZLE_IDENTITY,
-            .a = c.VK_COMPONENT_SWIZZLE_IDENTITY,
-        },
-        .subresourceRange = c.VkImageSubresourceRange{
-            .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
-            .baseMipLevel = 0,
-            .levelCount = texture.levelCount,
-            .baseArrayLayer = 0,
-            .layerCount = texture.layerCount,
-        },
-    };
-    var texture_image_view: c.VkImageView = undefined;
-    try vk.device.createImageView(&view_info, &texture_image_view);
-    errdefer vk.device.destroyImageView(texture_image_view);
+    const texture_image_view = try vk.image.createView(
+        texture.image,
+        texture.imageFormat,
+        texture.viewType,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        texture.levelCount,
+        texture.layerCount,
+    );
+    errdefer vk.image.destroyView(texture_image_view);
 
     var sampler_info = c.VkSamplerCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -267,7 +254,7 @@ pub fn destroyPendingResources() void {
     for (0..textures_to_destroy_count) |i| {
         const texture = &textures_to_destroy[i];
         vk.device.destroySampler(texture.sampler);
-        vk.device.destroyImageView(texture.image_view);
+        vk.image.destroyView(texture.image_view);
 
         c.ktxVulkanTexture_Destruct(
             &texture.ktx_texture,

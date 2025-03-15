@@ -17,34 +17,11 @@ pub const Buffer = struct {
 // Private API
 // *********************************************************************************************
 
-fn findMemoryTypeIndex(
-    memory_type_bits: u32,
-    property_flags: c.VkMemoryPropertyFlags,
-) !u32 {
-    var memory_properties: c.VkPhysicalDeviceMemoryProperties = undefined;
-    vk.instance.getPhysicalDeviceMemoryProperties(
-        vk.device.physical_device,
-        &memory_properties,
-    );
-
-    for (0..memory_properties.memoryTypeCount) |index| {
-        if (memory_type_bits & (@as(u32, 1) << @as(u5, @intCast(index))) != 0 and
-            memory_properties.memoryTypes[index].propertyFlags & property_flags == property_flags)
-        {
-            return @intCast(index);
-        }
-    }
-
-    vk.log.err("Failed to find suitable memory type", .{});
-
-    return error.MemoryTypeNotFound;
-}
-
 fn allocateMemory(
     requirements: *c.VkMemoryRequirements,
     property_flags: c.VkMemoryPropertyFlags,
 ) !c.VkDeviceMemory {
-    const memory_type_index = try findMemoryTypeIndex(
+    const memory_type_index = try vk.findMemoryTypeIndex(
         requirements.memoryTypeBits,
         property_flags,
     );
