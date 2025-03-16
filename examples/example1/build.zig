@@ -4,12 +4,9 @@ const builtin = @import("builtin");
 fn addShaders(
     b: *std.Build,
     shaders: []const []const u8,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
 ) !void {
     const merlin_shaderc = b.dependency("merlin_shaderc", .{
-        .target = target,
-        .optimize = optimize,
+        .optimize = std.builtin.OptimizeMode.ReleaseFast,
     });
     const merlin_shaderc_exe = merlin_shaderc.artifact("merlin-shaderc");
 
@@ -29,12 +26,9 @@ fn addShaders(
 fn addTextures(
     b: *std.Build,
     textures: []const []const u8,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
 ) !void {
     const merlin_texturec = b.dependency("merlin_texturec", .{
-        .target = target,
-        .optimize = optimize,
+        .optimize = std.builtin.OptimizeMode.ReleaseFast,
     });
     const merlin_texturec_exe = merlin_texturec.artifact("merlin-texturec");
 
@@ -79,12 +73,12 @@ pub fn build(b: *std.Build) !void {
         "assets/shader.vert",
         "assets/shader.frag",
     };
-    try addShaders(b, &shaders, target, optimize);
+    try addShaders(b, &shaders);
 
     const textures = [_][]const u8{
         "assets/uv_texture.png",
     };
-    try addTextures(b, &textures, target, optimize);
+    try addTextures(b, &textures);
 
     b.installArtifact(example1);
     example1.root_module.addImport("merlin_core_layer", merlin_core_layer.module("merlin_core_layer"));

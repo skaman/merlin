@@ -13,6 +13,10 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    const cgltf = b.dependency("cgltf", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const geometryc_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -28,6 +32,9 @@ pub fn build(b: *std.Build) !void {
 
     geometryc.root_module.addImport("merlin_core_layer", merlin_core_layer.module("merlin_core_layer"));
     geometryc.root_module.addImport("clap", clap.module("clap"));
+
+    geometryc.linkLibrary(cgltf.artifact("cgltf"));
+    geometryc.addIncludePath(b.path("../vendor/cgltf/upstream"));
 
     const run_cmd = b.addRunArtifact(geometryc);
     run_cmd.step.dependOn(b.getInstallStep());

@@ -1,0 +1,13 @@
+.{
+    .name = .cgltf,
+    .version = "0.0.0",
+    .fingerprint = 0x100e7fe19e190b8b,
+
+    .dependencies = .{},
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "upstream",
+    },
+}

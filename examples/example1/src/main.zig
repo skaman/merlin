@@ -81,9 +81,9 @@ pub fn main() !void {
     defer gfx.destroyTexture(texture_handle);
 
     var vertex_layout = gfx.VertexLayout.init();
-    vertex_layout.add(.position, 3, .float, false, false);
-    vertex_layout.add(.color_0, 3, .float, false, false);
-    vertex_layout.add(.tex_coord_0, 2, .float, false, false);
+    vertex_layout.add(.position, 3, .f32, false);
+    vertex_layout.add(.color_0, 3, .f32, false);
+    vertex_layout.add(.tex_coord_0, 2, .f32, false);
 
     const vertex_buffer_handle = try gfx.createVertexBuffer(
         std.mem.sliceAsBytes(&Vertices),

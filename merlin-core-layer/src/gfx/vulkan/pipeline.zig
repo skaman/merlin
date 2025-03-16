@@ -7,16 +7,16 @@ const vk = @import("vulkan.zig");
 pub const MaxVertexAttributes = 16;
 pub const MaxDescriptorSetBindings = 16;
 
-const SizeTable = [_][4]u8{
-    [_]u8{ 1, 2, 4, 4 }, // uint_8
-    [_]u8{ 4, 4, 4, 4 }, // uint_10
-    [_]u8{ 2, 4, 8, 8 }, // int_16
-    [_]u8{ 2, 4, 8, 8 }, // half
-    [_]u8{ 4, 8, 12, 16 }, // float
-};
+const AttributeType = [@typeInfo(gfx.VertexComponentType).@"enum".fields.len][4][2]c.VkFormat{
+    // i8
+    [_][2]c.VkFormat{
+        [_]c.VkFormat{ c.VK_FORMAT_R8_SINT, c.VK_FORMAT_R8_SNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R8G8_SINT, c.VK_FORMAT_R8G8_SNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R8G8B8A8_SINT, c.VK_FORMAT_R8G8B8A8_SNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R8G8B8A8_SINT, c.VK_FORMAT_R8G8B8A8_SNORM },
+    },
 
-const AttributeType = [_][4][2]c.VkFormat{
-    // uint_8
+    // u8
     [_][2]c.VkFormat{
         [_]c.VkFormat{ c.VK_FORMAT_R8_UINT, c.VK_FORMAT_R8_UNORM },
         [_]c.VkFormat{ c.VK_FORMAT_R8G8_UINT, c.VK_FORMAT_R8G8_UNORM },
@@ -24,28 +24,31 @@ const AttributeType = [_][4][2]c.VkFormat{
         [_]c.VkFormat{ c.VK_FORMAT_R8G8B8A8_UINT, c.VK_FORMAT_R8G8B8A8_UNORM },
     },
 
-    // uint_10
-    [_][2]c.VkFormat{
-        [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
-        [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
-        [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
-        [_]c.VkFormat{ c.VK_FORMAT_A2R10G10B10_UINT_PACK32, c.VK_FORMAT_A2R10G10B10_UNORM_PACK32 },
-    },
-    // int_16
+    // i16
     [_][2]c.VkFormat{
         [_]c.VkFormat{ c.VK_FORMAT_R16_SINT, c.VK_FORMAT_R16_SNORM },
         [_]c.VkFormat{ c.VK_FORMAT_R16G16_SINT, c.VK_FORMAT_R16G16_SNORM },
         [_]c.VkFormat{ c.VK_FORMAT_R16G16B16_SINT, c.VK_FORMAT_R16G16B16_SNORM },
         [_]c.VkFormat{ c.VK_FORMAT_R16G16B16A16_SINT, c.VK_FORMAT_R16G16B16A16_SNORM },
     },
-    // half
+
+    // u16
     [_][2]c.VkFormat{
-        [_]c.VkFormat{ c.VK_FORMAT_R16_SFLOAT, c.VK_FORMAT_R16_SFLOAT },
-        [_]c.VkFormat{ c.VK_FORMAT_R16G16_SFLOAT, c.VK_FORMAT_R16G16_SFLOAT },
-        [_]c.VkFormat{ c.VK_FORMAT_R16G16B16_SFLOAT, c.VK_FORMAT_R16G16B16_SFLOAT },
-        [_]c.VkFormat{ c.VK_FORMAT_R16G16B16A16_SFLOAT, c.VK_FORMAT_R16G16B16A16_SFLOAT },
+        [_]c.VkFormat{ c.VK_FORMAT_R16_UINT, c.VK_FORMAT_R16_UNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R16G16_UINT, c.VK_FORMAT_R16G16_UNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R16G16B16_UINT, c.VK_FORMAT_R16G16B16_UNORM },
+        [_]c.VkFormat{ c.VK_FORMAT_R16G16B16A16_UINT, c.VK_FORMAT_R16G16B16A16_UNORM },
     },
-    // float
+
+    // u32
+    [_][2]c.VkFormat{
+        [_]c.VkFormat{ c.VK_FORMAT_R32_UINT, c.VK_FORMAT_R32_UINT },
+        [_]c.VkFormat{ c.VK_FORMAT_R32G32_UINT, c.VK_FORMAT_R32G32_UINT },
+        [_]c.VkFormat{ c.VK_FORMAT_R32G32B32_UINT, c.VK_FORMAT_R32G32B32_UINT },
+        [_]c.VkFormat{ c.VK_FORMAT_R32G32B32A32_UINT, c.VK_FORMAT_R32G32B32A32_UINT },
+    },
+
+    // f32
     [_][2]c.VkFormat{
         [_]c.VkFormat{ c.VK_FORMAT_R32_SFLOAT, c.VK_FORMAT_R32_SFLOAT },
         [_]c.VkFormat{ c.VK_FORMAT_R32G32_SFLOAT, c.VK_FORMAT_R32G32_SFLOAT },

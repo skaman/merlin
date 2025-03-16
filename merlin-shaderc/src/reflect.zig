@@ -13,7 +13,7 @@ const c = @cImport({
 
 const AttributeMapEntry = struct {
     name: []const u8,
-    attribute: gfx.VertexAttribute,
+    attribute: gfx.VertexAttributeType,
 };
 
 const AttributeMap = [_]AttributeMapEntry{
@@ -98,7 +98,7 @@ pub const ShaderReflect = struct {
         try std_out.print("Input variables:\n", .{});
         for (input_variables, 0..) |input, i| {
             try std_out.print("  - {s} (location={d})\n", .{ input.name, input.location });
-            var attribute: ?gfx.VertexAttribute = null;
+            var attribute: ?gfx.VertexAttributeType = null;
             for (AttributeMap) |entry| {
                 if (std.mem.eql(u8, std.mem.sliceTo(input.name, 0), entry.name)) {
                     attribute = entry.attribute;

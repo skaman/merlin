@@ -34,3 +34,6 @@
 [submodule "vendor/ktx-software/upstream"]
 	path = vendor/ktx-software/upstream
 	url = https://github.com/KhronosGroup/KTX-Software.git
+[submodule "vendor/cgltf/upstream"]
+	path = vendor/cgltf/upstream
+	url = https://github.com/jkuhlmann/cgltf.git

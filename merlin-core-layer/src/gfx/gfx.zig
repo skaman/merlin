@@ -16,6 +16,12 @@ pub const log = std.log.scoped(.gfx);
 pub const ShaderMagic = @as(u32, @bitCast([_]u8{ 'M', 'S', 'H', 'A' }));
 pub const ShaderVersion: u8 = 1;
 
+pub const VertexBufferMagic = @as(u32, @bitCast([_]u8{ 'M', 'V', 'B', 'D' }));
+pub const VertexBufferVersion: u8 = 1;
+
+pub const IndexBufferMagic = @as(u32, @bitCast([_]u8{ 'M', 'I', 'B', 'D' }));
+pub const IndexBufferVersion: u8 = 1;
+
 pub const ShaderHandle = u16;
 pub const ProgramHandle = u16;
 pub const VertexBufferHandle = u16;
@@ -46,10 +52,28 @@ pub const RendererType = enum {
     vulkan,
 };
 
-pub const IndexType = enum {
+pub const IndexType = enum(u8) {
     u8,
     u16,
     u32,
+
+    const SizeTable = [_]u8{
+        1, // u8
+        2, // u16
+        4, // u32
+    };
+
+    pub inline fn getSize(self: IndexType) u8 {
+        return SizeTable[@intFromEnum(self)];
+    }
+
+    pub fn getName(self: IndexType) []const u8 {
+        return switch (self) {
+            .u8 => "u8",
+            .u16 => "u16",
+            .u32 => "u32",
+        };
+    }
 };
 
 pub const DescriptorBindType = enum(u8) {
@@ -75,7 +99,7 @@ pub const ShaderType = enum(u8) {
 };
 
 pub const ShaderInputAttribute = struct {
-    attribute: VertexAttribute,
+    attribute: VertexAttributeType,
     location: u8,
 };
 
@@ -86,7 +110,7 @@ pub const ShaderData = struct {
     descriptor_sets: []const DescriptorSet,
 };
 
-pub const VertexAttribute = enum(u8) {
+pub const VertexAttributeType = enum(u8) {
     position,
     normal,
     tangent,
@@ -105,48 +129,83 @@ pub const VertexAttribute = enum(u8) {
     tex_coord_5,
     tex_coord_6,
     tex_coord_7,
-};
 
-pub const VertexAttributeType = enum(u8) {
-    uint_8,
-    uint_10,
-    int_16,
-    half,
-    float,
-
-    const SizeTable = [_][4]u8{
-        [_]u8{ 1, 2, 4, 4 }, // uint_8
-        [_]u8{ 4, 4, 4, 4 }, // uint_10
-        [_]u8{ 2, 4, 8, 8 }, // int_16
-        [_]u8{ 2, 4, 8, 8 }, // half
-        [_]u8{ 4, 8, 12, 16 }, // float
-    };
-
-    pub fn getSize(self: VertexAttributeType, num: u3) u8 {
-        return SizeTable[@intFromEnum(self)][num - 1];
+    pub fn getName(self: VertexAttributeType) []const u8 {
+        return switch (self) {
+            .position => "position",
+            .normal => "normal",
+            .tangent => "tangent",
+            .bitangent => "bitangent",
+            .color_0 => "color_0",
+            .color_1 => "color_1",
+            .color_2 => "color_2",
+            .color_3 => "color_3",
+            .indices => "indices",
+            .weight => "weight",
+            .tex_coord_0 => "tex_coord_0",
+            .tex_coord_1 => "tex_coord_1",
+            .tex_coord_2 => "tex_coord_2",
+            .tex_coord_3 => "tex_coord_3",
+            .tex_coord_4 => "tex_coord_4",
+            .tex_coord_5 => "tex_coord_5",
+            .tex_coord_6 => "tex_coord_6",
+            .tex_coord_7 => "tex_coord_7",
+        };
     }
 };
 
-pub const VertexAttributeData = packed struct {
+pub const VertexComponentType = enum(u8) {
+    i8,
+    u8,
+    i16,
+    u16,
+    u32,
+    f32,
+
+    const SizeTable = [_][4]u8{
+        [_]u8{ 1, 2, 4, 4 }, // i8
+        [_]u8{ 1, 2, 4, 4 }, // u8
+        [_]u8{ 2, 4, 8, 8 }, // i16
+        [_]u8{ 2, 4, 8, 8 }, // u16
+        [_]u8{ 4, 8, 12, 16 }, // u32
+        [_]u8{ 4, 8, 12, 16 }, // f32
+    };
+
+    pub inline fn getSize(self: VertexComponentType, num: u8) u8 {
+        std.debug.assert(num < SizeTable[0].len);
+
+        return SizeTable[@intFromEnum(self)][num - 1];
+    }
+
+    pub fn getName(self: VertexComponentType) []const u8 {
+        return switch (self) {
+            .i8 => "i8",
+            .u8 => "u8",
+            .i16 => "i16",
+            .u16 => "u16",
+            .u32 => "u32",
+            .f32 => "f32",
+        };
+    }
+};
+
+pub const VertexAttribute = packed struct {
     normalized: bool,
-    type: VertexAttributeType,
-    num: u3,
-    as_int: bool,
+    type: VertexComponentType,
+    num: u8,
 };
 
 pub const VertexLayout = struct {
-    const Self = @This();
-
     stride: u16,
-    offsets: [@typeInfo(VertexAttribute).@"enum".fields.len]u16,
-    attributes: [@typeInfo(VertexAttribute).@"enum".fields.len]VertexAttributeData,
+    offsets: [@typeInfo(VertexAttributeType).@"enum".fields.len]u16,
+    attributes: [@typeInfo(VertexAttributeType).@"enum".fields.len]VertexAttribute,
 
     pub fn init() VertexLayout {
-        var offsets: [@typeInfo(VertexAttribute).@"enum".fields.len]u16 = undefined;
+        var offsets: [@typeInfo(VertexAttributeType).@"enum".fields.len]u16 = undefined;
         @memset(&offsets, 0);
 
-        var attributes: [@typeInfo(VertexAttribute).@"enum".fields.len]VertexAttributeData = undefined;
-        @memset(&attributes, .{ .normalized = false, .type = .uint_8, .num = 0, .as_int = false });
+        var attributes: [@typeInfo(VertexAttributeType).@"enum".fields.len]VertexAttribute = undefined;
+        @memset(&attributes, .{ .normalized = false, .type = .u8, .num = 0 });
 
         return .{
             .stride = 0,
@@ -155,7 +214,13 @@ pub const VertexLayout = struct {
         };
     }
 
-    pub fn add(self: *Self, attribute: VertexAttribute, num: u3, type_: VertexAttributeType, normalized: bool, as_int: bool) void {
+    pub fn add(
+        self: *VertexLayout,
+        attribute: VertexAttributeType,
+        num: u8,
+        type_: VertexComponentType,
+        normalized: bool,
+    ) void {
         const index = @intFromEnum(attribute);
         const size = type_.getSize(num);
 
@@ -163,13 +228,12 @@ pub const VertexLayout = struct {
             .normalized = normalized,
             .type = type_,
             .num = num,
-            .as_int = as_int,
         };
         self.offsets[index] = self.stride;
         self.stride += size;
     }
 
-    pub fn skip(self: *Self, num: u8) void {
+    pub fn skip(self: *VertexLayout, num: u8) void {
         self.stride += num;
     }
 };
