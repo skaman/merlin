@@ -4,9 +4,6 @@
     .fingerprint = 0x6c26be6350e0937d,
 
     .dependencies = .{
-        .merlin_gfx = .{
-            .path = "../merlin-gfx",
-        },
         .merlin_utils = .{
             .path = "../merlin-utils",
         },

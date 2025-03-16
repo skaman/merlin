@@ -1,5 +1,8 @@
 const std = @import("std");
 
+const utils = @import("merlin_utils");
+const types = utils.gfx_types;
+
 const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
 const vk = @import("vulkan.zig");
@@ -7,7 +10,7 @@ const vk = @import("vulkan.zig");
 pub const MaxVertexAttributes = 16;
 pub const MaxDescriptorSetBindings = 16;
 
-const AttributeType = [@typeInfo(gfx.VertexComponentType).@"enum".fields.len][4][2]c.VkFormat{
+const AttributeType = [@typeInfo(types.VertexComponentType).@"enum".fields.len][4][2]c.VkFormat{
     // i8
     [_][2]c.VkFormat{
         [_]c.VkFormat{ c.VK_FORMAT_R8_SINT, c.VK_FORMAT_R8_SNORM },
@@ -64,7 +67,7 @@ const AttributeType = [@typeInfo(gfx.VertexComponentType).@"enum".fields.len][4]
 pub fn create(
     program: gfx.ProgramHandle,
     render_pass: c.VkRenderPass,
-    vertex_layout: gfx.VertexLayout,
+    vertex_layout: types.VertexLayout,
 ) !c.VkPipeline {
     const binding_description = std.mem.zeroInit(
         c.VkVertexInputBindingDescription,

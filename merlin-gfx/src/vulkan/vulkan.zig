@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 
 const platform = @import("merlin_platform");
 const utils = @import("merlin_utils");
+const types = utils.gfx_types;
 
 const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
@@ -37,7 +38,7 @@ pub const MaxDescriptorSets = 1024;
 
 const PipelineKey = struct {
     program: gfx.ProgramHandle,
-    layout: gfx.VertexLayout,
+    layout: types.VertexLayout,
 };
 
 // *********************************************************************************************
@@ -150,7 +151,7 @@ fn recreateSwapChain() !void {
 
 fn getPipeline(
     program: gfx.ProgramHandle,
-    layout: *gfx.VertexLayout,
+    layout: *types.VertexLayout,
 ) !c.VkPipeline {
     const key = PipelineKey{
         .program = program,
@@ -456,7 +457,7 @@ pub fn getSwapchainSize() [2]u32 {
     };
 }
 
-pub fn createShader(data: *const gfx.ShaderData) !gfx.ShaderHandle {
+pub fn createShader(data: *const types.ShaderData) !gfx.ShaderHandle {
     return shaders.create(data);
 }
 
@@ -481,7 +482,7 @@ pub fn destroyProgram(handle: gfx.ProgramHandle) void {
 
 pub fn createVertexBuffer(
     data: []const u8,
-    layout: gfx.VertexLayout,
+    layout: types.VertexLayout,
 ) !gfx.VertexBufferHandle {
     return vertex_buffers.create(
         transfer_command_pool,
@@ -497,7 +498,7 @@ pub fn destroyVertexBuffer(handle: gfx.VertexBufferHandle) void {
 
 pub fn createIndexBuffer(
     data: []const u8,
-    index_type: gfx.IndexType,
+    index_type: types.IndexType,
 ) !gfx.IndexBufferHandle {
     return index_buffers.create(
         transfer_command_pool,
@@ -784,9 +785,9 @@ pub fn drawIndexed(
     };
 
     const index_type: c_uint = switch (index_buffers.getIndexType(current_index_buffer.?)) {
-        gfx.IndexType.u8 => c.VK_INDEX_TYPE_UINT8_EXT,
-        gfx.IndexType.u16 => c.VK_INDEX_TYPE_UINT16,
-        gfx.IndexType.u32 => c.VK_INDEX_TYPE_UINT32,
+        .u8 => c.VK_INDEX_TYPE_UINT8_EXT,
+        .u16 => c.VK_INDEX_TYPE_UINT16,
+        .u32 => c.VK_INDEX_TYPE_UINT32,
     };
 
     main_command_buffers.bindIndexBuffer(

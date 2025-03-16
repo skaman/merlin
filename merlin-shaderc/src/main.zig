@@ -1,8 +1,8 @@
 const std = @import("std");
 
 const clap = @import("clap");
-const gfx = @import("merlin_gfx");
 const utils = @import("merlin_utils");
+const gfx_types = utils.gfx_types;
 
 const reflect = @import("reflect.zig");
 
@@ -61,22 +61,22 @@ pub fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
 
 pub fn saveFile(
     path: []const u8,
-    shader_type: gfx.ShaderType,
+    shader_type: gfx_types.ShaderType,
     data: []align(@alignOf(u32)) const u8,
-    input_attributes: []const gfx.ShaderInputAttribute,
-    descriptor_sets: []const gfx.DescriptorSet,
+    input_attributes: []const gfx_types.ShaderInputAttribute,
+    descriptor_sets: []const gfx_types.DescriptorSet,
 ) !void {
     var file = try std.fs.cwd().createFile(path, .{});
     defer file.close();
 
-    const shader_data = gfx.ShaderData{
+    const shader_data = gfx_types.ShaderData{
         .type = shader_type,
         .data = data,
         .input_attributes = input_attributes,
         .descriptor_sets = descriptor_sets,
     };
 
-    try utils.Serializer.writeHeader(file.writer(), gfx.ShaderMagic, gfx.ShaderVersion);
+    try utils.Serializer.writeHeader(file.writer(), gfx_types.ShaderMagic, gfx_types.ShaderVersion);
     try utils.Serializer.write(file.writer(), shader_data);
 }
 
@@ -98,7 +98,7 @@ pub fn printHelp() !void {
 }
 
 const StageExtensionMapEntry = struct {
-    stage: gfx.ShaderType,
+    stage: gfx_types.ShaderType,
     extension: []const u8,
 };
 
@@ -107,7 +107,7 @@ const StageExtensionMap = [_]StageExtensionMapEntry{
     .{ .stage = .fragment, .extension = ".frag" },
 };
 
-const StageMap = [@typeInfo(gfx.ShaderType).@"enum".fields.len]c.shaderc_shader_kind{
+const StageMap = [@typeInfo(gfx_types.ShaderType).@"enum".fields.len]c.shaderc_shader_kind{
     c.shaderc_glsl_vertex_shader,
     c.shaderc_glsl_fragment_shader,
 };
@@ -141,7 +141,7 @@ pub fn main() !void {
         return printHelp();
     }
 
-    var shader_type: ?gfx.ShaderType = null;
+    var shader_type: ?gfx_types.ShaderType = null;
     for (StageExtensionMap) |map_entry| {
         if (std.mem.endsWith(u8, source_file.?, map_entry.extension)) {
             shader_type = map_entry.stage;
@@ -179,7 +179,7 @@ pub fn main() !void {
 
     const input_attributes = switch (shader_type.?) {
         .vertex => try shader_reflect.getInputAttributes(allocator, std_out),
-        else => &[_]gfx.ShaderInputAttribute{},
+        else => &[_]gfx_types.ShaderInputAttribute{},
     };
     defer {
         if (shader_type.? == .vertex) {

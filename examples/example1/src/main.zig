@@ -2,6 +2,8 @@ const std = @import("std");
 
 const gfx = @import("merlin_gfx");
 const platform = @import("merlin_platform");
+const utils = @import("merlin_utils");
+const gfx_types = utils.gfx_types;
 const zm = @import("zmath");
 
 const Vertices = [_][8]f32{
@@ -92,7 +94,7 @@ pub fn main() !void {
     const texture_handle = try loadTexture(allocator, "uv_texture.ktx");
     defer gfx.destroyTexture(texture_handle);
 
-    var vertex_layout = gfx.VertexLayout.init();
+    var vertex_layout = gfx_types.VertexLayout.init();
     vertex_layout.add(.position, 3, .f32, false);
     vertex_layout.add(.color_0, 3, .f32, false);
     vertex_layout.add(.tex_coord_0, 2, .f32, false);

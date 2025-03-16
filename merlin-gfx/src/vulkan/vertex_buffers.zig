@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const utils = @import("merlin_utils");
+const types = utils.gfx_types;
 
 const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
@@ -12,7 +13,7 @@ const vk = @import("vulkan.zig");
 
 pub const VertexBuffer = struct {
     buffer: vk.buffer.Buffer,
-    layout: gfx.VertexLayout,
+    layout: types.VertexLayout,
 };
 
 // *********************************************************************************************
@@ -41,7 +42,7 @@ pub fn deinit() void {
 pub fn create(
     command_pool: c.VkCommandPool,
     queue: c.VkQueue,
-    layout: gfx.VertexLayout,
+    layout: types.VertexLayout,
     data: []const u8,
 ) !gfx.VertexBufferHandle {
     var staging_buffer = try vk.buffer.create(
@@ -112,6 +113,6 @@ pub inline fn getBuffer(handle: gfx.VertexBufferHandle) c.VkBuffer {
     return vertex_buffers[handle].buffer.handle;
 }
 
-pub inline fn getLayout(handle: gfx.VertexBufferHandle) *gfx.VertexLayout {
+pub inline fn getLayout(handle: gfx.VertexBufferHandle) *types.VertexLayout {
     return &vertex_buffers[handle].layout;
 }

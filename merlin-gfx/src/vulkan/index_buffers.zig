@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const utils = @import("merlin_utils");
+const types = utils.gfx_types;
 
 const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
@@ -12,7 +13,7 @@ const vk = @import("vulkan.zig");
 
 const IndexBuffer = struct {
     buffer: vk.buffer.Buffer,
-    index_type: gfx.IndexType,
+    index_type: types.IndexType,
 };
 
 // *********************************************************************************************
@@ -42,7 +43,7 @@ pub fn create(
     command_pool: c.VkCommandPool,
     queue: c.VkQueue,
     data: []const u8,
-    index_type: gfx.IndexType,
+    index_type: types.IndexType,
 ) !gfx.IndexBufferHandle {
     std.debug.assert(queue != null);
     std.debug.assert(data.len > 0);
@@ -115,6 +116,6 @@ pub inline fn getBuffer(handle: gfx.IndexBufferHandle) c.VkBuffer {
     return index_buffers[handle].buffer.handle;
 }
 
-pub inline fn getIndexType(handle: gfx.IndexBufferHandle) gfx.IndexType {
+pub inline fn getIndexType(handle: gfx.IndexBufferHandle) types.IndexType {
     return index_buffers[handle].index_type;
 }

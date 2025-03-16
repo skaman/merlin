@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const utils = @import("merlin_utils");
+const types = utils.gfx_types;
 
 const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
@@ -24,7 +25,7 @@ const UniformCombinedSamplerEntry = struct {
     ref_count: u32,
 };
 
-const UniformEntry = union(gfx.DescriptorBindType) {
+const UniformEntry = union(types.DescriptorBindType) {
     uniform: UniformBufferEntry,
     combined_sampler: UniformCombinedSamplerEntry,
 };

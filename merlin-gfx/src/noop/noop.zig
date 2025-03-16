@@ -1,5 +1,8 @@
 const std = @import("std");
 
+const utils = @import("merlin_utils");
+const types = utils.gfx_types;
+
 const gfx = @import("../gfx.zig");
 
 pub fn init(_: std.mem.Allocator, _: *const gfx.Options) !void {}
@@ -7,7 +10,7 @@ pub fn deinit() void {}
 pub fn getSwapchainSize() [2]u32 {
     return .{ 0, 0 };
 }
-pub fn createShader(_: *const gfx.ShaderData) !gfx.ShaderHandle {
+pub fn createShader(_: *const types.ShaderData) !gfx.ShaderHandle {
     return 0;
 }
 pub fn destroyShader(_: gfx.ShaderHandle) void {}
@@ -15,11 +18,11 @@ pub fn createProgram(_: gfx.ShaderHandle, _: gfx.ShaderHandle) !gfx.ProgramHandl
     return 0;
 }
 pub fn destroyProgram(_: gfx.ProgramHandle) void {}
-pub fn createVertexBuffer(_: []const u8, _: gfx.VertexLayout) !gfx.VertexBufferHandle {
+pub fn createVertexBuffer(_: []const u8, _: types.VertexLayout) !gfx.VertexBufferHandle {
     return 0;
 }
 pub fn destroyVertexBuffer(_: gfx.VertexBufferHandle) void {}
-pub fn createIndexBuffer(_: []const u8, _: gfx.IndexType) !gfx.IndexBufferHandle {
+pub fn createIndexBuffer(_: []const u8, _: types.IndexType) !gfx.IndexBufferHandle {
     return 0;
 }
 pub fn destroyIndexBuffer(_: gfx.IndexBufferHandle) void {}

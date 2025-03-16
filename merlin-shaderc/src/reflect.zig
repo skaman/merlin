@@ -1,6 +1,7 @@
 const std = @import("std");
 
-const gfx = @import("merlin_gfx");
+const utils = @import("merlin_utils");
+const gfx_types = utils.gfx_types;
 
 const c = @cImport({
     @cInclude("spirv_reflect.h");
@@ -12,7 +13,7 @@ const c = @cImport({
 
 const AttributeMapEntry = struct {
     name: []const u8,
-    attribute: gfx.VertexAttributeType,
+    attribute: gfx_types.VertexAttributeType,
 };
 
 const AttributeMap = [_]AttributeMapEntry{
@@ -62,7 +63,7 @@ pub const ShaderReflect = struct {
         self: *ShaderReflect,
         allocator: std.mem.Allocator,
         std_out: anytype,
-    ) ![]gfx.ShaderInputAttribute {
+    ) ![]gfx_types.ShaderInputAttribute {
         var input_variable_count: u32 = 0;
         if (c.spvReflectEnumerateInputVariables(
             &self.shader_module,
@@ -89,7 +90,7 @@ pub const ShaderReflect = struct {
         }
 
         const result = try allocator.alloc(
-            gfx.ShaderInputAttribute,
+            gfx_types.ShaderInputAttribute,
             input_variable_count,
         );
         errdefer allocator.free(result);
@@ -97,7 +98,7 @@ pub const ShaderReflect = struct {
         try std_out.print("Input variables:\n", .{});
         for (input_variables, 0..) |input, i| {
             try std_out.print("  - {s} (location={d})\n", .{ input.name, input.location });
-            var attribute: ?gfx.VertexAttributeType = null;
+            var attribute: ?gfx_types.VertexAttributeType = null;
             for (AttributeMap) |entry| {
                 if (std.mem.eql(u8, std.mem.sliceTo(input.name, 0), entry.name)) {
                     attribute = entry.attribute;
@@ -122,7 +123,7 @@ pub const ShaderReflect = struct {
         self: *ShaderReflect,
         allocator: std.mem.Allocator,
         std_out: anytype,
-    ) ![]gfx.DescriptorSet {
+    ) ![]gfx_types.DescriptorSet {
         var descriptor_set_count: u32 = 0;
         if (c.spvReflectEnumerateDescriptorSets(
             &self.shader_module,
@@ -149,7 +150,7 @@ pub const ShaderReflect = struct {
         }
 
         const result = try allocator.alloc(
-            gfx.DescriptorSet,
+            gfx_types.DescriptorSet,
             descriptor_set_count,
         );
         errdefer allocator.free(result);
@@ -183,9 +184,9 @@ pub const ShaderReflect = struct {
         allocator: std.mem.Allocator,
         descriptor_set: *c.SpvReflectDescriptorSet,
         std_out: anytype,
-    ) ![]gfx.DescriptorBinding {
+    ) ![]gfx_types.DescriptorBinding {
         const result = try allocator.alloc(
-            gfx.DescriptorBinding,
+            gfx_types.DescriptorBinding,
             descriptor_set.binding_count,
         );
         errdefer allocator.free(result);
@@ -201,8 +202,8 @@ pub const ShaderReflect = struct {
             const binding = descriptor_set.bindings[i];
 
             const descriptor_type = switch (binding.*.descriptor_type) {
-                c.SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER => gfx.DescriptorBindType.uniform,
-                c.SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => gfx.DescriptorBindType.combined_sampler,
+                c.SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER => gfx_types.DescriptorBindType.uniform,
+                c.SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => gfx_types.DescriptorBindType.combined_sampler,
                 else => return error.UnsupportedDescriptorType,
             };
 
@@ -210,8 +211,8 @@ pub const ShaderReflect = struct {
                 .name = try allocator.dupe(u8, std.mem.sliceTo(binding.*.name, 0)),
                 .binding = binding.*.binding,
                 .size = switch (descriptor_type) {
-                    gfx.DescriptorBindType.uniform => binding.*.block.size,
-                    gfx.DescriptorBindType.combined_sampler => 0,
+                    gfx_types.DescriptorBindType.uniform => binding.*.block.size,
+                    gfx_types.DescriptorBindType.combined_sampler => 0,
                 },
                 .type = descriptor_type,
             };
@@ -221,8 +222,8 @@ pub const ShaderReflect = struct {
                 result[i].name,
                 result[i].binding,
                 switch (result[i].type) {
-                    gfx.DescriptorBindType.uniform => "uniform",
-                    gfx.DescriptorBindType.combined_sampler => "combined sampler",
+                    gfx_types.DescriptorBindType.uniform => "uniform",
+                    gfx_types.DescriptorBindType.combined_sampler => "combined sampler",
                 },
                 std.fmt.fmtIntSizeDec(result[i].size),
             });

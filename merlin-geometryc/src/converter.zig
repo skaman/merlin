@@ -1,6 +1,8 @@
 const std = @import("std");
 
 const gfx = @import("merlin_gfx");
+const utils = @import("merlin_utils");
+const gfx_types = utils.gfx_types;
 
 const c = @import("c.zig").c;
 const Gltf = @import("gltf.zig").Gltf;
@@ -9,7 +11,7 @@ const Gltf = @import("gltf.zig").Gltf;
 // Private API
 // *********************************************************************************************
 
-fn attributeTypeFromGfx(attribute: gfx.VertexAttributeType) c.cgltf_attribute_type {
+fn attributeTypeFromGfx(attribute: gfx_types.VertexAttributeType) c.cgltf_attribute_type {
     return switch (attribute) {
         .position => c.cgltf_attribute_type_position,
         .normal => c.cgltf_attribute_type_normal,
@@ -42,7 +44,7 @@ fn componentCountFromCgltf(type_: c.cgltf_type) !u8 {
     };
 }
 
-fn componentTypeFromCgltf(component: c.cgltf_component_type) !gfx.VertexComponentType {
+fn componentTypeFromCgltf(component: c.cgltf_component_type) !gfx_types.VertexComponentType {
     return switch (component) {
         c.cgltf_component_type_r_8 => .i8,
         c.cgltf_component_type_r_8u => .u8,
@@ -54,7 +56,7 @@ fn componentTypeFromCgltf(component: c.cgltf_component_type) !gfx.VertexComponen
     };
 }
 
-fn indexTypeFromCgltf(component: c.cgltf_component_type) !gfx.IndexType {
+fn indexTypeFromCgltf(component: c.cgltf_component_type) !gfx_types.IndexType {
     return switch (component) {
         c.cgltf_component_type_r_8u => .u8,
         c.cgltf_component_type_r_16u => .u16,
@@ -64,8 +66,8 @@ fn indexTypeFromCgltf(component: c.cgltf_component_type) !gfx.IndexType {
 }
 
 fn addVertexAttribute(
-    vertex_layout: *gfx.VertexLayout,
-    attribute_type: gfx.VertexAttributeType,
+    vertex_layout: *gfx_types.VertexLayout,
+    attribute_type: gfx_types.VertexAttributeType,
     gltf: Gltf,
     mesh_index: usize,
     primitive_index: usize,
@@ -109,8 +111,8 @@ fn calculateVertexLayout(
     color: bool,
     weight: bool,
     tex_coord: bool,
-) !gfx.VertexLayout {
-    var vertex_layout = gfx.VertexLayout.init();
+) !gfx_types.VertexLayout {
+    var vertex_layout = gfx_types.VertexLayout.init();
 
     try addVertexAttribute(
         &vertex_layout,
@@ -178,7 +180,7 @@ fn createVertexBuffer(
     gltf: Gltf,
     mesh_index: usize,
     primitive_index: usize,
-    vertex_layout: gfx.VertexLayout,
+    vertex_layout: gfx_types.VertexLayout,
 ) ![]const u8 {
     const num_vertices = gltf.getMeshPrimitiveVerticesCount(
         mesh_index,
@@ -191,7 +193,7 @@ fn createVertexBuffer(
 
     for (0..vertex_layout.attributes.len) |attribute_index| {
         const attribute = &vertex_layout.attributes[attribute_index];
-        const attribute_type: gfx.VertexAttributeType = @enumFromInt(attribute_index);
+        const attribute_type: gfx_types.VertexAttributeType = @enumFromInt(attribute_index);
         if (attribute.num == 0) continue;
 
         const gltf_attribute_index = gltf.findMeshPrimitiveAttributeIndex(
@@ -272,9 +274,9 @@ fn createIndexBuffer(
 
 pub const MeshPrimitive = struct {
     allocator: std.mem.Allocator,
-    vertex_layout: gfx.VertexLayout,
+    vertex_layout: gfx_types.VertexLayout,
     vertex_data: []const u8,
-    index_type: gfx.IndexType,
+    index_type: gfx_types.IndexType,
     index_data: []const u8,
     num_vertices: usize,
     num_indices: usize,

@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const utils = @import("merlin_utils");
+const types = utils.gfx_types;
 
 const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
@@ -38,14 +39,14 @@ var programs_to_destroy_count: u32 = 0;
 // Private API
 // *********************************************************************************************
 
-fn convertBindingType(bind_type: gfx.DescriptorBindType) c.VkDescriptorType {
+fn convertBindingType(bind_type: types.DescriptorBindType) c.VkDescriptorType {
     return switch (bind_type) {
         .uniform => c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .combined_sampler => c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
     };
 }
 
-fn convertDescriptorSetLayoutBinding(binding: gfx.DescriptorBinding) c.VkDescriptorSetLayoutBinding {
+fn convertDescriptorSetLayoutBinding(binding: types.DescriptorBinding) c.VkDescriptorSetLayoutBinding {
     return c.VkDescriptorSetLayoutBinding{
         .binding = binding.binding,
         .descriptorType = convertBindingType(binding.type),

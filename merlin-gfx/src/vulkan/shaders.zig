@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const utils = @import("merlin_utils");
+const types = utils.gfx_types;
 
 const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
@@ -12,9 +13,9 @@ const vk = @import("vulkan.zig");
 
 const Shader = struct {
     handle: c.VkShaderModule,
-    input_attributes: [vk.pipeline.MaxVertexAttributes]gfx.ShaderInputAttribute,
+    input_attributes: [vk.pipeline.MaxVertexAttributes]types.ShaderInputAttribute,
     input_attribute_count: u8,
-    descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]gfx.DescriptorSet,
+    descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]types.DescriptorSet,
     descriptor_set_count: u8,
 };
 
@@ -41,7 +42,7 @@ pub fn deinit() void {
     shader_handles.deinit();
 }
 
-pub fn create(data: *const gfx.ShaderData) !gfx.ShaderHandle {
+pub fn create(data: *const types.ShaderData) !gfx.ShaderHandle {
     if (data.input_attributes.len > vk.pipeline.MaxVertexAttributes) {
         vk.log.err("Input attributes count exceeds maximum vertex attributes", .{});
         return error.MaxVertexAttributesExceeded;
@@ -114,10 +115,10 @@ pub inline fn getShaderModule(handle: gfx.ShaderHandle) c.VkShaderModule {
     return shaders[handle].handle;
 }
 
-pub inline fn getInputAttributes(handle: gfx.ShaderHandle) []gfx.ShaderInputAttribute {
+pub inline fn getInputAttributes(handle: gfx.ShaderHandle) []types.ShaderInputAttribute {
     return shaders[handle].input_attributes[0..shaders[handle].input_attribute_count];
 }
 
-pub inline fn getDescriptorSets(handle: gfx.ShaderHandle) []gfx.DescriptorSet {
+pub inline fn getDescriptorSets(handle: gfx.ShaderHandle) []types.DescriptorSet {
     return shaders[handle].descriptor_sets[0..shaders[handle].descriptor_set_count];
 }

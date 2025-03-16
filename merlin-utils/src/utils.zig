@@ -1,6 +1,8 @@
-pub const std = @import("std");
+const std = @import("std");
 const expect = std.testing.expect;
 const builtin = @import("builtin");
+
+pub const gfx_types = @import("gfx_types.zig");
 
 const dbg = builtin.mode == std.builtin.Mode.Debug;
 

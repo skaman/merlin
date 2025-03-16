@@ -3,6 +3,7 @@ const std = @import("std");
 const clap = @import("clap");
 const gfx = @import("merlin_gfx");
 const utils = @import("merlin_utils");
+const gfx_types = utils.gfx_types;
 
 const c = @import("c.zig").c;
 const converter = @import("converter.zig");
@@ -42,12 +43,12 @@ const Params = clap.parseParamsComptime(
 pub fn saveVertexFile(
     path: []const u8,
     data: []const u8,
-    vertex_layout: gfx.VertexLayout,
+    vertex_layout: gfx_types.VertexLayout,
 ) !void {
     var file = try std.fs.cwd().createFile(path, .{});
     defer file.close();
 
-    try utils.Serializer.writeHeader(file.writer(), gfx.VertexBufferMagic, gfx.VertexBufferVersion);
+    try utils.Serializer.writeHeader(file.writer(), gfx_types.VertexBufferMagic, gfx_types.VertexBufferVersion);
     try utils.Serializer.write(file.writer(), vertex_layout);
     try utils.Serializer.write(file.writer(), data);
 }
@@ -55,12 +56,12 @@ pub fn saveVertexFile(
 pub fn saveIndexFile(
     path: []const u8,
     data: []const u8,
-    index_type: gfx.IndexType,
+    index_type: gfx_types.IndexType,
 ) !void {
     var file = try std.fs.cwd().createFile(path, .{});
     defer file.close();
 
-    try utils.Serializer.writeHeader(file.writer(), gfx.IndexBufferMagic, gfx.IndexBufferVersion);
+    try utils.Serializer.writeHeader(file.writer(), gfx_types.IndexBufferMagic, gfx_types.IndexBufferVersion);
     try utils.Serializer.write(file.writer(), index_type);
     try utils.Serializer.write(file.writer(), data);
 }
@@ -213,7 +214,7 @@ pub fn main() !void {
         try std_out.print("  - Vertex Buffer Elements Count: {d}\n", .{primitive.num_vertices});
 
         for (primitive.vertex_layout.attributes, 0..) |attribute, attribute_index| {
-            const attribute_type: gfx.VertexAttributeType = @enumFromInt(attribute_index);
+            const attribute_type: gfx_types.VertexAttributeType = @enumFromInt(attribute_index);
             if (attribute.num == 0) continue;
 
             try std_out.print("  - Vertex Buffer Attribute {d}: component={s}, type={s}, num={d}, normalized={}, offset={d}\n", .{
