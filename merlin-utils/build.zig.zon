@@ -1,0 +1,13 @@
+.{
+    .name = .merlin_utils,
+    .version = "0.0.0",
+    .fingerprint = 0xdf982c1a7497d1fe,
+
+    .dependencies = .{},
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

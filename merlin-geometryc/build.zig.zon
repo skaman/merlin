@@ -4,8 +4,11 @@
     .fingerprint = 0x6c26be6350e0937d,
 
     .dependencies = .{
-        .merlin_core_layer = .{
-            .path = "../merlin-core-layer",
+        .merlin_gfx = .{
+            .path = "../merlin-gfx",
+        },
+        .merlin_utils = .{
+            .path = "../merlin-utils",
         },
         .clap = .{
             .path = "../vendor/zig-clap",

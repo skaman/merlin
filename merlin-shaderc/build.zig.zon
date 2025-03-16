@@ -4,8 +4,11 @@
     .fingerprint = 0xf0353bff9578ece8,
 
     .dependencies = .{
-        .merlin_core_layer = .{
-            .path = "../merlin-core-layer",
+        .merlin_gfx = .{
+            .path = "../merlin-gfx",
+        },
+        .merlin_utils = .{
+            .path = "../merlin-utils",
         },
         .libshaderc = .{
             .path = "../vendor/shaderc",

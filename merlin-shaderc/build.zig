@@ -5,7 +5,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const merlin_core_layer = b.dependency("merlin_core_layer", .{
+    const merlin_gfx = b.dependency("merlin_gfx", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const merlin_utils = b.dependency("merlin_utils", .{
         .target = target,
         .optimize = optimize,
     });
@@ -34,13 +38,13 @@ pub fn build(b: *std.Build) !void {
     });
     b.installArtifact(shaderc);
 
-    shaderc.linkLibC();
     shaderc.linkLibrary(libshaderc.artifact("libshaderc"));
     shaderc.addIncludePath(b.path("../vendor/shaderc/upstream/libshaderc/include"));
     shaderc.linkLibrary(spirv_reflect.artifact("spirv_reflect"));
     shaderc.addIncludePath(b.path("../vendor/spirv-reflect/upstream"));
 
-    shaderc.root_module.addImport("merlin_core_layer", merlin_core_layer.module("merlin_core_layer"));
+    shaderc.root_module.addImport("merlin_gfx", merlin_gfx.module("merlin_gfx"));
+    shaderc.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
     shaderc.root_module.addImport("clap", clap.module("clap"));
 
     const run_cmd = b.addRunArtifact(shaderc);

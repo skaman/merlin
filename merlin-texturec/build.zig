@@ -5,7 +5,11 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const merlin_core_layer = b.dependency("merlin_core_layer", .{
+    const merlin_gfx = b.dependency("merlin_gfx", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const merlin_utils = b.dependency("merlin_utils", .{
         .target = target,
         .optimize = optimize,
     });
@@ -38,7 +42,8 @@ pub fn build(b: *std.Build) !void {
     });
     b.installArtifact(texturec);
 
-    texturec.root_module.addImport("merlin_core_layer", merlin_core_layer.module("merlin_core_layer"));
+    texturec.root_module.addImport("merlin_gfx", merlin_gfx.module("merlin_gfx"));
+    texturec.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
     texturec.root_module.addImport("clap", clap.module("clap"));
 
     texturec.linkLibrary(stb.artifact("stb"));

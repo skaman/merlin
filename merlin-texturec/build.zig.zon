@@ -4,8 +4,11 @@
     .fingerprint = 0x22359c88be4ff1f,
 
     .dependencies = .{
-        .merlin_core_layer = .{
-            .path = "../merlin-core-layer",
+        .merlin_gfx = .{
+            .path = "../merlin-gfx",
+        },
+        .merlin_utils = .{
+            .path = "../merlin-utils",
         },
         .stb = .{
             .path = "../vendor/stb",

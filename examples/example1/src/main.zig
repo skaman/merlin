@@ -1,9 +1,8 @@
 const std = @import("std");
 
-const mcl = @import("merlin_core_layer");
-const gfx = mcl.gfx;
-const zm = mcl.zmath;
-const platform = mcl.platform;
+const gfx = @import("merlin_gfx");
+const platform = @import("merlin_platform");
+const zm = @import("zmath");
 
 const Vertices = [_][8]f32{
     [_]f32{ -0.5, -0.5, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0 },
@@ -53,14 +52,27 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
-    try mcl.init(
+    try platform.init(
         allocator,
         .{
-            .window_title = "Example 1",
+            .type = .glfw,
+            .window = .{
+                .width = 800,
+                .height = 600,
+                .title = "Example 1",
+            },
+        },
+    );
+    defer platform.deinit();
+
+    try gfx.init(
+        allocator,
+        .{
+            .renderer_type = .vulkan,
             .enable_vulkan_debug = true,
         },
     );
-    defer mcl.deinit();
+    defer gfx.deinit();
 
     const exe_path = try std.fs.selfExeDirPathAlloc(allocator);
     defer allocator.free(exe_path);

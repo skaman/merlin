@@ -1,0 +1,20 @@
+.{
+    .name = .merlin_platform,
+    .version = "0.0.0",
+    .fingerprint = 0x83412071ee4b0153,
+
+    .dependencies = .{
+        .merlin_utils = .{
+            .path = "../merlin-utils",
+        },
+        .glfw = .{
+            .path = "../vendor/glfw",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

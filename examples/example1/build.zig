@@ -53,7 +53,21 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const merlin_core_layer = b.dependency("merlin_core_layer", .{
+    const merlin_platform = b.dependency("merlin_platform", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const merlin_utils = b.dependency("merlin_utils", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    const merlin_gfx = b.dependency("merlin_gfx", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const zmath = b.dependency("zmath", .{
         .target = target,
         .optimize = optimize,
     });
@@ -81,7 +95,10 @@ pub fn build(b: *std.Build) !void {
     try addTextures(b, &textures);
 
     b.installArtifact(example1);
-    example1.root_module.addImport("merlin_core_layer", merlin_core_layer.module("merlin_core_layer"));
+    example1.root_module.addImport("merlin_platform", merlin_platform.module("merlin_platform"));
+    example1.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
+    example1.root_module.addImport("merlin_gfx", merlin_gfx.module("merlin_gfx"));
+    example1.root_module.addImport("zmath", zmath.module("root"));
 
     const run_cmd = b.addRunArtifact(example1);
     run_cmd.step.dependOn(b.getInstallStep());

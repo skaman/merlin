@@ -4,14 +4,23 @@
     .fingerprint = 0x59117d43dfdf490e,
 
     .dependencies = .{
-        .merlin_core_layer = .{
-            .path = "../../merlin-core-layer",
+        .merlin_platform = .{
+            .path = "../../merlin-platform",
+        },
+        .merlin_utils = .{
+            .path = "../../merlin-utils",
+        },
+        .merlin_gfx = .{
+            .path = "../../merlin-gfx",
         },
         .merlin_shaderc = .{
             .path = "../../merlin-shaderc",
         },
         .merlin_texturec = .{
             .path = "../../merlin-texturec",
+        },
+        .zmath = .{
+            .path = "../../vendor/zmath",
         },
     },
 

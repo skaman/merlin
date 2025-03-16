@@ -1,7 +1,6 @@
 const std = @import("std");
 
-const mcl = @import("merlin_core_layer");
-const gfx = mcl.gfx;
+const gfx = @import("merlin_gfx");
 
 const c = @import("c.zig").c;
 const Gltf = @import("gltf.zig").Gltf;

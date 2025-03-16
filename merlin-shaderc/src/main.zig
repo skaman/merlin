@@ -1,9 +1,8 @@
 const std = @import("std");
 
 const clap = @import("clap");
-const mcl = @import("merlin_core_layer");
-const gfx = mcl.gfx;
-const utils = mcl.utils;
+const gfx = @import("merlin_gfx");
+const utils = @import("merlin_utils");
 
 const reflect = @import("reflect.zig");
 
