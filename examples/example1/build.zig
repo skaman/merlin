@@ -49,6 +49,40 @@ fn addTextures(
     }
 }
 
+const SourceMesh = struct {
+    source: []const u8,
+    output: []const u8,
+    normal: bool = false,
+};
+
+fn addMeshes(
+    b: *std.Build,
+    meshes: []const SourceMesh,
+) !void {
+    const merlin_geometryc = b.dependency("merlin_geometryc", .{
+        .optimize = std.builtin.OptimizeMode.ReleaseFast,
+    });
+    const geometryc_exe = merlin_geometryc.artifact("merlin-geometryc");
+
+    for (meshes) |mesh| {
+        //const extension = std.fs.path.extension(mesh.output);
+        //const mesh_without_extension = mesh[0..(mesh.len - extension.len)];
+
+        const tool_step = b.addRunArtifact(geometryc_exe);
+        if (mesh.normal) {
+            tool_step.addArg("-n");
+        }
+        tool_step.addFileArg(b.path(mesh.source));
+        const output = tool_step.addOutputDirectoryArg(mesh.output);
+
+        b.getInstallStep().dependOn(&b.addInstallDirectory(.{
+            .source_dir = output,
+            .install_dir = .bin,
+            .install_subdir = mesh.output,
+        }).step);
+    }
+}
+
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -93,6 +127,11 @@ pub fn build(b: *std.Build) !void {
         "assets/uv_texture.png",
     };
     try addTextures(b, &textures);
+
+    const meshes = [_]SourceMesh{
+        SourceMesh{ .source = "assets/Box/Box.gltf", .output = "assets/Box", .normal = true },
+    };
+    try addMeshes(b, &meshes);
 
     b.installArtifact(example1);
     example1.root_module.addImport("merlin_platform", merlin_platform.module("merlin_platform"));

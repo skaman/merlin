@@ -19,6 +19,9 @@
         .merlin_texturec = .{
             .path = "../../merlin-texturec",
         },
+        .merlin_geometryc = .{
+            .path = "../../merlin-geometryc",
+        },
         .zmath = .{
             .path = "../../vendor/zmath",
         },

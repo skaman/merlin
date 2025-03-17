@@ -15,7 +15,7 @@ const Gltf = @import("gltf.zig").Gltf;
 
 const Options = struct {
     input_file: []const u8,
-    output_file: []const u8,
+    output_dir: []const u8,
     mesh_index: usize,
     normal: bool,
     tangent: bool,
@@ -33,7 +33,7 @@ const Params = clap.parseParamsComptime(
     \\-w, --weight              Include weight attribute.
     \\-T, --tex-coord           Include texture coordinate attribute.
     \\<IN_FILE>                 Source file.
-    \\<OUT_FILE>                Output file.
+    \\<OUT_DIR>                 Output directory.
 );
 
 // *********************************************************************************************
@@ -82,38 +82,42 @@ fn invalidArgument(writer: anytype, name: []const u8) !void {
     return error.InvalidArgument;
 }
 
-fn getVertexBufferName(
+fn getOutputFileName(
     allocator: std.mem.Allocator,
-    mesh_filename: []const u8,
-    primitive_index: usize,
+    output_dir: []const u8,
+    filename: []const u8,
 ) ![]const u8 {
-    const basename = std.fs.path.stem(mesh_filename);
-    const path = std.fs.path.dirname(mesh_filename) orelse ".";
-    const filename = try std.fmt.allocPrint(
-        allocator,
-        "{s}.vertex.{d}.bin",
-        .{ basename, primitive_index },
-    );
-    defer allocator.free(filename);
-
-    return try std.fs.path.join(allocator, &[_][]const u8{ path, filename });
+    return try std.fs.path.join(allocator, &[_][]const u8{ output_dir, filename });
 }
 
-fn getIndexBufferName(
+fn getOutputVertexBufferFileName(
     allocator: std.mem.Allocator,
-    mesh_filename: []const u8,
+    output_dir: []const u8,
     primitive_index: usize,
 ) ![]const u8 {
-    const basename = std.fs.path.stem(mesh_filename);
-    const path = std.fs.path.dirname(mesh_filename) orelse ".";
     const filename = try std.fmt.allocPrint(
         allocator,
-        "{s}.index.{d}.bin",
-        .{ basename, primitive_index },
+        "vertex.{d}.bin",
+        .{primitive_index},
     );
     defer allocator.free(filename);
 
-    return try std.fs.path.join(allocator, &[_][]const u8{ path, filename });
+    return try getOutputFileName(allocator, output_dir, filename);
+}
+
+fn getOutputIndexBufferFileName(
+    allocator: std.mem.Allocator,
+    output_dir: []const u8,
+    primitive_index: usize,
+) ![]const u8 {
+    const filename = try std.fmt.allocPrint(
+        allocator,
+        "index.{d}.bin",
+        .{primitive_index},
+    );
+    defer allocator.free(filename);
+
+    return try getOutputFileName(allocator, output_dir, filename);
 }
 
 // *********************************************************************************************
@@ -131,7 +135,7 @@ pub fn main() !void {
 
     const parsers = comptime .{
         .IN_FILE = clap.parsers.string,
-        .OUT_FILE = clap.parsers.string,
+        .OUT_DIR = clap.parsers.string,
         .INDEX = clap.parsers.int(u32, 10),
     };
 
@@ -151,7 +155,7 @@ pub fn main() !void {
 
     const options = Options{
         .input_file = if (res.positionals[0]) |value| value else return invalidArgument(std_err, "IN_FILE"),
-        .output_file = if (res.positionals[1]) |value| value else return invalidArgument(std_err, "OUT_FILE"),
+        .output_dir = if (res.positionals[1]) |value| value else return invalidArgument(std_err, "OUT_DIR"),
         .mesh_index = res.args.mesh orelse 0,
         .normal = res.args.normal != 0,
         .tangent = res.args.tangent != 0,
@@ -162,7 +166,7 @@ pub fn main() !void {
 
     try std_out.print("Mesh Options:\n", .{});
     try std_out.print("  - Input File: {s}\n", .{options.input_file});
-    try std_out.print("  - Output File: {s}\n", .{options.output_file});
+    try std_out.print("  - Output Dir: {s}\n", .{options.output_dir});
     try std_out.print("  - Mesh Index: {d}\n", .{options.mesh_index});
     try std_out.print("  - Normal: {}\n", .{options.normal});
     try std_out.print("  - Tangent: {}\n", .{options.tangent});
@@ -191,19 +195,35 @@ pub fn main() !void {
     );
     defer mesh.deinit();
 
+    if (std.fs.path.isAbsolute(options.output_dir)) {
+        std.fs.makeDirAbsolute(options.output_dir) catch |err| {
+            if (err != error.PathAlreadyExists) {
+                std.log.err("Unable to make output directory absolute: {s}", .{@errorName(err)});
+                return err;
+            }
+        };
+    } else {
+        std.fs.cwd().makeDir(options.output_dir) catch |err| {
+            if (err != error.PathAlreadyExists) {
+                std.log.err("Unable to make output directory: {s}", .{@errorName(err)});
+                return err;
+            }
+        };
+    }
+
     try std_out.print("\n", .{});
     for (mesh.primitives, 0..) |*primitive, index| {
         try std_out.print("Mesh Informations (Primitive {d}):\n", .{index});
-        const vertex_buffer_name = try getVertexBufferName(
+        const vertex_buffer_name = try getOutputVertexBufferFileName(
             allocator,
-            options.output_file,
+            options.output_dir,
             index,
         );
         defer allocator.free(vertex_buffer_name);
 
-        const index_buffer_name = try getIndexBufferName(
+        const index_buffer_name = try getOutputIndexBufferFileName(
             allocator,
-            options.output_file,
+            options.output_dir,
             index,
         );
         defer allocator.free(index_buffer_name);
