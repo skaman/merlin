@@ -10,7 +10,7 @@ pub fn deinit() void {}
 pub fn getSwapchainSize() [2]u32 {
     return .{ 0, 0 };
 }
-pub fn createShader(_: *const types.ShaderData) !gfx.ShaderHandle {
+pub fn createShader(_: utils.loaders.ShaderLoader) !gfx.ShaderHandle {
     return 0;
 }
 pub fn destroyShader(_: gfx.ShaderHandle) void {}
@@ -18,11 +18,11 @@ pub fn createProgram(_: gfx.ShaderHandle, _: gfx.ShaderHandle) !gfx.ProgramHandl
     return 0;
 }
 pub fn destroyProgram(_: gfx.ProgramHandle) void {}
-pub fn createVertexBuffer(_: []const u8, _: types.VertexLayout) !gfx.VertexBufferHandle {
+pub fn createVertexBuffer(_: utils.loaders.VertexBufferLoader) !gfx.VertexBufferHandle {
     return 0;
 }
 pub fn destroyVertexBuffer(_: gfx.VertexBufferHandle) void {}
-pub fn createIndexBuffer(_: []const u8, _: types.IndexType) !gfx.IndexBufferHandle {
+pub fn createIndexBuffer(_: utils.loaders.IndexBufferLoader) !gfx.IndexBufferHandle {
     return 0;
 }
 pub fn destroyIndexBuffer(_: gfx.IndexBufferHandle) void {}
@@ -35,7 +35,7 @@ pub fn createCombinedSampler(_: []const u8) !gfx.UniformHandle {
     return 0;
 }
 pub fn destroyCombinedSampler(_: gfx.UniformHandle) void {}
-pub fn createTexture(_: std.io.AnyReader) !gfx.TextureHandle {
+pub fn createTexture(_: utils.loaders.TextureLoader) !gfx.TextureHandle {
     return 0;
 }
 pub fn destroyTexture(_: gfx.TextureHandle) void {}

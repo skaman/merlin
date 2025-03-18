@@ -48,20 +48,20 @@ const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
     getSwapchainSize: *const fn () [2]u32,
-    createShader: *const fn (data: *const types.ShaderData) anyerror!ShaderHandle,
+    createShader: *const fn (loader: utils.loaders.ShaderLoader) anyerror!ShaderHandle,
     destroyShader: *const fn (handle: ShaderHandle) void,
     createProgram: *const fn (vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!ProgramHandle,
     destroyProgram: *const fn (handle: ProgramHandle) void,
-    createVertexBuffer: *const fn (data: []const u8, layout: types.VertexLayout) anyerror!VertexBufferHandle,
+    createVertexBuffer: *const fn (loader: utils.loaders.VertexBufferLoader) anyerror!VertexBufferHandle,
     destroyVertexBuffer: *const fn (handle: VertexBufferHandle) void,
-    createIndexBuffer: *const fn (data: []const u8, index_type: types.IndexType) anyerror!IndexBufferHandle,
+    createIndexBuffer: *const fn (loader: utils.loaders.IndexBufferLoader) anyerror!IndexBufferHandle,
     destroyIndexBuffer: *const fn (handle: IndexBufferHandle) void,
     createUniformBuffer: *const fn (name: []const u8, size: u32) anyerror!UniformHandle,
     destroyUniformBuffer: *const fn (handle: UniformHandle) void,
     updateUniformBuffer: *const fn (handle: UniformHandle, data: []const u8) anyerror!void,
     createCombinedSampler: *const fn (name: []const u8) anyerror!UniformHandle,
     destroyCombinedSampler: *const fn (handle: UniformHandle) void,
-    createTexture: *const fn (reader: std.io.AnyReader) anyerror!TextureHandle,
+    createTexture: *const fn (loader: utils.loaders.TextureLoader) anyerror!TextureHandle,
     destroyTexture: *const fn (handle: TextureHandle) void,
     beginFrame: *const fn () anyerror!bool,
     endFrame: *const fn () anyerror!void,
@@ -219,32 +219,10 @@ pub inline fn setModelViewProj(mvp: ModelViewProj) void {
     );
 }
 
-pub fn createShader(reader: std.io.AnyReader) !ShaderHandle {
+pub fn createShader(loader: utils.loaders.ShaderLoader) !ShaderHandle {
     std.debug.assert(initialized);
 
-    try utils.Serializer.checkHeader(reader, types.ShaderMagic, types.ShaderVersion);
-    const shader_data = try utils.Serializer.read(
-        types.ShaderData,
-        arena,
-        reader,
-    );
-
-    return try v_tab.createShader(&shader_data);
-}
-
-pub fn createShaderFromMemory(data: []const u8) !ShaderHandle {
-    std.debug.assert(initialized);
-    var stream = std.io.fixedBufferStream(data);
-    return try createShader(stream.reader().any());
-}
-
-pub fn createShaderFromFile(path: []const u8) !ShaderHandle {
-    std.debug.assert(initialized);
-
-    var file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    return try createShader(file.reader().any());
+    return try v_tab.createShader(loader);
 }
 
 pub inline fn destroyShader(handle: ShaderHandle) void {
@@ -262,9 +240,9 @@ pub inline fn destroyProgram(handle: ProgramHandle) void {
     v_tab.destroyProgram(handle);
 }
 
-pub inline fn createVertexBuffer(data: []const u8, layout: types.VertexLayout) !VertexBufferHandle {
+pub inline fn createVertexBuffer(loader: utils.loaders.VertexBufferLoader) !VertexBufferHandle {
     std.debug.assert(initialized);
-    return try v_tab.createVertexBuffer(data, layout);
+    return try v_tab.createVertexBuffer(loader);
 }
 
 pub inline fn destroyVertexBuffer(handle: VertexBufferHandle) void {
@@ -272,9 +250,9 @@ pub inline fn destroyVertexBuffer(handle: VertexBufferHandle) void {
     v_tab.destroyVertexBuffer(handle);
 }
 
-pub inline fn createIndexBuffer(data: []const u8, index_type: types.IndexType) !IndexBufferHandle {
+pub inline fn createIndexBuffer(loader: utils.loaders.IndexBufferLoader) !IndexBufferHandle {
     std.debug.assert(initialized);
-    return try v_tab.createIndexBuffer(data, index_type);
+    return try v_tab.createIndexBuffer(loader);
 }
 
 pub inline fn destroyIndexBuffer(handle: IndexBufferHandle) void {
@@ -309,18 +287,9 @@ pub inline fn destroyCombinedSampler(handle: UniformHandle) void {
     v_tab.destroyCombinedSampler(handle);
 }
 
-pub inline fn createTexture(reader: std.io.AnyReader) !TextureHandle {
+pub inline fn createTexture(loader: utils.loaders.TextureLoader) !TextureHandle {
     std.debug.assert(initialized);
-    return try v_tab.createTexture(reader);
-}
-
-pub fn createTextureFromFile(path: []const u8) !TextureHandle {
-    std.debug.assert(initialized);
-
-    var file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    return try createTexture(file.reader().any());
+    return try v_tab.createTexture(loader);
 }
 
 pub inline fn destroyTexture(handle: TextureHandle) void {

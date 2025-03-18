@@ -457,8 +457,8 @@ pub fn getSwapchainSize() [2]u32 {
     };
 }
 
-pub fn createShader(data: *const types.ShaderData) !gfx.ShaderHandle {
-    return shaders.create(data);
+pub fn createShader(loader: utils.loaders.ShaderLoader) !gfx.ShaderHandle {
+    return shaders.create(loader);
 }
 
 pub fn destroyShader(handle: gfx.ShaderHandle) void {
@@ -481,14 +481,12 @@ pub fn destroyProgram(handle: gfx.ProgramHandle) void {
 }
 
 pub fn createVertexBuffer(
-    data: []const u8,
-    layout: types.VertexLayout,
+    loader: utils.loaders.VertexBufferLoader,
 ) !gfx.VertexBufferHandle {
     return vertex_buffers.create(
         transfer_command_pool,
         transfer_queue,
-        layout,
-        data,
+        loader,
     );
 }
 
@@ -497,14 +495,12 @@ pub fn destroyVertexBuffer(handle: gfx.VertexBufferHandle) void {
 }
 
 pub fn createIndexBuffer(
-    data: []const u8,
-    index_type: types.IndexType,
+    loader: utils.loaders.IndexBufferLoader,
 ) !gfx.IndexBufferHandle {
     return index_buffers.create(
         transfer_command_pool,
         transfer_queue,
-        data,
-        index_type,
+        loader,
     );
 }
 
@@ -552,11 +548,11 @@ pub fn destroyCombinedSampler(handle: gfx.UniformHandle) void {
     log.debug("Destroyed combined sampler with handle {d}", .{handle});
 }
 
-pub fn createTexture(reader: std.io.AnyReader) !gfx.TextureHandle {
+pub fn createTexture(loader: utils.loaders.TextureLoader) !gfx.TextureHandle {
     return textures.create(
         transfer_command_pool,
         transfer_queue,
-        reader,
+        loader,
     );
 }
 

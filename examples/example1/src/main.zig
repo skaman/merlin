@@ -34,18 +34,40 @@ fn getAssetPath(allocator: std.mem.Allocator, asset_name: []const u8) ![]const u
     });
 }
 
-fn loadShader(allocator: std.mem.Allocator, shader_name: []const u8) !gfx.ShaderHandle {
-    const shader_path = try getAssetPath(allocator, shader_name);
-    defer allocator.free(shader_path);
+fn loadShader(allocator: std.mem.Allocator, filename: []const u8) !gfx.ShaderHandle {
+    const path = try getAssetPath(allocator, filename);
+    defer allocator.free(path);
 
-    return try gfx.createShaderFromFile(shader_path);
+    var file_loader = utils.loaders.ShaderFileLoader{ .filename = path };
+    const loader = utils.loaders.ShaderLoader.from(&file_loader, utils.loaders.ShaderFileLoader);
+    return try gfx.createShader(loader);
 }
 
-fn loadTexture(allocator: std.mem.Allocator, texture_name: []const u8) !gfx.TextureHandle {
-    const texture_path = try getAssetPath(allocator, texture_name);
-    defer allocator.free(texture_path);
+fn loadTexture(allocator: std.mem.Allocator, filename: []const u8) !gfx.TextureHandle {
+    const path = try getAssetPath(allocator, filename);
+    defer allocator.free(path);
 
-    return try gfx.createTextureFromFile(texture_path);
+    var file_loader = utils.loaders.TextureFileLoader{ .filename = path };
+    const loader = utils.loaders.TextureLoader.from(&file_loader, utils.loaders.TextureFileLoader);
+    return try gfx.createTexture(loader);
+}
+
+fn loadVertexBuffer(allocator: std.mem.Allocator, filename: []const u8) !gfx.TextureHandle {
+    const path = try getAssetPath(allocator, filename);
+    defer allocator.free(path);
+
+    var file_loader = utils.loaders.VertexBufferFileLoader{ .filename = path };
+    const loader = utils.loaders.VertexBufferLoader.from(&file_loader, utils.loaders.VertexBufferFileLoader);
+    return try gfx.createVertexBuffer(loader);
+}
+
+fn loadIndexBuffer(allocator: std.mem.Allocator, filename: []const u8) !gfx.TextureHandle {
+    const path = try getAssetPath(allocator, filename);
+    defer allocator.free(path);
+
+    var file_loader = utils.loaders.IndexBufferFileLoader{ .filename = path };
+    const loader = utils.loaders.IndexBufferLoader.from(&file_loader, utils.loaders.IndexBufferFileLoader);
+    return try gfx.createIndexBuffer(loader);
 }
 
 pub fn main() !void {
@@ -94,22 +116,36 @@ pub fn main() !void {
     const texture_handle = try loadTexture(allocator, "uv_texture.ktx");
     defer gfx.destroyTexture(texture_handle);
 
-    var vertex_layout = gfx_types.VertexLayout.init();
-    vertex_layout.add(.position, 3, .f32, false);
-    vertex_layout.add(.color_0, 3, .f32, false);
-    vertex_layout.add(.tex_coord_0, 2, .f32, false);
-
-    const vertex_buffer_handle = try gfx.createVertexBuffer(
-        std.mem.sliceAsBytes(&Vertices),
-        vertex_layout,
-    );
+    const vertex_buffer_handle = try loadVertexBuffer(allocator, "Box/vertex.0.bin");
     defer gfx.destroyVertexBuffer(vertex_buffer_handle);
 
-    const index_buffer_handle = try gfx.createIndexBuffer(
-        std.mem.sliceAsBytes(&Indices),
-        .u16,
-    );
+    const index_buffer_handle = try loadIndexBuffer(allocator, "Box/index.0.bin");
     defer gfx.destroyIndexBuffer(index_buffer_handle);
+
+    //var vertex_layout = gfx_types.VertexLayout.init();
+    //vertex_layout.add(.position, 3, .f32, false);
+    //vertex_layout.add(.color_0, 3, .f32, false);
+    //vertex_layout.add(.tex_coord_0, 2, .f32, false);
+
+    //var vertex_buffer_loader = utils.loaders.VertexBufferMemoryLoader{
+    //    .layout = vertex_layout,
+    //    .data = std.mem.sliceAsBytes(&Vertices),
+    //};
+
+    //const vertex_buffer_handle = try gfx.createVertexBuffer(
+    //    utils.loaders.VertexBufferLoader.from(&vertex_buffer_loader, utils.loaders.VertexBufferMemoryLoader),
+    //);
+    //defer gfx.destroyVertexBuffer(vertex_buffer_handle);
+
+    //var index_buffer_loader = utils.loaders.IndexBufferMemoryLoader{
+    //    .index_type = .u16,
+    //    .data = std.mem.sliceAsBytes(&Indices),
+    //};
+
+    //const index_buffer_handle = try gfx.createIndexBuffer(
+    //    utils.loaders.IndexBufferLoader.from(&index_buffer_loader, utils.loaders.IndexBufferMemoryLoader),
+    //);
+    //defer gfx.destroyIndexBuffer(index_buffer_handle);
 
     const start_time = std.time.microTimestamp();
     var last_current_time = start_time;
@@ -163,7 +199,7 @@ pub fn main() !void {
         gfx.bindVertexBuffer(vertex_buffer_handle);
         gfx.bindIndexBuffer(index_buffer_handle);
         gfx.bindTexture(texture_handle, sampler_handle);
-        gfx.drawIndexed(Indices.len, 1, 0, 0, 0);
+        gfx.drawIndexed(36, 1, 0, 0, 0);
 
         gfx.endFrame() catch |err| {
             std.log.err("Failed to end frame: {}", .{err});

@@ -6,8 +6,6 @@ const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
 const vk = @import("vulkan.zig");
 
-const MaxBufferSize = 256 * 1024 * 1024; // 256 MB max for a texture. Should be more than enough.
-
 // *********************************************************************************************
 // Structs
 // *********************************************************************************************
@@ -101,14 +99,11 @@ pub fn deinit() void {
 pub fn create(
     command_pool: c.VkCommandPool,
     transfer_queue: c.VkQueue,
-    reader: std.io.AnyReader,
+    loader: utils.loaders.TextureLoader,
 ) !gfx.TextureHandle {
     // TODO: use a specialized arena?
     // TODO: Optimize this without using a temporary buffer?
-    const data = try reader.readAllAlloc(
-        vk.arena,
-        MaxBufferSize,
-    );
+    const data = try loader.read(vk.arena);
 
     var ktx_texture: *c.ktxTexture2 = undefined;
     try checkKtxError(

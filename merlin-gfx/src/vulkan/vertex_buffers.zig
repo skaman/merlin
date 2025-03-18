@@ -42,11 +42,17 @@ pub fn deinit() void {
 pub fn create(
     command_pool: c.VkCommandPool,
     queue: c.VkQueue,
-    layout: types.VertexLayout,
-    data: []const u8,
+    loader: utils.loaders.VertexBufferLoader,
 ) !gfx.VertexBufferHandle {
+    var local_loader = loader;
+    try local_loader.open();
+    defer local_loader.close();
+
+    const layout = try local_loader.readLayout(vk.gpa);
+    const data_size = try local_loader.readDataSize();
+
     var staging_buffer = try vk.buffer.create(
-        @intCast(data.len),
+        @intCast(data_size),
         c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
     );
@@ -56,16 +62,16 @@ pub fn create(
     try vk.device.mapMemory(
         staging_buffer.memory,
         0,
-        @intCast(data.len),
+        @intCast(data_size),
         0,
         @ptrCast(&mapped_data),
     );
     defer vk.device.unmapMemory(staging_buffer.memory);
 
-    @memcpy(mapped_data[0..data.len], data);
+    try local_loader.readData(mapped_data[0..data_size]);
 
     var buffer = try vk.buffer.create(
-        @intCast(data.len),
+        @intCast(data_size),
         c.VK_BUFFER_USAGE_TRANSFER_DST_BIT | c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
     );
@@ -76,7 +82,7 @@ pub fn create(
         queue,
         staging_buffer.handle,
         buffer.handle,
-        @intCast(data.len),
+        @intCast(data_size),
     );
 
     const handle = try vertex_buffer_handles.alloc();

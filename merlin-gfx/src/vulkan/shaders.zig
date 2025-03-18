@@ -42,7 +42,9 @@ pub fn deinit() void {
     shader_handles.deinit();
 }
 
-pub fn create(data: *const types.ShaderData) !gfx.ShaderHandle {
+pub fn create(loader: utils.loaders.ShaderLoader) !gfx.ShaderHandle {
+    const data = try loader.read(vk.arena);
+
     if (data.input_attributes.len > vk.pipeline.MaxVertexAttributes) {
         vk.log.err("Input attributes count exceeds maximum vertex attributes", .{});
         return error.MaxVertexAttributesExceeded;

@@ -3,6 +3,7 @@ const expect = std.testing.expect;
 const builtin = @import("builtin");
 
 pub const gfx_types = @import("gfx_types.zig");
+pub const loaders = @import("loaders.zig");
 
 const dbg = builtin.mode == std.builtin.Mode.Debug;
 
@@ -54,7 +55,8 @@ pub fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
 
 // From https://codeberg.org/hDS9HQLN/ztsl
 pub const Serializer = struct {
-    const Endian = std.builtin.Endian.little;
+    pub const HeaderSize = @sizeOf(u32) + @sizeOf(u8);
+    pub const Endian = std.builtin.Endian.little;
 
     pub fn writeHeader(writer: anytype, magic: u32, version: u8) !void {
         try writer.writeInt(u32, magic, Endian);
