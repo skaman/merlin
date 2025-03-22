@@ -3,13 +3,7 @@ const std = @import("std");
 const utils = @import("merlin_utils");
 const gfx_types = utils.gfx_types;
 
-const c = @cImport({
-    @cInclude("spirv_reflect.h");
-});
-
-//pub const Variable = struct {
-//    attribute: shared.Attribute,
-//};
+const c = @import("c.zig").c;
 
 const AttributeMapEntry = struct {
     name: []const u8,
@@ -37,6 +31,46 @@ const AttributeMap = [_]AttributeMapEntry{
     AttributeMapEntry{ .name = "a_texcoord7", .attribute = .tex_coord_7 },
 };
 
+pub const DescriptorSets = struct {
+    allocator: std.mem.Allocator,
+    sets: []gfx_types.DescriptorSet,
+
+    pub fn deinit(self: *const DescriptorSets) void {
+        for (self.sets) |descriptor_set| {
+            for (descriptor_set.bindings) |binding| {
+                self.allocator.free(binding.name);
+            }
+            self.allocator.free(descriptor_set.bindings);
+        }
+        self.allocator.free(self.sets);
+    }
+};
+
+pub const InputAttributes = struct {
+    allocator: std.mem.Allocator,
+    attributes: []gfx_types.ShaderInputAttribute,
+    input_variables: []InputVariable,
+
+    pub fn deinit(self: *const InputAttributes) void {
+        self.allocator.free(self.attributes);
+
+        for (self.input_variables) |input_variable| {
+            input_variable.deinit();
+        }
+        self.allocator.free(self.input_variables);
+    }
+};
+
+pub const InputVariable = struct {
+    allocator: std.mem.Allocator,
+    name: []const u8,
+    location: u32,
+
+    pub fn deinit(self: *const InputVariable) void {
+        self.allocator.free(self.name);
+    }
+};
+
 pub const ShaderReflect = struct {
     shader_module: c.SpvReflectShaderModule,
 
@@ -59,11 +93,10 @@ pub const ShaderReflect = struct {
         c.spvReflectDestroyShaderModule(&self.shader_module);
     }
 
-    pub fn getInputAttributes(
+    pub fn inputAttributes(
         self: *ShaderReflect,
         allocator: std.mem.Allocator,
-        std_out: anytype,
-    ) ![]gfx_types.ShaderInputAttribute {
+    ) !InputAttributes {
         var input_variable_count: u32 = 0;
         if (c.spvReflectEnumerateInputVariables(
             &self.shader_module,
@@ -74,16 +107,21 @@ pub const ShaderReflect = struct {
             return error.FailedEnumerateInputVariables;
         }
 
-        const input_variables = try allocator.alloc(
+        const spv_input_variables = try allocator.alloc(
             *c.SpvReflectInterfaceVariable,
             input_variable_count,
         );
-        defer allocator.free(input_variables);
+        defer allocator.free(spv_input_variables);
+
+        var input_variables = try allocator.alloc(
+            InputVariable,
+            input_variable_count,
+        );
 
         if (c.spvReflectEnumerateInputVariables(
             &self.shader_module,
             &input_variable_count,
-            @ptrCast(input_variables.ptr),
+            @ptrCast(spv_input_variables.ptr),
         ) != c.SPV_REFLECT_RESULT_SUCCESS) {
             std.log.err("Failed to enumerate input variables", .{});
             return error.FailedEnumerateInputVariables;
@@ -95,12 +133,19 @@ pub const ShaderReflect = struct {
         );
         errdefer allocator.free(result);
 
-        try std_out.print("Input variables:\n", .{});
-        for (input_variables, 0..) |input, i| {
-            try std_out.print("  - {s} (location={d})\n", .{ input.name, input.location });
+        for (spv_input_variables, 0..) |input, i| {
+            input_variables[i] = .{
+                .allocator = allocator,
+                .name = try allocator.dupe(u8, std.mem.sliceTo(input.name, 0)),
+                .location = input.location,
+            };
             var attribute: ?gfx_types.VertexAttributeType = null;
             for (AttributeMap) |entry| {
-                if (std.mem.eql(u8, std.mem.sliceTo(input.name, 0), entry.name)) {
+                if (std.mem.eql(
+                    u8,
+                    std.mem.sliceTo(input.name, 0),
+                    entry.name,
+                )) {
                     attribute = entry.attribute;
                     break;
                 }
@@ -116,14 +161,18 @@ pub const ShaderReflect = struct {
             };
         }
 
-        return result;
+        return .{
+            .allocator = allocator,
+            .attributes = result,
+            .input_variables = input_variables,
+        };
     }
 
-    pub fn getDescriptorSets(
+    pub fn descriptorSets(
         self: *ShaderReflect,
         allocator: std.mem.Allocator,
-        std_out: anytype,
-    ) ![]gfx_types.DescriptorSet {
+        //std_out: anytype,
+    ) !DescriptorSets {
         var descriptor_set_count: u32 = 0;
         if (c.spvReflectEnumerateDescriptorSets(
             &self.shader_module,
@@ -166,24 +215,23 @@ pub const ShaderReflect = struct {
         }
 
         for (descriptor_sets, 0..) |descriptor_set, i| {
-            try std_out.print("Descriptor set {d}:\n", .{descriptor_set.set});
+            //try std_out.print("Descriptor set {d}:\n", .{descriptor_set.set});
 
             result[i].set = descriptor_set.set;
-            result[i].bindings = try parseDescriptorSet(
-                allocator,
-                descriptor_set,
-                std_out,
-            );
+            result[i].bindings = try parseDescriptorSet(allocator, descriptor_set);
             loaded_descriptor_sets += 1;
         }
 
-        return result;
+        return .{
+            .allocator = allocator,
+            .sets = result,
+        };
     }
 
     fn parseDescriptorSet(
         allocator: std.mem.Allocator,
         descriptor_set: *c.SpvReflectDescriptorSet,
-        std_out: anytype,
+        //std_out: anytype,
     ) ![]gfx_types.DescriptorBinding {
         const result = try allocator.alloc(
             gfx_types.DescriptorBinding,
@@ -218,15 +266,15 @@ pub const ShaderReflect = struct {
             };
             loaded_bindings += 1;
 
-            try std_out.print("  - {s} (binding={d}, type={s}, size={s})\n", .{
-                result[i].name,
-                result[i].binding,
-                switch (result[i].type) {
-                    gfx_types.DescriptorBindType.uniform => "uniform",
-                    gfx_types.DescriptorBindType.combined_sampler => "combined sampler",
-                },
-                std.fmt.fmtIntSizeDec(result[i].size),
-            });
+            //try std_out.print("  - {s} (binding={d}, type={s}, size={s})\n", .{
+            //    result[i].name,
+            //    result[i].binding,
+            //    switch (result[i].type) {
+            //        gfx_types.DescriptorBindType.uniform => "uniform",
+            //        gfx_types.DescriptorBindType.combined_sampler => "combined sampler",
+            //    },
+            //    std.fmt.fmtIntSizeDec(result[i].size),
+            //});
         }
 
         return result;

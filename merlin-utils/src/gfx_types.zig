@@ -28,11 +28,11 @@ pub const IndexType = enum(u8) {
         4, // u32
     };
 
-    pub inline fn getSize(self: IndexType) u8 {
+    pub inline fn size(self: IndexType) u8 {
         return SizeTable[@intFromEnum(self)];
     }
 
-    pub fn getName(self: IndexType) []const u8 {
+    pub fn name(self: IndexType) []const u8 {
         return switch (self) {
             .u8 => "u8",
             .u16 => "u16",
@@ -44,6 +44,13 @@ pub const IndexType = enum(u8) {
 pub const DescriptorBindType = enum(u8) {
     uniform,
     combined_sampler,
+
+    pub fn name(self: DescriptorBindType) []const u8 {
+        return switch (self) {
+            .uniform => "uniform",
+            .combined_sampler => "combined_sampler",
+        };
+    }
 };
 
 pub const DescriptorBinding = struct {
@@ -95,7 +102,7 @@ pub const VertexAttributeType = enum(u8) {
     tex_coord_6,
     tex_coord_7,
 
-    pub fn getName(self: VertexAttributeType) []const u8 {
+    pub fn name(self: VertexAttributeType) []const u8 {
         return switch (self) {
             .position => "position",
             .normal => "normal",
@@ -136,13 +143,13 @@ pub const VertexComponentType = enum(u8) {
         [_]u8{ 4, 8, 12, 16 }, // f32
     };
 
-    pub inline fn getSize(self: VertexComponentType, num: u8) u8 {
-        std.debug.assert(num < SizeTable[0].len);
+    pub inline fn size(self: VertexComponentType, num: u8) u8 {
+        std.debug.assert(num <= SizeTable[0].len);
 
         return SizeTable[@intFromEnum(self)][num - 1];
     }
 
-    pub fn getName(self: VertexComponentType) []const u8 {
+    pub fn name(self: VertexComponentType) []const u8 {
         return switch (self) {
             .i8 => "i8",
             .u8 => "u8",
@@ -187,7 +194,7 @@ pub const VertexLayout = struct {
         normalized: bool,
     ) void {
         const index = @intFromEnum(attribute);
-        const size = type_.getSize(num);
+        const size = type_.size(num);
 
         self.attributes[index] = .{
             .normalized = normalized,

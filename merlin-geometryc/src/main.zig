@@ -1,13 +1,9 @@
 const std = @import("std");
 
 const clap = @import("clap");
-const gfx = @import("merlin_gfx");
-const utils = @import("merlin_utils");
-const gfx_types = utils.gfx_types;
+const gltf = @import("merlin_gltf");
 
-const c = @import("c.zig").c;
-const converter = @import("converter.zig");
-const Gltf = @import("gltf.zig").Gltf;
+const geometryc = @import("geometryc.zig");
 
 // *********************************************************************************************
 // Structs
@@ -16,55 +12,23 @@ const Gltf = @import("gltf.zig").Gltf;
 const Options = struct {
     input_file: []const u8,
     output_dir: []const u8,
-    mesh_index: usize,
-    normal: bool,
-    tangent: bool,
-    color: bool,
-    weight: bool,
-    tex_coord: bool,
+    conversion_options: geometryc.Options,
 };
 
 const Params = clap.parseParamsComptime(
-    \\-h, --help                Display this help and exit.
-    \\-c, --mesh <INDEX>        Mesh index to extract. Default is 0.
-    \\-n, --normal              Include normal attribute.
-    \\-t, --tangent             Include tangent attribute.
-    \\-C, --color               Include color attribute.
-    \\-w, --weight              Include weight attribute.
-    \\-T, --tex-coord           Include texture coordinate attribute.
-    \\<IN_FILE>                 Source file.
-    \\<OUT_DIR>                 Output directory.
+    \\-h, --help                    Display this help and exit.
+    \\-n, --normal <ENABLED>        Include normal attribute (1/0). Default is 1.
+    \\-t, --tangent <ENABLED>       Include tangent attribute (1/0). Default is 0.
+    \\-C, --color <ENABLED>         Include color attribute (1/0). Default is 0.
+    \\-w, --weight <ENABLED>        Include weight attribute (1/0). Default is 0.
+    \\-T, --tex-coord <ENABLED>     Include texture coordinate attribute (1/0). Default is 1.
+    \\<IN_FILE>                     Source file.
+    \\<OUT_DIR>                     Output directory.
 );
 
 // *********************************************************************************************
 // Private API
 // *********************************************************************************************
-
-pub fn saveVertexFile(
-    path: []const u8,
-    data: []const u8,
-    vertex_layout: gfx_types.VertexLayout,
-) !void {
-    var file = try std.fs.cwd().createFile(path, .{});
-    defer file.close();
-
-    try utils.Serializer.writeHeader(file.writer(), gfx_types.VertexBufferMagic, gfx_types.VertexBufferVersion);
-    try utils.Serializer.write(file.writer(), vertex_layout);
-    try utils.Serializer.write(file.writer(), data);
-}
-
-pub fn saveIndexFile(
-    path: []const u8,
-    data: []const u8,
-    index_type: gfx_types.IndexType,
-) !void {
-    var file = try std.fs.cwd().createFile(path, .{});
-    defer file.close();
-
-    try utils.Serializer.writeHeader(file.writer(), gfx_types.IndexBufferMagic, gfx_types.IndexBufferVersion);
-    try utils.Serializer.write(file.writer(), index_type);
-    try utils.Serializer.write(file.writer(), data);
-}
 
 fn printHelp(writer: anytype) !void {
     try writer.print("Usage: merlin-geometryc [options] <IN_FILE> <OUT_FILE>\n", .{});
@@ -93,12 +57,13 @@ fn getOutputFileName(
 fn getOutputVertexBufferFileName(
     allocator: std.mem.Allocator,
     output_dir: []const u8,
+    mesh_index: usize,
     primitive_index: usize,
 ) ![]const u8 {
     const filename = try std.fmt.allocPrint(
         allocator,
-        "vertex.{d}.bin",
-        .{primitive_index},
+        "vertex.{d}.{d}.bin",
+        .{ mesh_index, primitive_index },
     );
     defer allocator.free(filename);
 
@@ -108,12 +73,13 @@ fn getOutputVertexBufferFileName(
 fn getOutputIndexBufferFileName(
     allocator: std.mem.Allocator,
     output_dir: []const u8,
+    mesh_index: usize,
     primitive_index: usize,
 ) ![]const u8 {
     const filename = try std.fmt.allocPrint(
         allocator,
-        "index.{d}.bin",
-        .{primitive_index},
+        "index.{d}.{d}.bin",
+        .{ mesh_index, primitive_index },
     );
     defer allocator.free(filename);
 
@@ -136,7 +102,7 @@ pub fn main() !void {
     const parsers = comptime .{
         .IN_FILE = clap.parsers.string,
         .OUT_DIR = clap.parsers.string,
-        .INDEX = clap.parsers.int(u32, 10),
+        .ENABLED = clap.parsers.int(u1, 10),
     };
 
     var diag = clap.Diagnostic{};
@@ -153,52 +119,59 @@ pub fn main() !void {
         return printHelp(std_out);
     }
 
-    const options = Options{
+    var options = Options{
         .input_file = if (res.positionals[0]) |value| value else return invalidArgument(std_err, "IN_FILE"),
         .output_dir = if (res.positionals[1]) |value| value else return invalidArgument(std_err, "OUT_DIR"),
-        .mesh_index = res.args.mesh orelse 0,
-        .normal = res.args.normal != 0,
-        .tangent = res.args.tangent != 0,
-        .color = res.args.color != 0,
-        .weight = res.args.weight != 0,
-        .tex_coord = res.args.@"tex-coord" != 0,
+        .conversion_options = .{},
     };
 
-    try std_out.print("Mesh Options:\n", .{});
-    try std_out.print("  - Input File: {s}\n", .{options.input_file});
-    try std_out.print("  - Output Dir: {s}\n", .{options.output_dir});
-    try std_out.print("  - Mesh Index: {d}\n", .{options.mesh_index});
-    try std_out.print("  - Normal: {}\n", .{options.normal});
-    try std_out.print("  - Tangent: {}\n", .{options.tangent});
-    try std_out.print("  - Color: {}\n", .{options.color});
-    try std_out.print("  - Weight: {}\n", .{options.weight});
-    try std_out.print("  - Tex Coord: {}\n", .{options.tex_coord});
-    try std_out.print("\n", .{});
+    if (res.args.normal) |value| {
+        options.conversion_options.attribute_normal = value != 0;
+    }
+    if (res.args.tangent) |value| {
+        options.conversion_options.attribute_tangent = value != 0;
+    }
+    if (res.args.color) |value| {
+        options.conversion_options.attribute_color = value != 0;
+    }
+    if (res.args.weight) |value| {
+        options.conversion_options.attribute_weight = value != 0;
+    }
+    if (res.args.@"tex-coord") |value| {
+        options.conversion_options.attribute_tex_coord = value != 0;
+    }
 
-    try std_out.print("Loading glTF file...\n", .{});
-    const gltf = try Gltf.init(
+    try std_out.print("Mesh options:\n", .{});
+    try std_out.print("  - Input file: {s}\n", .{options.input_file});
+    try std_out.print("  - Output dir: {s}\n", .{options.output_dir});
+    try std_out.print("Selected attributes:\n", .{});
+    try std_out.print("  - Position\n", .{});
+    if (options.conversion_options.attribute_normal) {
+        try std_out.print("  - Normal\n", .{});
+    }
+    if (options.conversion_options.attribute_tangent) {
+        try std_out.print("  - Tangent\n", .{});
+    }
+    if (options.conversion_options.attribute_color) {
+        try std_out.print("  - Color\n", .{});
+    }
+    if (options.conversion_options.attribute_weight) {
+        try std_out.print("  - Weight\n", .{});
+    }
+    if (options.conversion_options.attribute_tex_coord) {
+        try std_out.print("  - Texture Coordinate\n", .{});
+    }
+
+    const source = try gltf.Gltf.load(
         allocator,
         options.input_file,
     );
-    defer gltf.deinit();
-
-    try std_out.print("Creating mesh...\n", .{});
-    const mesh = try converter.Mesh.init(
-        allocator,
-        gltf,
-        options.mesh_index,
-        options.normal,
-        options.tangent,
-        options.color,
-        options.weight,
-        options.tex_coord,
-    );
-    defer mesh.deinit();
+    defer source.deinit();
 
     if (std.fs.path.isAbsolute(options.output_dir)) {
         std.fs.makeDirAbsolute(options.output_dir) catch |err| {
             if (err != error.PathAlreadyExists) {
-                std.log.err("Unable to make output directory absolute: {s}", .{@errorName(err)});
+                std.log.err("Unable to make output directory: {s}", .{@errorName(err)});
                 return err;
             }
         };
@@ -211,57 +184,63 @@ pub fn main() !void {
         };
     }
 
-    try std_out.print("\n", .{});
-    for (mesh.primitives, 0..) |*primitive, index| {
-        try std_out.print("Mesh Informations (Primitive {d}):\n", .{index});
-        const vertex_buffer_name = try getOutputVertexBufferFileName(
-            allocator,
-            options.output_dir,
-            index,
-        );
-        defer allocator.free(vertex_buffer_name);
+    for (0..source.meshCount()) |mesh_index| {
+        const mesh = source.mesh(mesh_index);
 
-        const index_buffer_name = try getOutputIndexBufferFileName(
-            allocator,
-            options.output_dir,
-            index,
-        );
-        defer allocator.free(index_buffer_name);
+        for (0..mesh.primitiveCount()) |primitive_index| {
+            try std_out.print("Mesh Informations (Primitive {d}):\n", .{primitive_index});
 
-        try std_out.print("  - Vertex Buffer File: {s}\n", .{vertex_buffer_name});
-        try std_out.print("  - Vertex Buffer Size: {s}\n", .{std.fmt.fmtIntSizeDec(primitive.vertex_data.len)});
-        try std_out.print("  - Vertex Buffer Stride: {d}\n", .{primitive.vertex_layout.stride});
-        try std_out.print("  - Vertex Buffer Elements Count: {d}\n", .{primitive.num_vertices});
+            const vertex_buffer_name = try getOutputVertexBufferFileName(
+                allocator,
+                options.output_dir,
+                mesh_index,
+                primitive_index,
+            );
+            defer allocator.free(vertex_buffer_name);
 
-        for (primitive.vertex_layout.attributes, 0..) |attribute, attribute_index| {
-            const attribute_type: gfx_types.VertexAttributeType = @enumFromInt(attribute_index);
-            if (attribute.num == 0) continue;
+            const index_buffer_name = try getOutputIndexBufferFileName(
+                allocator,
+                options.output_dir,
+                mesh_index,
+                primitive_index,
+            );
+            defer allocator.free(index_buffer_name);
 
-            try std_out.print("  - Vertex Buffer Attribute {d}: component={s}, type={s}, num={d}, normalized={}, offset={d}\n", .{
-                attribute_index,
-                attribute_type.getName(),
-                attribute.type.getName(),
-                attribute.num,
-                attribute.normalized,
-                primitive.vertex_layout.offsets[attribute_index],
-            });
+            const vertex_buffer_data = try geometryc.convertVertexBuffer(
+                allocator,
+                source,
+                mesh_index,
+                primitive_index,
+                options.conversion_options,
+            );
+            defer vertex_buffer_data.deinit();
+
+            try std_out.print("  - Vertex Buffer File: {s}\n", .{vertex_buffer_name});
+            try std_out.print("  - Vertex Buffer Size: {s}\n", .{std.fmt.fmtIntSizeDec(vertex_buffer_data.data.len)});
+            try std_out.print("  - Vertex Buffer Elements Count: {d}\n", .{vertex_buffer_data.num_vertices});
+
+            try geometryc.saveVertexFile(
+                vertex_buffer_name,
+                &vertex_buffer_data,
+            );
+
+            const index_buffer_data = try geometryc.convertIndexBuffer(
+                allocator,
+                source,
+                mesh_index,
+                primitive_index,
+            );
+            defer index_buffer_data.deinit();
+
+            try std_out.print("  - Index Buffer File: {s}\n", .{index_buffer_name});
+            try std_out.print("  - Index Buffer Size: {s}\n", .{std.fmt.fmtIntSizeDec(index_buffer_data.data.len)});
+            try std_out.print("  - Index Buffer Type: {s}\n", .{index_buffer_data.index_type.name()});
+            try std_out.print("  - Index Buffer Elements Count: {d}\n", .{index_buffer_data.num_indices});
+
+            try geometryc.saveIndexFile(
+                index_buffer_name,
+                &index_buffer_data,
+            );
         }
-
-        try std_out.print("  - Index Buffer File: {s}\n", .{index_buffer_name});
-        try std_out.print("  - Index Buffer Size: {s}\n", .{std.fmt.fmtIntSizeDec(primitive.index_data.len)});
-        try std_out.print("  - Index Buffer Type: {s}\n", .{primitive.index_type.getName()});
-        try std_out.print("  - Index Buffer Elements Count: {d}\n", .{primitive.num_indices});
-
-        try saveVertexFile(
-            vertex_buffer_name,
-            primitive.vertex_data,
-            primitive.vertex_layout,
-        );
-
-        try saveIndexFile(
-            index_buffer_name,
-            primitive.index_data,
-            primitive.index_type,
-        );
     }
 }

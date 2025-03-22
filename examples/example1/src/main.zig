@@ -6,23 +6,6 @@ const utils = @import("merlin_utils");
 const gfx_types = utils.gfx_types;
 const zm = @import("zmath");
 
-const Vertices = [_][8]f32{
-    [_]f32{ -0.5, -0.5, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0 },
-    [_]f32{ 0.5, -0.5, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0 },
-    [_]f32{ 0.5, 0.5, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0 },
-    [_]f32{ -0.5, 0.5, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0 },
-
-    [_]f32{ -0.5, -0.5, -0.5, 1.0, 0.0, 0.0, 1.0, 0.0 },
-    [_]f32{ 0.5, -0.5, -0.5, 0.0, 1.0, 0.0, 0.0, 0.0 },
-    [_]f32{ 0.5, 0.5, -0.5, 0.0, 0.0, 1.0, 0.0, 1.0 },
-    [_]f32{ -0.5, 0.5, -0.5, 1.0, 1.0, 1.0, 1.0, 1.0 },
-};
-
-const Indices = [_]u16{
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4,
-};
-
 fn getAssetPath(allocator: std.mem.Allocator, asset_name: []const u8) ![]const u8 {
     const exe_path = try std.fs.selfExeDirPathAlloc(allocator);
     defer allocator.free(exe_path);
@@ -121,31 +104,6 @@ pub fn main() !void {
 
     const index_buffer_handle = try loadIndexBuffer(allocator, "Box/index.0.bin");
     defer gfx.destroyIndexBuffer(index_buffer_handle);
-
-    //var vertex_layout = gfx_types.VertexLayout.init();
-    //vertex_layout.add(.position, 3, .f32, false);
-    //vertex_layout.add(.color_0, 3, .f32, false);
-    //vertex_layout.add(.tex_coord_0, 2, .f32, false);
-
-    //var vertex_buffer_loader = utils.loaders.VertexBufferMemoryLoader{
-    //    .layout = vertex_layout,
-    //    .data = std.mem.sliceAsBytes(&Vertices),
-    //};
-
-    //const vertex_buffer_handle = try gfx.createVertexBuffer(
-    //    utils.loaders.VertexBufferLoader.from(&vertex_buffer_loader, utils.loaders.VertexBufferMemoryLoader),
-    //);
-    //defer gfx.destroyVertexBuffer(vertex_buffer_handle);
-
-    //var index_buffer_loader = utils.loaders.IndexBufferMemoryLoader{
-    //    .index_type = .u16,
-    //    .data = std.mem.sliceAsBytes(&Indices),
-    //};
-
-    //const index_buffer_handle = try gfx.createIndexBuffer(
-    //    utils.loaders.IndexBufferLoader.from(&index_buffer_loader, utils.loaders.IndexBufferMemoryLoader),
-    //);
-    //defer gfx.destroyIndexBuffer(index_buffer_handle);
 
     const start_time = std.time.microTimestamp();
     var last_current_time = start_time;

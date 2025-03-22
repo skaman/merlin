@@ -1,0 +1,23 @@
+.{
+    .name = .merlin_ktx,
+    .version = "0.0.0",
+    .fingerprint = 0xb89c7a56afb54c03,
+
+    .dependencies = .{
+        .merlin_image = .{
+            .path = "../merlin-image",
+        },
+        .ktx_software = .{
+            .path = "../vendor/ktx-software",
+        },
+        .vulkan_headers = .{
+            .path = "../vendor/vulkan-headers",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

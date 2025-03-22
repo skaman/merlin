@@ -15,9 +15,8 @@ fn addShaders(
         const output_slice = try std.fmt.bufPrint(&output_buffer, "{s}.bin", .{shader});
 
         const tool_step = b.addRunArtifact(merlin_shaderc_exe);
-        tool_step.addArg("-o");
-        const output = tool_step.addOutputFileArg(output_slice);
         tool_step.addFileArg(b.path(shader));
+        const output = tool_step.addOutputFileArg(output_slice);
 
         b.getInstallStep().dependOn(&b.addInstallFileWithDir(output, .bin, output_slice).step);
     }
@@ -52,7 +51,11 @@ fn addTextures(
 const SourceMesh = struct {
     source: []const u8,
     output: []const u8,
-    normal: bool = false,
+    normal: bool = true,
+    tangent: bool = false,
+    color: bool = false,
+    weight: bool = false,
+    tex_coord: bool = true,
 };
 
 fn addMeshes(
@@ -65,13 +68,17 @@ fn addMeshes(
     const geometryc_exe = merlin_geometryc.artifact("merlin-geometryc");
 
     for (meshes) |mesh| {
-        //const extension = std.fs.path.extension(mesh.output);
-        //const mesh_without_extension = mesh[0..(mesh.len - extension.len)];
-
         const tool_step = b.addRunArtifact(geometryc_exe);
-        if (mesh.normal) {
-            tool_step.addArg("-n");
-        }
+        tool_step.addArg("-n");
+        tool_step.addArg(if (mesh.normal) "1" else "0");
+        tool_step.addArg("-t");
+        tool_step.addArg(if (mesh.tangent) "1" else "0");
+        tool_step.addArg("-C");
+        tool_step.addArg(if (mesh.color) "1" else "0");
+        tool_step.addArg("-w");
+        tool_step.addArg(if (mesh.weight) "1" else "0");
+        tool_step.addArg("-T");
+        tool_step.addArg(if (mesh.tex_coord) "1" else "0");
         tool_step.addFileArg(b.path(mesh.source));
         const output = tool_step.addOutputDirectoryArg(mesh.output);
 
@@ -129,7 +136,11 @@ pub fn build(b: *std.Build) !void {
     try addTextures(b, &textures);
 
     const meshes = [_]SourceMesh{
-        SourceMesh{ .source = "assets/Box/Box.gltf", .output = "assets/Box", .normal = true },
+        SourceMesh{
+            .source = "assets/Box/Box.gltf",
+            .output = "assets/Box",
+            .tex_coord = false,
+        },
     };
     try addMeshes(b, &meshes);
 

@@ -9,11 +9,11 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    const clap = b.dependency("clap", .{
+    const merlin_gltf = b.dependency("merlin_gltf", .{
         .target = target,
         .optimize = optimize,
     });
-    const cgltf = b.dependency("cgltf", .{
+    const clap = b.dependency("clap", .{
         .target = target,
         .optimize = optimize,
     });
@@ -31,10 +31,8 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(geometryc);
 
     geometryc.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
+    geometryc.root_module.addImport("merlin_gltf", merlin_gltf.module("merlin_gltf"));
     geometryc.root_module.addImport("clap", clap.module("clap"));
-
-    geometryc.linkLibrary(cgltf.artifact("cgltf"));
-    geometryc.addIncludePath(b.path("../vendor/cgltf/upstream"));
 
     const run_cmd = b.addRunArtifact(geometryc);
     run_cmd.step.dependOn(b.getInstallStep());

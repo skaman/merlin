@@ -1,0 +1,17 @@
+.{
+    .name = .merlin_image,
+    .version = "0.0.0",
+    .fingerprint = 0x4eaa73aebd623b15,
+
+    .dependencies = .{
+        .stb = .{
+            .path = "../vendor/stb",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

@@ -1,17 +1,17 @@
 .{
-    .name = .merlin_geometryc,
+    .name = .merlin_gltf,
     .version = "0.0.0",
-    .fingerprint = 0x6c26be6350e0937d,
+    .fingerprint = 0x3541277560e6f1,
 
     .dependencies = .{
+        .merlin_image = .{
+            .path = "../merlin-image",
+        },
         .merlin_utils = .{
             .path = "../merlin-utils",
         },
-        .merlin_gltf = .{
-            .path = "../merlin-gltf",
-        },
-        .clap = .{
-            .path = "../vendor/zig-clap",
+        .cgltf = .{
+            .path = "../vendor/cgltf",
         },
     },
 

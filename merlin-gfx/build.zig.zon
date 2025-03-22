@@ -1,7 +1,7 @@
 .{
-    .name = .merlin_core_layer,
+    .name = .merlin_gfx,
     .version = "0.0.0",
-    .fingerprint = 0x11cd0ec72ebf506e,
+    .fingerprint = 0xc972f3e168aea2bc,
 
     .dependencies = .{
         .merlin_platform = .{
