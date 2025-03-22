@@ -5,6 +5,10 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // *********************************************************************************************
+    // Dependencies
+    // *********************************************************************************************
+
     const merlin_utils = b.dependency("merlin_utils", .{
         .target = target,
         .optimize = optimize,
@@ -22,13 +26,20 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
+    // *********************************************************************************************
+    // Library
+    // *********************************************************************************************
+
     const shaderc_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/shaderc.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const shaderc = b.addExecutable(.{
+    shaderc_mod.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
+
+    const shaderc = b.addLibrary(.{
+        .linkage = .static,
         .name = "merlin-shaderc",
         .root_module = shaderc_mod,
     });
@@ -39,10 +50,30 @@ pub fn build(b: *std.Build) !void {
     shaderc.linkLibrary(spirv_reflect.artifact("spirv_reflect"));
     shaderc.addIncludePath(b.path("../vendor/spirv-reflect/upstream"));
 
-    shaderc.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
-    shaderc.root_module.addImport("clap", clap.module("clap"));
+    // *********************************************************************************************
+    // Executable
+    // *********************************************************************************************
 
-    const run_cmd = b.addRunArtifact(shaderc);
+    const exe_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    exe_mod.addImport("shaderc", shaderc_mod);
+    exe_mod.addImport("clap", clap.module("clap"));
+
+    const exe = b.addExecutable(.{
+        .name = "shaderc",
+        .root_module = exe_mod,
+    });
+    b.installArtifact(exe);
+
+    // *********************************************************************************************
+    // Run
+    // *********************************************************************************************
+
+    const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         run_cmd.addArgs(args);

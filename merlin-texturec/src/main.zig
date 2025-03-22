@@ -2,8 +2,7 @@ const std = @import("std");
 
 const clap = @import("clap");
 const image = @import("merlin_image");
-
-const texturec = @import("texturec.zig");
+const texturec = @import("texturec");
 
 // *********************************************************************************************
 // Structs

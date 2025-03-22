@@ -8,7 +8,7 @@ fn addShaders(
     const merlin_shaderc = b.dependency("merlin_shaderc", .{
         .optimize = std.builtin.OptimizeMode.ReleaseFast,
     });
-    const merlin_shaderc_exe = merlin_shaderc.artifact("merlin-shaderc");
+    const merlin_shaderc_exe = merlin_shaderc.artifact("shaderc");
 
     for (shaders) |shader| {
         var output_buffer: [4096]u8 = undefined;
@@ -29,7 +29,7 @@ fn addTextures(
     const merlin_texturec = b.dependency("merlin_texturec", .{
         .optimize = std.builtin.OptimizeMode.ReleaseFast,
     });
-    const merlin_texturec_exe = merlin_texturec.artifact("merlin-texturec");
+    const merlin_texturec_exe = merlin_texturec.artifact("texturec");
 
     for (textures) |texture| {
         var output_buffer: [4096]u8 = undefined;
@@ -65,7 +65,7 @@ fn addMeshes(
     const merlin_geometryc = b.dependency("merlin_geometryc", .{
         .optimize = std.builtin.OptimizeMode.ReleaseFast,
     });
-    const geometryc_exe = merlin_geometryc.artifact("merlin-geometryc");
+    const geometryc_exe = merlin_geometryc.artifact("geometryc");
 
     for (meshes) |mesh| {
         const tool_step = b.addRunArtifact(geometryc_exe);

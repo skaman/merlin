@@ -1,8 +1,7 @@
 const std = @import("std");
 
 const clap = @import("clap");
-
-const shaderc = @import("shaderc.zig");
+const shaderc = @import("shaderc");
 
 fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
     var file = try std.fs.cwd().openFile(path, .{});

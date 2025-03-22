@@ -1,9 +1,8 @@
 const std = @import("std");
 
 const clap = @import("clap");
+const geometryc = @import("geometryc");
 const gltf = @import("merlin_gltf");
-
-const geometryc = @import("geometryc.zig");
 
 // *********************************************************************************************
 // Structs

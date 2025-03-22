@@ -5,6 +5,10 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // *********************************************************************************************
+    // Dependencies
+    // *********************************************************************************************
+
     const merlin_utils = b.dependency("merlin_utils", .{
         .target = target,
         .optimize = optimize,
@@ -17,29 +21,58 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+
     const clap = b.dependency("clap", .{
         .target = target,
         .optimize = optimize,
     });
 
+    // *********************************************************************************************
+    // Library
+    // *********************************************************************************************
+
     const texturec_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("src/texturec.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const texturec = b.addExecutable(.{
+    texturec_mod.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
+    texturec_mod.addImport("merlin_ktx", merlin_ktx.module("merlin_ktx"));
+    texturec_mod.addImport("merlin_image", merlin_image.module("merlin_image"));
+
+    const texturec = b.addLibrary(.{
+        .linkage = .static,
         .name = "merlin-texturec",
         .root_module = texturec_mod,
     });
     b.installArtifact(texturec);
 
-    texturec.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
-    texturec.root_module.addImport("merlin_ktx", merlin_ktx.module("merlin_ktx"));
-    texturec.root_module.addImport("merlin_image", merlin_image.module("merlin_image"));
-    texturec.root_module.addImport("clap", clap.module("clap"));
+    // *********************************************************************************************
+    // Executable
+    // *********************************************************************************************
 
-    const run_cmd = b.addRunArtifact(texturec);
+    const exe_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    exe_mod.addImport("texturec", texturec_mod);
+    exe_mod.addImport("clap", clap.module("clap"));
+    exe_mod.addImport("merlin_image", merlin_image.module("merlin_image"));
+
+    const exe = b.addExecutable(.{
+        .name = "texturec",
+        .root_module = exe_mod,
+    });
+    b.installArtifact(exe);
+
+    // *********************************************************************************************
+    // Run
+    // *********************************************************************************************
+
+    const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         run_cmd.addArgs(args);
