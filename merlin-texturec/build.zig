@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) !void {
     // Library
     // *********************************************************************************************
 
-    const texturec_mod = b.createModule(.{
+    const texturec_mod = b.addModule("merlin_texturec", .{
         .root_source_file = b.path("src/texturec.zig"),
         .target = target,
         .optimize = optimize,
@@ -43,7 +43,7 @@ pub fn build(b: *std.Build) !void {
 
     const texturec = b.addLibrary(.{
         .linkage = .static,
-        .name = "merlin-texturec",
+        .name = "merlin_texturec",
         .root_module = texturec_mod,
     });
     b.installArtifact(texturec);

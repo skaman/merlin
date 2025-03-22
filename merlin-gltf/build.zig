@@ -25,6 +25,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     const merlin_gltf = b.addLibrary(.{
+        .linkage = .static,
         .name = "merlin_gltf",
         .root_module = merlin_gltf_mod,
     });

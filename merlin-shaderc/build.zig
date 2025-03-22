@@ -30,7 +30,7 @@ pub fn build(b: *std.Build) !void {
     // Library
     // *********************************************************************************************
 
-    const shaderc_mod = b.createModule(.{
+    const shaderc_mod = b.addModule("merlin_shaderc", .{
         .root_source_file = b.path("src/shaderc.zig"),
         .target = target,
         .optimize = optimize,
@@ -40,7 +40,7 @@ pub fn build(b: *std.Build) !void {
 
     const shaderc = b.addLibrary(.{
         .linkage = .static,
-        .name = "merlin-shaderc",
+        .name = "merlin_shaderc",
         .root_module = shaderc_mod,
     });
     b.installArtifact(shaderc);

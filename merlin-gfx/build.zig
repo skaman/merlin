@@ -38,6 +38,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     const merlin_gfx = b.addLibrary(.{
+        .linkage = .static,
         .name = "merlin_gfx",
         .root_module = merlin_gfx_mod,
     });

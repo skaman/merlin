@@ -26,6 +26,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     const merlin_ktx = b.addLibrary(.{
+        .linkage = .static,
         .name = "merlin_ktx",
         .root_module = merlin_ktx_mod,
     });

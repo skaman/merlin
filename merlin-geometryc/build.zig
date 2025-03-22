@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) !void {
     // Library
     // *********************************************************************************************
 
-    const geometryc_mod = b.createModule(.{
+    const geometryc_mod = b.addModule("merlin_geometryc", .{
         .root_source_file = b.path("src/geometryc.zig"),
         .target = target,
         .optimize = optimize,
@@ -37,7 +37,7 @@ pub fn build(b: *std.Build) !void {
 
     const geometryc = b.addLibrary(.{
         .linkage = .static,
-        .name = "merlin-geometryc",
+        .name = "merlin_geometryc",
         .root_module = geometryc_mod,
     });
     b.installArtifact(geometryc);

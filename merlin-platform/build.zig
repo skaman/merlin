@@ -21,6 +21,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     const merlin_platform = b.addLibrary(.{
+        .linkage = .static,
         .name = "merlin_platform",
         .root_module = merlin_platform_mod,
     });

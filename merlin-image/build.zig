@@ -17,6 +17,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     const merlin_image = b.addLibrary(.{
+        .linkage = .static,
         .name = "merlin_image",
         .root_module = merlin_image_mod,
     });
