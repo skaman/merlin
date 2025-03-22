@@ -15,12 +15,20 @@ extern fn ktxTexture2_SetImageFromMemory(
     srcSize: c.ktx_size_t,
 ) c.ktx_error_code_e;
 
+// *********************************************************************************************
+// Private API
+// *********************************************************************************************
+
 fn checkKtxError(comptime message: []const u8, result: c.KTX_error_code) !void {
     if (result != c.VK_SUCCESS) {
         std.log.err("{s}: {s}", .{ message, c.ktxErrorString(result) });
         return error.KTXError;
     }
 }
+
+// *********************************************************************************************
+// Public API
+// *********************************************************************************************
 
 pub const Texture = struct {
     allocator: std.mem.Allocator,
@@ -32,7 +40,9 @@ pub const Texture = struct {
         path: []const u8,
         srgb: bool,
     ) !Texture {
-        const source = try image.Image.init(path);
+        const source = try image.Image.load(allocator, path);
+        errdefer source.deinit();
+
         var create_info = std.mem.zeroInit(
             c.ktxTextureCreateInfo,
             .{
@@ -151,8 +161,8 @@ pub const Texture = struct {
         c.ktxTexture2_Destroy(self.texture);
     }
 
-    fn save(self: *const Texture, path: []const u8) !void {
-        const path_z = self.allocator.dupeZ(u8, path);
+    pub fn save(self: *const Texture, path: []const u8) !void {
+        const path_z = try self.allocator.dupeZ(u8, path);
         defer self.allocator.free(path_z);
 
         try checkKtxError(

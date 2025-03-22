@@ -7,14 +7,11 @@
         .merlin_utils = .{
             .path = "../merlin-utils",
         },
-        .stb = .{
-            .path = "../vendor/stb",
+        .merlin_ktx = .{
+            .path = "../merlin-ktx",
         },
-        .ktx_software = .{
-            .path = "../vendor/ktx-software",
-        },
-        .vulkan_headers = .{
-            .path = "../vendor/vulkan-headers",
+        .merlin_image = .{
+            .path = "../merlin-image",
         },
         .clap = .{
             .path = "../vendor/zig-clap",

@@ -2,11 +2,24 @@ const std = @import("std");
 
 const c = @import("c.zig").c;
 
+// *********************************************************************************************
+// Structs
+// *********************************************************************************************
+
 pub const ResizeEdge = enum(u8) {
     clamp = c.STBIR_EDGE_CLAMP,
     reflect = c.STBIR_EDGE_REFLECT,
     wrap = c.STBIR_EDGE_WRAP,
     zero = c.STBIR_EDGE_ZERO,
+
+    pub fn name(self: ResizeEdge) []const u8 {
+        switch (self) {
+            .clamp => return "clamp",
+            .reflect => return "reflect",
+            .wrap => return "wrap",
+            .zero => return "zero",
+        }
+    }
 };
 
 pub const ResizeFilter = enum(u8) {
@@ -17,6 +30,18 @@ pub const ResizeFilter = enum(u8) {
     catmull_rom = c.STBIR_FILTER_CATMULLROM,
     mitchell = c.STBIR_FILTER_MITCHELL,
     point_sample = c.STBIR_FILTER_POINT_SAMPLE,
+
+    pub fn name(self: ResizeFilter) []const u8 {
+        switch (self) {
+            .auto => return "auto",
+            .box => return "box",
+            .triangle => return "triangle",
+            .cubic_spline => return "cubic_spline",
+            .catmull_rom => return "catmull_rom",
+            .mitchell => return "mitchell",
+            .point_sample => return "point_sample",
+        }
+    }
 };
 
 pub const ChannelSize = enum {
@@ -40,6 +65,10 @@ pub const ChannelSize = enum {
         }
     }
 };
+
+// *********************************************************************************************
+// Public API
+// *********************************************************************************************
 
 pub const Image = struct {
     allocator: std.mem.Allocator,
@@ -146,7 +175,7 @@ pub const Image = struct {
         height: usize,
         edge: ResizeEdge,
         filter: ResizeFilter,
-    ) Image {
+    ) !Image {
         const data_type: c.stbir_datatype =
             switch (self.channel_size) {
                 .u8 => if (self.srgb) c.STBIR_TYPE_UINT8_SRGB else c.STBIR_TYPE_UINT8,
@@ -166,7 +195,7 @@ pub const Image = struct {
                 },
             };
 
-        const resized_image = Image.init(
+        const resized_image = try Image.init(
             self.allocator,
             width,
             height,
@@ -180,16 +209,16 @@ pub const Image = struct {
         const output_stride = width * self.channels * self.channel_size.size();
 
         _ = c.stbir_resize(
-            self.image.ptr,
+            self.data.ptr,
             @intCast(self.width),
             @intCast(self.height),
             @intCast(input_stride),
-            resized_image.ptr,
+            resized_image.data.ptr,
             @intCast(width),
             @intCast(height),
             @intCast(output_stride),
-            @intFromEnum(pixel_layout),
-            @intFromEnum(data_type),
+            pixel_layout,
+            data_type,
             @intFromEnum(edge),
             @intFromEnum(filter),
         );

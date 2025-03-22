@@ -9,19 +9,15 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    const merlin_ktx = b.dependency("merlin_ktx", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const merlin_image = b.dependency("merlin_image", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const clap = b.dependency("clap", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const stb = b.dependency("stb", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const vulkan_headers = b.dependency("vulkan_headers", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    const ktx_software = b.dependency("ktx_software", .{
         .target = target,
         .optimize = optimize,
     });
@@ -39,16 +35,9 @@ pub fn build(b: *std.Build) !void {
     b.installArtifact(texturec);
 
     texturec.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
+    texturec.root_module.addImport("merlin_ktx", merlin_ktx.module("merlin_ktx"));
+    texturec.root_module.addImport("merlin_image", merlin_image.module("merlin_image"));
     texturec.root_module.addImport("clap", clap.module("clap"));
-
-    texturec.linkLibrary(stb.artifact("stb"));
-    texturec.addIncludePath(b.path("../vendor/stb/upstream"));
-
-    texturec.linkLibrary(ktx_software.artifact("ktx_software"));
-    texturec.addIncludePath(b.path("../vendor/ktx-software/upstream/include"));
-
-    texturec.linkLibrary(vulkan_headers.artifact("vulkan_headers"));
-    texturec.addIncludePath(b.path("../vendor/vulkan-headers/upstream/include"));
 
     const run_cmd = b.addRunArtifact(texturec);
     run_cmd.step.dependOn(b.getInstallStep());
