@@ -1,0 +1,35 @@
+.{
+    .name = .merlin_geometryc,
+    .version = "0.0.0",
+    .fingerprint = 0x6c26be63078da619,
+
+    .dependencies = .{
+        .merlin_utils = .{
+            .path = "../merlin-utils",
+        },
+        .merlin_texturec = .{
+            .path = "../merlin-texturec",
+        },
+        .merlin_assets = .{
+            .path = "../merlin-assets",
+        },
+        .merlin_image = .{
+            .path = "../merlin-image",
+        },
+        .merlin_ktx = .{
+            .path = "../merlin-ktx",
+        },
+        .merlin_gltf = .{
+            .path = "../merlin-gltf",
+        },
+        .clap = .{
+            .path = "../vendor/zig-clap",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

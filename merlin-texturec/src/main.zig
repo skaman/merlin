@@ -24,7 +24,6 @@ const Params = clap.parseParamsComptime(
     \\-m, --mipmaps             Generate image mipmaps.
     \\-e, --edge <EDGE>         Mipmaps resizing edge mode (clamp, reflect, wrap, zero). Default is clamp.
     \\-f, --filter <FILTER>     Mipmaps resizing filter mode (auto, box, triangle, cubicbspline, catmullrom, mitchell, pointsample). Default is auto.
-    \\-s, --srgb                Use sRGB color space.
     \\<IN_FILE>                 Source file.
     \\<OUT_FILE>                Output file.
 );
@@ -175,9 +174,6 @@ pub fn main() !void {
     if (res.args.filter) |value| {
         options.conversion_options.filter = try parseFilterOption(std_err, value);
     }
-    if (res.args.srgb != 0) {
-        options.conversion_options.srgb = true;
-    }
 
     try std_out.print("Texture compiler:\n", .{});
     try std_out.print("  - Input file: {s}\n", .{options.input_file});
@@ -190,7 +186,6 @@ pub fn main() !void {
     try std_out.print("  - Mipmaps generation: {}\n", .{options.conversion_options.mipmaps});
     try std_out.print("  - Edge: {s}\n", .{options.conversion_options.edge.name()});
     try std_out.print("  - Filter: {s}\n", .{options.conversion_options.filter.name()});
-    try std_out.print("  - sRGB: {}\n", .{options.conversion_options.srgb});
 
     const texture = try texturec.convert(
         allocator,
@@ -199,11 +194,12 @@ pub fn main() !void {
     );
     defer texture.deinit();
 
-    try std_out.print("Image: {d}x{d} {d} channels ({s})\n", .{
+    try std_out.print("Image: {d}x{d} {d} channels ({s} {s})\n", .{
         texture.image.width,
         texture.image.height,
         texture.image.channels,
         texture.image.channel_size.name(),
+        if (texture.image.srgb) "sRGB" else "linear",
     });
 
     try texture.save(options.output_file);

@@ -67,6 +67,148 @@ pub const ChannelSize = enum {
 };
 
 // *********************************************************************************************
+// Private API
+// *********************************************************************************************
+
+fn checkPngSrgb(file: std.fs.File) !bool {
+    try file.seekTo(8);
+
+    while (true) {
+        const length = try file.reader().readInt(u32, .big);
+        var chunk_type: [4]u8 = undefined;
+        if (try file.readAll(&chunk_type) != chunk_type.len) {
+            return error.ImageError;
+        }
+        if (!std.mem.eql(u8, &chunk_type, "sRGB")) {
+            return true;
+        }
+        if (!std.mem.eql(u8, &chunk_type, "IEND")) {
+            break;
+        }
+        try file.seekBy(length + 4);
+    }
+
+    return false;
+}
+
+fn checkJpegSrgb(file: std.fs.File) !bool {
+    try file.seekTo(2);
+
+    while (true) {
+        const sc = try file.reader().readByte();
+        if (sc != 0xff) {
+            continue;
+        }
+
+        const marker = try file.reader().readByte();
+        if (marker == 0xe2) {
+            var seq_length = try file.reader().readInt(u16, .big);
+
+            var identifier: [11]u8 = undefined;
+            if (seq_length >= 11) {
+                if (try file.readAll(&identifier) != identifier.len) {
+                    return error.ImageError;
+                }
+                seq_length -= 11;
+
+                if (std.mem.eql(u8, &identifier, "ICC_PROFILE")) {
+                    var buffer: [128]u8 = undefined;
+                    const to_read = if (seq_length < buffer.len - 1) seq_length else buffer.len - 1;
+                    if (try file.readAll(buffer[0..to_read]) != to_read) {
+                        return error.ImageError;
+                    }
+
+                    if (std.mem.indexOf(u8, &buffer, "sRGB") != null) {
+                        return true;
+                    } else {
+                        return false;
+                    }
+                } else {
+                    try file.seekBy(seq_length);
+                }
+            } else {
+                try file.seekBy(seq_length);
+            }
+        } else if (marker >= 0xd0 and marker <= 0xd9) {
+            continue;
+        } else {
+            const seq_length = try file.reader().readInt(u16, .big);
+            if (seq_length < 2) {
+                return error.ImageError;
+            }
+            try file.seekBy(seq_length - 2);
+        }
+    }
+
+    return true;
+}
+
+fn checkTiffSrgb(file: std.fs.File) !bool {
+    try file.seekTo(0);
+
+    var header: [2]u8 = undefined;
+    if (try file.readAll(&header) != header.len) {
+        return error.ImageError;
+    }
+
+    var endianess: std.builtin.Endian = undefined;
+    if (header[0] == 'I' and header[1] == 'I') {
+        endianess = .little;
+    } else if (header[0] == 'M' and header[1] == 'M') {
+        endianess = .big;
+    } else {
+        return false;
+    }
+
+    const magic = try file.reader().readInt(u16, endianess);
+    if (magic != 42) {
+        return false;
+    }
+
+    const ifd_offset = try file.reader().readInt(u32, endianess);
+    try file.seekTo(ifd_offset);
+
+    const num_entries = try file.reader().readInt(u16, endianess);
+    for (0..num_entries) |_| {
+        const tag = try file.reader().readInt(u16, endianess);
+        if (tag == 34675) {
+            return true;
+        }
+
+        try file.seekBy(10);
+    }
+
+    return true;
+}
+
+fn isImageSrgb(path: []const u8) !bool {
+    const file = try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+
+    var header: [8]u8 = undefined;
+    if (try file.readAll(&header) != header.len) {
+        return error.ImageError;
+    }
+
+    // check for PNG
+    if (std.mem.eql(u8, &header, "\x89PNG\r\n\x1a\n")) {
+        return try checkPngSrgb(file);
+    }
+    // check for JPEG
+    if (header[0] == 0xff and header[1] == 0xd8) {
+        return try checkJpegSrgb(file);
+    }
+    // check for TIFF
+    if ((header[0] == 'I' and header[1] == 'I' and header[2] == 42 and header[3] == 0) or
+        (header[0] == 'M' and header[1] == 'M' and header[2] == 0 and header[3] == 42))
+    {
+        return try checkTiffSrgb(file);
+    }
+
+    return false;
+}
+
+// *********************************************************************************************
 // Public API
 // *********************************************************************************************
 
@@ -107,6 +249,8 @@ pub const Image = struct {
         var channels: c_int = 0;
         var channel_size: ChannelSize = .u8;
         var image: [*c]u8 = null;
+
+        const srgb = try isImageSrgb(path);
 
         c.stbi_set_flip_vertically_on_load(1);
 
@@ -160,7 +304,7 @@ pub const Image = struct {
             .height = @intCast(height),
             .channels = @intCast(channels),
             .channel_size = channel_size,
-            .srgb = true,
+            .srgb = srgb,
             .data = data,
         };
     }

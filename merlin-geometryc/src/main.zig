@@ -161,10 +161,7 @@ pub fn main() !void {
         try std_out.print("  - Texture Coordinate\n", .{});
     }
 
-    const source = try gltf.Gltf.load(
-        allocator,
-        options.input_file,
-    );
+    const source = try gltf.Gltf.load(allocator, options.input_file);
     defer source.deinit();
 
     if (std.fs.path.isAbsolute(options.output_dir)) {

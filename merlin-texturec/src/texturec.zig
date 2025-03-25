@@ -16,7 +16,6 @@ pub const Options = struct {
     mipmaps: bool = false,
     edge: image.ResizeEdge = .clamp,
     filter: image.ResizeFilter = .auto,
-    srgb: bool = false,
 };
 
 // *********************************************************************************************
@@ -28,10 +27,9 @@ pub fn convert(
     input_file: []const u8,
     options: Options,
 ) !ktx.Texture {
-    const texture = try ktx.Texture.init(
+    const texture = try ktx.Texture.load(
         allocator,
         input_file,
-        options.srgb,
     );
     errdefer texture.deinit();
 

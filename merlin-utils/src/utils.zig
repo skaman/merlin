@@ -94,6 +94,16 @@ pub const Serializer = struct {
                 .many, .c => @compileError(std.fmt.comptimePrint("Unhandled type: {}", .{T})),
             },
             .int => try writer.writeInt(T, data, Endian),
+            .float => {
+                const float_size = @sizeOf(T);
+                if (float_size == 4) {
+                    try writer.writeInt(u32, @bitCast(data), Endian);
+                } else if (float_size == 8) {
+                    try writer.writeInt(u64, @bitCast(data), Endian);
+                } else {
+                    @compileError(std.fmt.comptimePrint("Unhandled float size: {}", .{float_size}));
+                }
+            },
             .void => {},
             .bool => try writer.writeByte(@intFromBool(data)),
             .array => |a| if (@sizeOf(a.child) == 1) {
@@ -160,6 +170,16 @@ pub const Serializer = struct {
                 .many, .c => @compileError(std.fmt.comptimePrint("Unhandled type: {}", .{T})),
             },
             .int => @intCast(try reader.readInt(T, Endian)),
+            .float => {
+                const float_size = @sizeOf(T);
+                if (float_size == 4) {
+                    return @as(T, @bitCast(try reader.readInt(u32, Endian)));
+                } else if (float_size == 8) {
+                    return @as(T, @bitCast(try reader.readInt(u64, Endian)));
+                } else {
+                    @compileError(std.fmt.comptimePrint("Unhandled float size: {}", .{float_size}));
+                }
+            },
             .void => {},
             .bool => try reader.readByte() == 1,
             .array => |a| b: {

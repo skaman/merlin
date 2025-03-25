@@ -40,7 +40,6 @@ fn addTextures(
         const tool_step = b.addRunArtifact(merlin_texturec_exe);
         tool_step.addArg("-m");
         tool_step.addArg("-c");
-        tool_step.addArg("-s");
         tool_step.addFileArg(b.path(texture));
         const output = tool_step.addOutputFileArg(output_slice);
 
@@ -86,6 +85,35 @@ fn addMeshes(
             .source_dir = output,
             .install_dir = .bin,
             .install_subdir = mesh.output,
+        }).step);
+    }
+}
+
+const SourceMaterial = struct {
+    source: []const u8,
+    output: []const u8,
+};
+
+fn addMaterials(
+    b: *std.Build,
+    materials: []const SourceMaterial,
+) !void {
+    const merlin_materialc = b.dependency("merlin_materialc", .{
+        .optimize = std.builtin.OptimizeMode.ReleaseFast,
+    });
+    const materialc_exe = merlin_materialc.artifact("materialc");
+
+    for (materials) |material| {
+        const tool_step = b.addRunArtifact(materialc_exe);
+        tool_step.addArg("-m");
+        tool_step.addArg("-c");
+        tool_step.addFileArg(b.path(material.source));
+        const output = tool_step.addOutputDirectoryArg(material.output);
+
+        b.getInstallStep().dependOn(&b.addInstallDirectory(.{
+            .source_dir = output,
+            .install_dir = .bin,
+            .install_subdir = material.output,
         }).step);
     }
 }
@@ -141,8 +169,20 @@ pub fn build(b: *std.Build) !void {
             .output = "assets/Box",
             .tex_coord = false,
         },
+        SourceMesh{
+            .source = "assets/FlightHelmet/FlightHelmet.gltf",
+            .output = "assets/FlightHelmet",
+        },
     };
     try addMeshes(b, &meshes);
+
+    const materials = [_]SourceMaterial{
+        SourceMaterial{
+            .source = "assets/FlightHelmet/FlightHelmet.gltf",
+            .output = "assets/FlightHelmet",
+        },
+    };
+    try addMaterials(b, &materials);
 
     b.installArtifact(example1);
     example1.root_module.addImport("merlin_platform", merlin_platform.module("merlin_platform"));

@@ -17,6 +17,20 @@ pub const IndexBufferVersion: u8 = 1;
 // Structs and Enums
 // *********************************************************************************************
 
+pub const AlphaMode = enum(u8) {
+    opaque_,
+    mask,
+    blend,
+
+    pub fn name(self: AlphaMode) []const u8 {
+        return switch (self) {
+            .opaque_ => "opaque",
+            .mask => "mask",
+            .blend => "blend",
+        };
+    }
+};
+
 pub const IndexType = enum(u8) {
     u8,
     u16,

@@ -35,11 +35,7 @@ pub const Texture = struct {
     image: image.Image,
     texture: *c.ktxTexture2,
 
-    pub fn init(
-        allocator: std.mem.Allocator,
-        path: []const u8,
-        srgb: bool,
-    ) !Texture {
+    pub fn load(allocator: std.mem.Allocator, path: []const u8) !Texture {
         const source = try image.Image.load(allocator, path);
         errdefer source.deinit();
 
@@ -55,8 +51,8 @@ pub const Texture = struct {
         if (source.channels == 1) {
             switch (source.channel_size) {
                 .u8 => {
-                    create_info.glInternalformat = if (srgb) c.GL_SR8_EXT else c.GL_R8;
-                    create_info.vkFormat = if (srgb) c.VK_FORMAT_R8_SRGB else c.VK_FORMAT_R8_UNORM;
+                    create_info.glInternalformat = if (source.srgb) c.GL_SR8_EXT else c.GL_R8;
+                    create_info.vkFormat = if (source.srgb) c.VK_FORMAT_R8_SRGB else c.VK_FORMAT_R8_UNORM;
                 },
                 .u16 => {
                     create_info.glInternalformat = c.GL_R16;
@@ -70,8 +66,8 @@ pub const Texture = struct {
         } else if (source.channels == 2) {
             switch (source.channel_size) {
                 .u8 => {
-                    create_info.glInternalformat = if (srgb) c.GL_SRG8_EXT else c.GL_RG8;
-                    create_info.vkFormat = if (srgb) c.VK_FORMAT_R8G8_SRGB else c.VK_FORMAT_R8G8_UNORM;
+                    create_info.glInternalformat = if (source.srgb) c.GL_SRG8_EXT else c.GL_RG8;
+                    create_info.vkFormat = if (source.srgb) c.VK_FORMAT_R8G8_SRGB else c.VK_FORMAT_R8G8_UNORM;
                 },
                 .u16 => {
                     create_info.glInternalformat = c.GL_RG16;
@@ -85,8 +81,8 @@ pub const Texture = struct {
         } else if (source.channels == 3) {
             switch (source.channel_size) {
                 .u8 => {
-                    create_info.glInternalformat = if (srgb) c.GL_SRGB8 else c.GL_RGB8;
-                    create_info.vkFormat = if (srgb) c.VK_FORMAT_R8G8B8_SRGB else c.VK_FORMAT_R8G8B8_UNORM;
+                    create_info.glInternalformat = if (source.srgb) c.GL_SRGB8 else c.GL_RGB8;
+                    create_info.vkFormat = if (source.srgb) c.VK_FORMAT_R8G8B8_SRGB else c.VK_FORMAT_R8G8B8_UNORM;
                 },
                 .u16 => {
                     create_info.glInternalformat = c.GL_RGB16;
@@ -100,8 +96,8 @@ pub const Texture = struct {
         } else if (source.channels == 4) {
             switch (source.channel_size) {
                 .u8 => {
-                    create_info.glInternalformat = if (srgb) c.GL_SRGB8_ALPHA8 else c.GL_RGBA8;
-                    create_info.vkFormat = if (srgb) c.VK_FORMAT_R8G8B8A8_SRGB else c.VK_FORMAT_R8G8B8A8_UNORM;
+                    create_info.glInternalformat = if (source.srgb) c.GL_SRGB8_ALPHA8 else c.GL_RGBA8;
+                    create_info.vkFormat = if (source.srgb) c.VK_FORMAT_R8G8B8A8_SRGB else c.VK_FORMAT_R8G8B8A8_UNORM;
                 },
                 .u16 => {
                     create_info.glInternalformat = c.GL_RGBA16;
