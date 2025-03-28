@@ -16,6 +16,7 @@ pub const VertexBufferHandle = u16;
 pub const IndexBufferHandle = u16;
 pub const UniformHandle = u16;
 pub const TextureHandle = u16;
+pub const CommandBufferHandle = u16;
 
 pub const MaxShaderHandles = 512;
 pub const MaxProgramHandles = 512;
@@ -23,6 +24,7 @@ pub const MaxVertexBufferHandles = 512;
 pub const MaxIndexBufferHandles = 512;
 pub const MaxUniformHandles = 512;
 pub const MaxTextureHandles = 512;
+pub const MaxCommandBufferHandles = 512;
 
 // *********************************************************************************************
 // Structs and Enums

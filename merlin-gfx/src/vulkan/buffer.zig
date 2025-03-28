@@ -100,13 +100,13 @@ pub fn copyBuffer(
 ) !void {
     std.debug.assert(src_buffer != null);
 
-    var command_buffer = try vk.command_buffers.create(
+    const command_buffer =
+        try vk.command_buffers.beginSingleTimeCommands(command_pool);
+    defer vk.command_buffers.endSingleTimeCommands(
         command_pool,
-        1,
+        command_buffer,
+        queue,
     );
-    defer vk.command_buffers.destroy(&command_buffer);
-
-    try command_buffer.begin(0, true);
 
     const copy_region = std.mem.zeroInit(
         c.VkBufferCopy,
@@ -116,30 +116,12 @@ pub fn copyBuffer(
             .size = size,
         },
     );
-    command_buffer.copyBuffer(
-        0,
+
+    vk.device.cmdCopyBuffer(
+        command_buffer,
         src_buffer,
         dst_buffer,
         1,
         &copy_region,
     );
-
-    try command_buffer.end(0);
-
-    const submit_info = std.mem.zeroInit(
-        c.VkSubmitInfo,
-        .{
-            .sType = c.VK_STRUCTURE_TYPE_SUBMIT_INFO,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &command_buffer.handles[0],
-        },
-    );
-    try vk.device.queueSubmit(
-        queue,
-        1,
-        &submit_info,
-        null,
-    );
-
-    try vk.device.queueWaitIdle(queue);
 }

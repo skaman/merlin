@@ -11,6 +11,7 @@ pub const buffer = @import("buffer.zig");
 pub const command_buffers = @import("command_buffers.zig");
 pub const command_pool = @import("command_pool.zig");
 pub const depth_image = @import("depth_image.zig");
+pub const descriptor_registry = @import("descriptor_registry.zig");
 pub const device = @import("device.zig");
 pub const image = @import("image.zig");
 pub const index_buffers = @import("index_buffers.zig");
@@ -24,7 +25,6 @@ pub const surface = @import("surface.zig");
 pub const swap_chain = @import("swap_chain.zig");
 pub const textures = @import("textures.zig");
 pub const uniform_buffer = @import("uniform_buffer.zig");
-pub const uniform_registry = @import("uniform_registry.zig");
 pub const vertex_buffers = @import("vertex_buffers.zig");
 
 pub const log = std.log.scoped(.gfx_vk);
@@ -57,7 +57,7 @@ var main_surface: c.VkSurfaceKHR = undefined;
 var main_swap_chain: swap_chain.SwapChain = undefined;
 var main_render_pass: c.VkRenderPass = undefined;
 var main_depth_image: depth_image.DepthImage = undefined;
-var main_command_buffers: command_buffers.CommandBuffers = undefined;
+var main_command_buffers: [MaxFramesInFlight]gfx.CommandBufferHandle = undefined;
 var main_descriptor_pool: c.VkDescriptorPool = undefined;
 
 var graphics_command_pool: c.VkCommandPool = undefined;
@@ -327,11 +327,19 @@ pub fn init(
     transfer_command_pool = try command_pool.create(device.queue_family_indices.transfer_family.?);
     errdefer command_pool.destroy(transfer_command_pool);
 
-    main_command_buffers = try command_buffers.create(
-        graphics_command_pool,
-        MaxFramesInFlight,
-    );
-    errdefer command_buffers.destroy(&main_command_buffers);
+    command_buffers.init();
+    errdefer command_buffers.deinit();
+
+    var created_command_buffers: u32 = 0;
+    errdefer {
+        for (0..created_command_buffers) |i| {
+            command_buffers.destroy(main_command_buffers[i]);
+        }
+    }
+    for (0..MaxFramesInFlight) |i| {
+        main_command_buffers[i] = try command_buffers.create(graphics_command_pool);
+        created_command_buffers += 1;
+    }
 
     const semaphore_create_info = std.mem.zeroInit(
         c.VkSemaphoreCreateInfo,
@@ -367,8 +375,8 @@ pub fn init(
 
     pipelines = .init(gpa);
 
-    try uniform_registry.init();
-    errdefer uniform_registry.deinit();
+    try descriptor_registry.init();
+    errdefer descriptor_registry.deinit();
 
     const pool_size = std.mem.zeroInit(
         c.VkDescriptorPoolSize,
@@ -416,7 +424,7 @@ pub fn deinit() void {
 
     device.destroyDescriptorPool(main_descriptor_pool);
 
-    uniform_registry.deinit();
+    descriptor_registry.deinit();
 
     for (0..MaxFramesInFlight) |i| {
         device.destroySemaphore(image_available_semaphores[i]);
@@ -430,7 +438,11 @@ pub fn deinit() void {
     }
     pipelines.deinit();
 
-    command_buffers.destroy(&main_command_buffers);
+    for (0..MaxFramesInFlight) |i| {
+        command_buffers.destroy(main_command_buffers[i]);
+    }
+    command_buffers.deinit();
+
     command_pool.destroy(graphics_command_pool);
     command_pool.destroy(transfer_command_pool);
 
@@ -512,7 +524,7 @@ pub fn createUniformBuffer(
     name: []const u8,
     size: u32,
 ) !gfx.UniformHandle {
-    const handle = try uniform_registry.createBuffer(name, size);
+    const handle = try descriptor_registry.createBuffer(name, size);
 
     log.debug("Created uniform buffer:", .{});
     log.debug("  - Handle: {d}", .{handle});
@@ -521,7 +533,7 @@ pub fn createUniformBuffer(
 }
 
 pub fn destroyUniformBuffer(handle: gfx.UniformHandle) void {
-    uniform_registry.destroy(handle);
+    descriptor_registry.destroy(handle);
 
     log.debug("Destroyed uniform buffer with handle {d}", .{handle});
 }
@@ -530,11 +542,11 @@ pub fn updateUniformBuffer(
     handle: gfx.UniformHandle,
     data: []const u8,
 ) !void {
-    try uniform_registry.updateBuffer(handle, current_frame, data);
+    try descriptor_registry.updateBuffer(handle, data);
 }
 
 pub fn createCombinedSampler(name: []const u8) !gfx.UniformHandle {
-    const handle = try uniform_registry.createCombinedSampler(name);
+    const handle = try descriptor_registry.createCombinedSampler(name);
 
     log.debug("Created combined sampler:", .{});
     log.debug("  - Handle: {d}", .{handle});
@@ -543,7 +555,7 @@ pub fn createCombinedSampler(name: []const u8) !gfx.UniformHandle {
 }
 
 pub fn destroyCombinedSampler(handle: gfx.UniformHandle) void {
-    uniform_registry.destroy(handle);
+    descriptor_registry.destroy(handle);
 
     log.debug("Destroyed combined sampler with handle {d}", .{handle});
 }
@@ -581,12 +593,12 @@ pub fn beginFrame() !bool {
 
     try device.resetFences(1, &in_flight_fences[current_frame]);
 
-    try main_command_buffers.reset(current_frame);
+    try command_buffers.reset(main_command_buffers[current_frame]);
     destroyPendingResources();
-    try main_command_buffers.begin(current_frame, false);
+    try command_buffers.begin(main_command_buffers[current_frame]);
 
-    main_command_buffers.beginRenderPass(
-        current_frame,
+    try command_buffers.beginRenderPass(
+        main_command_buffers[current_frame],
         main_render_pass,
         main_swap_chain.frame_buffers.?[current_image_index],
         main_swap_chain.extent,
@@ -596,8 +608,8 @@ pub fn beginFrame() !bool {
 }
 
 pub fn endFrame() !void {
-    main_command_buffers.endRenderPass(current_frame);
-    try main_command_buffers.end(current_frame);
+    command_buffers.endRenderPass(main_command_buffers[current_frame]);
+    try command_buffers.end(main_command_buffers[current_frame]);
 
     const wait_stages = [_]c.VkPipelineStageFlags{c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     const wait_semaphores = [_]c.VkSemaphore{image_available_semaphores[current_frame]};
@@ -610,7 +622,7 @@ pub fn endFrame() !void {
             .pWaitSemaphores = &wait_semaphores,
             .pWaitDstStageMask = &wait_stages,
             .commandBufferCount = 1,
-            .pCommandBuffers = &main_command_buffers.handles[current_frame],
+            .pCommandBuffers = &command_buffers.commandBuffer(main_command_buffers[current_frame]),
             .signalSemaphoreCount = 1,
             .pSignalSemaphores = &signal_semaphores,
         },
@@ -663,7 +675,11 @@ pub fn setViewport(position: [2]u32, size: [2]u32) void {
             .maxDepth = 1,
         },
     );
-    main_command_buffers.setViewport(current_frame, &vk_viewport);
+
+    command_buffers.setViewport(
+        main_command_buffers[current_frame],
+        &vk_viewport,
+    );
 }
 
 pub fn setScissor(position: [2]u32, size: [2]u32) void {
@@ -680,7 +696,10 @@ pub fn setScissor(position: [2]u32, size: [2]u32) void {
             },
         },
     );
-    main_command_buffers.setScissor(current_frame, &vk_scissor);
+    command_buffers.setScissor(
+        main_command_buffers[current_frame],
+        &vk_scissor,
+    );
 }
 
 pub fn bindProgram(program: gfx.ProgramHandle) void {
@@ -696,7 +715,7 @@ pub fn bindIndexBuffer(handle: gfx.IndexBufferHandle) void {
 }
 
 pub fn bindTexture(texture: gfx.TextureHandle, uniform: gfx.UniformHandle) void {
-    uniform_registry.updateCombinedSampler(uniform, texture) catch {
+    descriptor_registry.updateCombinedSampler(uniform, texture) catch {
         log.err("Failed to update Vulkan combined sampler", .{});
     };
 }
@@ -717,26 +736,29 @@ pub fn draw(
         log.err("Failed to bind Vulkan program: {d}", .{current_program.?});
         return;
     };
-    main_command_buffers.bindPipeline(current_frame, pipeline_value);
+    command_buffers.bindPipeline(
+        main_command_buffers[current_frame],
+        pipeline_value,
+    );
 
     var offsets = [_]c.VkDeviceSize{0};
-    main_command_buffers.bindVertexBuffer(
-        current_frame,
+    command_buffers.bindVertexBuffer(
+        main_command_buffers[current_frame],
         vertex_buffers.getBuffer(current_vertex_buffer.?),
         @ptrCast(&offsets),
     );
 
     programs.pushDescriptorSet(
         current_program.?,
-        &main_command_buffers,
-        current_frame,
+        main_command_buffers[current_frame],
+        0,
     ) catch {
         log.err("Failed to bind Vulkan descriptor set", .{});
         return;
     };
 
-    main_command_buffers.draw(
-        current_frame,
+    command_buffers.draw(
+        main_command_buffers[current_frame],
         vertex_count,
         instance_count,
         first_vertex,
@@ -762,19 +784,22 @@ pub fn drawIndexed(
         log.err("Failed to bind Vulkan program: {d}", .{current_program.?});
         return;
     };
-    main_command_buffers.bindPipeline(current_frame, pipeline_value);
+    command_buffers.bindPipeline(
+        main_command_buffers[current_frame],
+        pipeline_value,
+    );
 
     var offsets = [_]c.VkDeviceSize{0};
-    main_command_buffers.bindVertexBuffer(
-        current_frame,
+    command_buffers.bindVertexBuffer(
+        main_command_buffers[current_frame],
         vertex_buffers.getBuffer(current_vertex_buffer.?),
         @ptrCast(&offsets),
     );
 
     programs.pushDescriptorSet(
         current_program.?,
-        &main_command_buffers,
-        current_frame,
+        main_command_buffers[current_frame],
+        0,
     ) catch {
         log.err("Failed to bind Vulkan descriptor set", .{});
         return;
@@ -786,15 +811,15 @@ pub fn drawIndexed(
         .u32 => c.VK_INDEX_TYPE_UINT32,
     };
 
-    main_command_buffers.bindIndexBuffer(
-        current_frame,
+    command_buffers.bindIndexBuffer(
+        main_command_buffers[current_frame],
         index_buffers.getBuffer(current_index_buffer.?),
         0,
         index_type,
     );
 
-    main_command_buffers.drawIndexed(
-        current_frame,
+    command_buffers.drawIndexed(
+        main_command_buffers[current_frame],
         index_count,
         instance_count,
         first_index,

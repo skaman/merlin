@@ -182,25 +182,25 @@ pub fn create(
     var write_descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet = undefined;
     var descriptor_types: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorType = undefined;
     var uniform_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.UniformHandle = undefined;
-    errdefer {
-        for (0..layout_count) |binding_index| {
-            vk.uniform_registry.destroy(uniform_handles[binding_index]);
-        }
-    }
+    //errdefer {
+    //    for (0..layout_count) |binding_index| {
+    //        vk.descriptor_registry.destroy(uniform_handles[binding_index]);
+    //    }
+    //}
 
     for (0..layout_count) |binding_index| {
         const name = layout_names[binding_index];
-        const size = layout_sizes[binding_index];
+        //const size = layout_sizes[binding_index];
         const descriptor_type = layouts[binding_index].descriptorType;
 
         descriptor_types[binding_index] = descriptor_type;
 
         switch (descriptor_type) {
             c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
-                uniform_handles[binding_index] = try vk.uniform_registry.createBuffer(name, size);
+                uniform_handles[binding_index] = try vk.descriptor_registry.registerName(name);
             },
             c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
-                uniform_handles[binding_index] = try vk.uniform_registry.createCombinedSampler(name);
+                uniform_handles[binding_index] = try vk.descriptor_registry.registerName(name);
             },
             else => {
                 vk.log.err(
@@ -257,9 +257,9 @@ pub fn destroy(handle: gfx.ProgramHandle) void {
 pub fn destroyPendingResources() void {
     for (0..programs_to_destroy_count) |i| {
         const program = &programs_to_destroy[i];
-        for (0..program.layout_count) |binding_index| {
-            vk.uniform_registry.destroy(program.uniform_handles[binding_index]);
-        }
+        //for (0..program.layout_count) |binding_index| {
+        //    vk.descriptor_registry.destroy(program.uniform_handles[binding_index]);
+        //}
 
         vk.device.destroyPipelineLayout(program.pipeline_layout);
         if (program.descriptor_set_layout) |descriptor_set_layout_value| {
@@ -271,7 +271,8 @@ pub fn destroyPendingResources() void {
 
 pub fn pushDescriptorSet(
     handle: gfx.ProgramHandle,
-    command_buffers: *const vk.command_buffers.CommandBuffers,
+    command_buffer_handle: gfx.CommandBufferHandle,
+    //command_buffers: *const vk.command_buffers.CommandBuffers,
     index: u32,
 ) !void {
     const program = &programs[handle];
@@ -280,13 +281,13 @@ pub fn pushDescriptorSet(
         switch (program.descriptor_types[binding_index]) {
             c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
                 program.write_descriptor_sets[binding_index].pBufferInfo = &.{
-                    .buffer = vk.uniform_registry.getBuffer(uniform_handle, index),
+                    .buffer = vk.descriptor_registry.getBuffer(uniform_handle),
                     .offset = 0,
-                    .range = vk.uniform_registry.getBufferSize(uniform_handle),
+                    .range = vk.descriptor_registry.getBufferSize(uniform_handle),
                 };
             },
             c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
-                const texture_handle = vk.uniform_registry.getCombinedSamplerTexture(uniform_handle);
+                const texture_handle = vk.descriptor_registry.getCombinedSamplerTexture(uniform_handle);
                 if (texture_handle) |texture_handle_value| {
                     program.write_descriptor_sets[binding_index].pImageInfo = &.{
                         .imageLayout = vk.textures.getImageLayout(texture_handle_value),
@@ -308,10 +309,10 @@ pub fn pushDescriptorSet(
         }
     }
 
-    command_buffers.pushDescriptorSet(
-        index,
+    vk.command_buffers.pushDescriptorSet(
+        command_buffer_handle,
         program.pipeline_layout,
-        0,
+        index,
         program.layout_count,
         &program.write_descriptor_sets,
     );

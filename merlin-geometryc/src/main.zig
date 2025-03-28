@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const assets = @import("merlin_assets");
 const clap = @import("clap");
 const geometryc = @import("geometryc");
 const gltf = @import("merlin_gltf");
@@ -79,6 +80,20 @@ fn getOutputIndexBufferFileName(
         allocator,
         "index.{d}.{d}.bin",
         .{ mesh_index, primitive_index },
+    );
+    defer allocator.free(filename);
+
+    return try getOutputFileName(allocator, output_dir, filename);
+}
+
+fn getOutputMeshFileName(
+    allocator: std.mem.Allocator,
+    output_dir: []const u8,
+) ![]const u8 {
+    const filename = try std.fmt.allocPrint(
+        allocator,
+        "manifest.mesh",
+        .{},
     );
     defer allocator.free(filename);
 
@@ -180,8 +195,18 @@ pub fn main() !void {
         };
     }
 
+    var mesh_data = assets.MeshData{
+        .sub_mesh_count = @intCast(source.meshCount()),
+        .sub_meshes = std.mem.zeroes([16]assets.SubMeshData),
+    };
+
     for (0..source.meshCount()) |mesh_index| {
         const mesh = source.mesh(mesh_index);
+
+        if (mesh.primitiveCount() > 1) {
+            std.log.err("Multiple primitives are not supported yet\n", .{});
+            return error.Unsupported;
+        }
 
         for (0..mesh.primitiveCount()) |primitive_index| {
             try std_out.print("Mesh Informations (Primitive {d}):\n", .{primitive_index});
@@ -237,6 +262,19 @@ pub fn main() !void {
                 index_buffer_name,
                 &index_buffer_data,
             );
+
+            mesh_data.sub_meshes[mesh_index] = .{
+                .vertices_count = @intCast(vertex_buffer_data.num_vertices),
+                .indices_count = @intCast(index_buffer_data.num_indices),
+            };
         }
     }
+
+    const mesh_file_name = try getOutputMeshFileName(allocator, options.output_dir);
+    defer allocator.free(mesh_file_name);
+
+    try geometryc.saveMeshData(
+        mesh_file_name,
+        &mesh_data,
+    );
 }

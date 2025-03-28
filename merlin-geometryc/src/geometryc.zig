@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const assets = @import("merlin_assets");
 const gltf = @import("merlin_gltf");
 const utils = @import("merlin_utils");
 const gfx_types = utils.gfx_types;
@@ -280,4 +281,16 @@ pub fn saveIndexFile(
     );
     try utils.Serializer.write(file.writer(), data.index_type);
     try utils.Serializer.write(file.writer(), data.data);
+}
+
+pub fn saveMeshData(path: []const u8, data: *const assets.MeshData) !void {
+    var file = try std.fs.cwd().createFile(path, .{});
+    defer file.close();
+
+    try utils.Serializer.writeHeader(
+        file.writer(),
+        assets.MeshMagic,
+        assets.MeshVersion,
+    );
+    try utils.Serializer.write(file.writer(), data);
 }

@@ -21,7 +21,7 @@ pub const MaterialVersion: u8 = 1;
 // *********************************************************************************************
 
 pub const SubMeshData = struct {
-    indices_offset: u32,
+    vertices_count: u32,
     indices_count: u32,
 };
 

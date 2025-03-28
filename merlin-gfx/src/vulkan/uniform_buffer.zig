@@ -13,9 +13,8 @@ pub const UniformBuffer = struct {
     mapped_data: [*c]u8,
     mapped_data_size: u32,
 
-    pub fn update(self: *UniformBuffer, data: []const u8) void {
+    pub fn update(self: *const UniformBuffer, data: []const u8) void {
         std.debug.assert(data.len <= self.mapped_data_size);
-
         @memcpy(self.mapped_data[0..data.len], data);
     }
 };
