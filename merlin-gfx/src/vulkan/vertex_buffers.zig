@@ -13,7 +13,7 @@ const vk = @import("vulkan.zig");
 
 pub const VertexBuffer = struct {
     buffer: vk.buffer.Buffer,
-    layout: types.VertexLayout,
+    layout: gfx.PipelineLayoutHandle,
 };
 
 // *********************************************************************************************
@@ -48,8 +48,11 @@ pub fn create(
     try local_loader.open();
     defer local_loader.close();
 
-    const layout = try local_loader.readLayout(vk.gpa);
+    const buffer_layout = try local_loader.readLayout(vk.gpa);
     const data_size = try local_loader.readDataSize();
+
+    const layout_handle = try vk.pipeline_layouts.create(buffer_layout);
+    errdefer vk.pipeline_layouts.destroy(layout_handle);
 
     var staging_buffer = try vk.buffer.create(
         @intCast(data_size),
@@ -70,18 +73,18 @@ pub fn create(
 
     try local_loader.readData(mapped_data[0..data_size]);
 
-    var buffer = try vk.buffer.create(
+    var vertex_buffer = try vk.buffer.create(
         @intCast(data_size),
         c.VK_BUFFER_USAGE_TRANSFER_DST_BIT | c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
         c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
     );
-    errdefer vk.buffer.destroy(&buffer);
+    errdefer vk.buffer.destroy(&vertex_buffer);
 
     try vk.buffer.copyBuffer(
         command_pool,
         queue,
         staging_buffer.handle,
-        buffer.handle,
+        vertex_buffer.handle,
         @intCast(data_size),
     );
 
@@ -89,8 +92,8 @@ pub fn create(
     errdefer vertex_buffer_handles.free(handle);
 
     vertex_buffers[handle] = .{
-        .buffer = buffer,
-        .layout = layout,
+        .buffer = vertex_buffer,
+        .layout = layout_handle,
     };
 
     vk.log.debug("Created vertex buffer:", .{});
@@ -111,14 +114,15 @@ pub fn destroy(handle: gfx.VertexBufferHandle) void {
 pub fn destroyPendingResources() void {
     for (0..vertex_buffers_to_destroy_count) |i| {
         vk.buffer.destroy(&vertex_buffers_to_destroy[i].buffer);
+        vk.pipeline_layouts.destroy(vertex_buffers_to_destroy[i].layout);
     }
     vertex_buffers_to_destroy_count = 0;
 }
 
-pub inline fn getBuffer(handle: gfx.VertexBufferHandle) c.VkBuffer {
+pub inline fn buffer(handle: gfx.VertexBufferHandle) c.VkBuffer {
     return vertex_buffers[handle].buffer.handle;
 }
 
-pub inline fn getLayout(handle: gfx.VertexBufferHandle) *types.VertexLayout {
-    return &vertex_buffers[handle].layout;
+pub inline fn layout(handle: gfx.VertexBufferHandle) gfx.PipelineLayoutHandle {
+    return vertex_buffers[handle].layout;
 }

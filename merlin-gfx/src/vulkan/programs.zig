@@ -182,15 +182,9 @@ pub fn create(
     var write_descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet = undefined;
     var descriptor_types: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorType = undefined;
     var uniform_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.UniformHandle = undefined;
-    //errdefer {
-    //    for (0..layout_count) |binding_index| {
-    //        vk.descriptor_registry.destroy(uniform_handles[binding_index]);
-    //    }
-    //}
 
     for (0..layout_count) |binding_index| {
         const name = layout_names[binding_index];
-        //const size = layout_sizes[binding_index];
         const descriptor_type = layouts[binding_index].descriptorType;
 
         descriptor_types[binding_index] = descriptor_type;
@@ -257,10 +251,6 @@ pub fn destroy(handle: gfx.ProgramHandle) void {
 pub fn destroyPendingResources() void {
     for (0..programs_to_destroy_count) |i| {
         const program = &programs_to_destroy[i];
-        //for (0..program.layout_count) |binding_index| {
-        //    vk.descriptor_registry.destroy(program.uniform_handles[binding_index]);
-        //}
-
         vk.device.destroyPipelineLayout(program.pipeline_layout);
         if (program.descriptor_set_layout) |descriptor_set_layout_value| {
             vk.device.destroyDescriptorSetLayout(descriptor_set_layout_value);
@@ -269,63 +259,30 @@ pub fn destroyPendingResources() void {
     programs_to_destroy_count = 0;
 }
 
-pub fn pushDescriptorSet(
-    handle: gfx.ProgramHandle,
-    command_buffer_handle: gfx.CommandBufferHandle,
-    //command_buffers: *const vk.command_buffers.CommandBuffers,
-    index: u32,
-) !void {
-    const program = &programs[handle];
-    for (0..program.layout_count) |binding_index| {
-        const uniform_handle = program.uniform_handles[binding_index];
-        switch (program.descriptor_types[binding_index]) {
-            c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
-                program.write_descriptor_sets[binding_index].pBufferInfo = &.{
-                    .buffer = vk.descriptor_registry.getBuffer(uniform_handle),
-                    .offset = 0,
-                    .range = vk.descriptor_registry.getBufferSize(uniform_handle),
-                };
-            },
-            c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
-                const texture_handle = vk.descriptor_registry.getCombinedSamplerTexture(uniform_handle);
-                if (texture_handle) |texture_handle_value| {
-                    program.write_descriptor_sets[binding_index].pImageInfo = &.{
-                        .imageLayout = vk.textures.getImageLayout(texture_handle_value),
-                        .imageView = vk.textures.getImageView(texture_handle_value),
-                        .sampler = vk.textures.getSampler(texture_handle_value),
-                    };
-                } else {
-                    vk.log.err("Texture handle is null for descriptor {d}", .{binding_index});
-                    return error.TextureHandleIsNull;
-                }
-            },
-            else => {
-                vk.log.err(
-                    "Unsupported descriptor type: {s}",
-                    .{c.string_VkDescriptorType(program.descriptor_types[binding_index])},
-                );
-                return error.UnsupportedDescriptorType;
-            },
-        }
-    }
-
-    vk.command_buffers.pushDescriptorSet(
-        command_buffer_handle,
-        program.pipeline_layout,
-        index,
-        program.layout_count,
-        &program.write_descriptor_sets,
-    );
-}
-
-pub inline fn getVertexShader(handle: gfx.ProgramHandle) gfx.ShaderHandle {
+pub inline fn vertexShader(handle: gfx.ProgramHandle) gfx.ShaderHandle {
     return programs[handle].vertex_shader;
 }
 
-pub inline fn getFragmentShader(handle: gfx.ProgramHandle) gfx.ShaderHandle {
+pub inline fn fragmentShader(handle: gfx.ProgramHandle) gfx.ShaderHandle {
     return programs[handle].fragment_shader;
 }
 
-pub inline fn getPipelineLayout(handle: gfx.ProgramHandle) c.VkPipelineLayout {
+pub inline fn pipelineLayout(handle: gfx.ProgramHandle) c.VkPipelineLayout {
     return programs[handle].pipeline_layout;
+}
+
+pub inline fn layoutCount(handle: gfx.ProgramHandle) u32 {
+    return programs[handle].layout_count;
+}
+
+pub inline fn writeDescriptorSets(handle: gfx.ProgramHandle) [*]c.VkWriteDescriptorSet {
+    return &programs[handle].write_descriptor_sets;
+}
+
+pub inline fn uniformHandle(handle: gfx.ProgramHandle, binding_index: u32) gfx.UniformHandle {
+    return programs[handle].uniform_handles[binding_index];
+}
+
+pub inline fn descriptorType(handle: gfx.ProgramHandle, binding_index: u32) c.VkDescriptorType {
+    return programs[handle].descriptor_types[binding_index];
 }

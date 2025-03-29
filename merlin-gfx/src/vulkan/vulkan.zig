@@ -18,6 +18,7 @@ pub const index_buffers = @import("index_buffers.zig");
 pub const instance = @import("instance.zig");
 pub const library = @import("library.zig");
 pub const pipeline = @import("pipeline.zig");
+pub const pipeline_layouts = @import("pipeline_layouts.zig");
 pub const programs = @import("programs.zig");
 pub const render_pass = @import("render_pass.zig");
 pub const shaders = @import("shaders.zig");
@@ -33,15 +34,6 @@ pub const MaxFramesInFlight = 2;
 pub const MaxDescriptorSets = 1024;
 
 // *********************************************************************************************
-// Structs
-// *********************************************************************************************
-
-const PipelineKey = struct {
-    program: gfx.ProgramHandle,
-    layout: types.VertexLayout,
-};
-
-// *********************************************************************************************
 // Globals
 // *********************************************************************************************
 
@@ -55,7 +47,7 @@ var transfer_queue: c.VkQueue = undefined;
 
 var main_surface: c.VkSurfaceKHR = undefined;
 var main_swap_chain: swap_chain.SwapChain = undefined;
-var main_render_pass: c.VkRenderPass = undefined;
+pub var main_render_pass: c.VkRenderPass = undefined; // TODO: this should not be public
 var main_depth_image: depth_image.DepthImage = undefined;
 var main_command_buffers: [MaxFramesInFlight]gfx.CommandBufferHandle = undefined;
 var main_descriptor_pool: c.VkDescriptorPool = undefined;
@@ -65,17 +57,12 @@ var transfer_command_pool: c.VkCommandPool = undefined;
 
 var debug_messenger: ?c.VkDebugUtilsMessengerEXT = null;
 
-var pipelines: std.AutoHashMap(PipelineKey, c.VkPipeline) = undefined;
-
 var image_available_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
 var render_finished_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
 var in_flight_fences: [MaxFramesInFlight]c.VkFence = undefined;
 
 var current_image_index: u32 = 0;
 var current_frame: u32 = 0;
-var current_program: ?gfx.ProgramHandle = null;
-var current_vertex_buffer: ?gfx.VertexBufferHandle = null;
-var current_index_buffer: ?gfx.IndexBufferHandle = null;
 
 var framebuffer_invalidated: bool = false;
 
@@ -147,28 +134,6 @@ fn recreateSwapChain() !void {
         main_render_pass,
         main_depth_image.view,
     );
-}
-
-fn getPipeline(
-    program: gfx.ProgramHandle,
-    layout: *types.VertexLayout,
-) !c.VkPipeline {
-    const key = PipelineKey{
-        .program = program,
-        .layout = layout.*,
-    };
-    var pipeline_value = pipelines.get(key);
-    if (pipeline_value != null) {
-        return pipeline_value.?;
-    }
-
-    pipeline_value = try pipeline.create(
-        program,
-        main_render_pass,
-        layout.*,
-    );
-    try pipelines.put(key, pipeline_value.?);
-    return pipeline_value.?;
 }
 
 // *********************************************************************************************
@@ -373,7 +338,7 @@ pub fn init(
         );
     }
 
-    pipelines = .init(gpa);
+    //pipelines = .init(gpa);
 
     try descriptor_registry.init();
     errdefer descriptor_registry.deinit();
@@ -400,6 +365,8 @@ pub fn init(
     try device.createDescriptorPool(&pool_info, &main_descriptor_pool);
     errdefer device.destroyDescriptorPool(main_descriptor_pool);
 
+    pipeline_layouts.init();
+    pipeline.init();
     vertex_buffers.init();
     index_buffers.init();
     programs.init();
@@ -416,11 +383,13 @@ pub fn deinit() void {
 
     destroyPendingResources();
 
-    vertex_buffers.deinit();
-    index_buffers.deinit();
-    programs.deinit();
-    shaders.deinit();
     textures.deinit();
+    shaders.deinit();
+    programs.deinit();
+    index_buffers.deinit();
+    vertex_buffers.deinit();
+    pipeline.deinit();
+    pipeline_layouts.deinit();
 
     device.destroyDescriptorPool(main_descriptor_pool);
 
@@ -431,12 +400,6 @@ pub fn deinit() void {
         device.destroySemaphore(render_finished_semaphores[i]);
         device.destroyFence(in_flight_fences[i]);
     }
-
-    var iterator = pipelines.valueIterator();
-    while (iterator.next()) |pipeline_value| {
-        pipeline.destroy(pipeline_value.*);
-    }
-    pipelines.deinit();
 
     for (0..MaxFramesInFlight) |i| {
         command_buffers.destroy(main_command_buffers[i]);
@@ -462,7 +425,7 @@ pub fn deinit() void {
     arena_impl.deinit();
 }
 
-pub fn getSwapchainSize() [2]u32 {
+pub fn swapchainSize() [2]u32 {
     return .{
         main_swap_chain.extent.width,
         main_swap_chain.extent.height,
@@ -703,18 +666,27 @@ pub fn setScissor(position: [2]u32, size: [2]u32) void {
 }
 
 pub fn bindProgram(program: gfx.ProgramHandle) void {
-    current_program = program;
+    command_buffers.bindProgram(
+        main_command_buffers[current_frame],
+        program,
+    );
 }
 
 pub fn bindVertexBuffer(vertex_buffer: gfx.VertexBufferHandle) void {
-    current_vertex_buffer = vertex_buffer;
+    command_buffers.bindVertexBuffer(
+        main_command_buffers[current_frame],
+        vertex_buffer,
+    );
 }
 
-pub fn bindIndexBuffer(handle: gfx.IndexBufferHandle) void {
-    current_index_buffer = handle;
+pub fn bindIndexBuffer(index_buffer: gfx.IndexBufferHandle) void {
+    command_buffers.bindIndexBuffer(
+        main_command_buffers[current_frame],
+        index_buffer,
+    );
 }
 
-pub fn bindTexture(texture: gfx.TextureHandle, uniform: gfx.UniformHandle) void {
+pub fn bindUniformSampler(uniform: gfx.UniformHandle, texture: gfx.TextureHandle) void {
     descriptor_registry.updateCombinedSampler(uniform, texture) catch {
         log.err("Failed to update Vulkan combined sampler", .{});
     };
@@ -726,37 +698,6 @@ pub fn draw(
     first_vertex: u32,
     first_instance: u32,
 ) void {
-    std.debug.assert(current_program != null);
-    std.debug.assert(current_vertex_buffer != null);
-
-    const pipeline_value = getPipeline(
-        current_program.?,
-        vertex_buffers.getLayout(current_vertex_buffer.?),
-    ) catch {
-        log.err("Failed to bind Vulkan program: {d}", .{current_program.?});
-        return;
-    };
-    command_buffers.bindPipeline(
-        main_command_buffers[current_frame],
-        pipeline_value,
-    );
-
-    var offsets = [_]c.VkDeviceSize{0};
-    command_buffers.bindVertexBuffer(
-        main_command_buffers[current_frame],
-        vertex_buffers.getBuffer(current_vertex_buffer.?),
-        @ptrCast(&offsets),
-    );
-
-    programs.pushDescriptorSet(
-        current_program.?,
-        main_command_buffers[current_frame],
-        0,
-    ) catch {
-        log.err("Failed to bind Vulkan descriptor set", .{});
-        return;
-    };
-
     command_buffers.draw(
         main_command_buffers[current_frame],
         vertex_count,
@@ -773,51 +714,6 @@ pub fn drawIndexed(
     vertex_offset: i32,
     first_instance: u32,
 ) void {
-    std.debug.assert(current_program != null);
-    std.debug.assert(current_vertex_buffer != null);
-    std.debug.assert(current_index_buffer != null);
-
-    const pipeline_value = getPipeline(
-        current_program.?,
-        vertex_buffers.getLayout(current_vertex_buffer.?),
-    ) catch {
-        log.err("Failed to bind Vulkan program: {d}", .{current_program.?});
-        return;
-    };
-    command_buffers.bindPipeline(
-        main_command_buffers[current_frame],
-        pipeline_value,
-    );
-
-    var offsets = [_]c.VkDeviceSize{0};
-    command_buffers.bindVertexBuffer(
-        main_command_buffers[current_frame],
-        vertex_buffers.getBuffer(current_vertex_buffer.?),
-        @ptrCast(&offsets),
-    );
-
-    programs.pushDescriptorSet(
-        current_program.?,
-        main_command_buffers[current_frame],
-        0,
-    ) catch {
-        log.err("Failed to bind Vulkan descriptor set", .{});
-        return;
-    };
-
-    const index_type: c_uint = switch (index_buffers.getIndexType(current_index_buffer.?)) {
-        .u8 => c.VK_INDEX_TYPE_UINT8_EXT,
-        .u16 => c.VK_INDEX_TYPE_UINT16,
-        .u32 => c.VK_INDEX_TYPE_UINT32,
-    };
-
-    command_buffers.bindIndexBuffer(
-        main_command_buffers[current_frame],
-        index_buffers.getBuffer(current_index_buffer.?),
-        0,
-        index_type,
-    );
-
     command_buffers.drawIndexed(
         main_command_buffers[current_frame],
         index_count,

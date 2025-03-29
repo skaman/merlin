@@ -7,6 +7,10 @@ const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
 const vk = @import("vulkan.zig");
 
+// *********************************************************************************************
+// Constants
+// *********************************************************************************************
+
 pub const MaxVertexAttributes = 16;
 pub const MaxDescriptorSetBindings = 16;
 
@@ -61,7 +65,22 @@ const AttributeType = [@typeInfo(types.VertexComponentType).@"enum".fields.len][
 };
 
 // *********************************************************************************************
-// Public API
+// Structs
+// *********************************************************************************************
+
+const PipelineKey = struct {
+    program: gfx.ProgramHandle,
+    layout: gfx.PipelineLayoutHandle,
+};
+
+// *********************************************************************************************
+// Globals
+// *********************************************************************************************
+
+var pipelines: std.AutoHashMap(PipelineKey, c.VkPipeline) = undefined;
+
+// *********************************************************************************************
+// Private API
 // *********************************************************************************************
 
 pub fn create(
@@ -78,8 +97,8 @@ pub fn create(
         },
     );
 
-    const vertex_shader = vk.programs.getVertexShader(program);
-    const fragment_shader = vk.programs.getFragmentShader(program);
+    const vertex_shader = vk.programs.vertexShader(program);
+    const fragment_shader = vk.programs.fragmentShader(program);
 
     var attribute_descriptions: [MaxVertexAttributes]c.VkVertexInputAttributeDescription = undefined;
     var attribute_count: u32 = 0;
@@ -233,19 +252,19 @@ pub fn create(
             .pDepthStencilState = &depth_stencil,
             .pColorBlendState = &color_blending,
             .pDynamicState = &dynamic_state,
-            .layout = vk.programs.getPipelineLayout(program),
+            .layout = vk.programs.pipelineLayout(program),
             .renderPass = render_pass,
             .subpass = 0,
             //.basePipelineHandle = c.VK_NULL_HANDLE,
         },
     );
 
-    var pipeline: c.VkPipeline = undefined;
+    var graphics_pipeline: c.VkPipeline = undefined;
     try vk.device.createGraphicsPipelines(
         null,
         1,
         &pipeline_create_info,
-        &pipeline,
+        &graphics_pipeline,
     );
 
     vk.log.debug("Pipeline created:", .{});
@@ -271,9 +290,45 @@ pub fn create(
         );
     }
 
-    return pipeline;
+    return graphics_pipeline;
 }
 
-pub fn destroy(pipeline: c.VkPipeline) void {
-    vk.device.destroyPipeline(pipeline);
+// *********************************************************************************************
+// Public API
+// *********************************************************************************************
+
+pub fn init() void {
+    pipelines = .init(vk.gpa);
+}
+
+pub fn deinit() void {
+    var iterator = pipelines.valueIterator();
+    while (iterator.next()) |pipeline_value| {
+        vk.device.destroyPipeline(pipeline_value.*);
+    }
+
+    pipelines.deinit();
+}
+
+pub fn pipeline(
+    program_handle: gfx.ProgramHandle,
+    layout_handle: gfx.PipelineLayoutHandle,
+) !c.VkPipeline {
+    const key = PipelineKey{
+        .program = program_handle,
+        .layout = layout_handle,
+    };
+    var pipeline_value = pipelines.get(key);
+    if (pipeline_value != null) {
+        return pipeline_value.?;
+    }
+
+    const vertex_layout = vk.pipeline_layouts.layout(layout_handle);
+    pipeline_value = try create(
+        program_handle,
+        vk.main_render_pass,
+        vertex_layout.*,
+    );
+    try pipelines.put(key, pipeline_value.?);
+    return pipeline_value.?;
 }
