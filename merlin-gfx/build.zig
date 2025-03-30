@@ -13,10 +13,6 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    const zmath = b.dependency("zmath", .{
-        .target = target,
-        .optimize = optimize,
-    });
 
     const vulkan_headers = b.dependency("vulkan_headers", .{
         .target = target,
@@ -46,7 +42,6 @@ pub fn build(b: *std.Build) !void {
 
     merlin_gfx.root_module.addImport("merlin_platform", merlin_platform.module("merlin_platform"));
     merlin_gfx.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
-    merlin_gfx.root_module.addImport("zmath", zmath.module("root"));
 
     merlin_gfx.linkLibrary(vulkan_headers.artifact("vulkan_headers"));
     merlin_gfx.addIncludePath(b.path("../vendor/vulkan-headers/upstream/include"));

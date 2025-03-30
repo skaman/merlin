@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const utils = @import("merlin_utils");
+const types = utils.gfx_types;
 
 const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
@@ -10,12 +11,29 @@ const vk = @import("vulkan.zig");
 // Structs
 // *********************************************************************************************
 
+const UniformBufferBinding = struct {
+    buffer_handle: gfx.UniformBufferHandle,
+    offset: u32,
+};
+
+const CombinedSamplerBinding = struct {
+    texture_handle: gfx.TextureHandle,
+};
+
+const UniformBinding = union(types.DescriptorBindType) {
+    uniform_buffer: UniformBufferBinding,
+    combined_sampler: CombinedSamplerBinding,
+};
+
 pub const CommandBuffer = struct {
     command_pool: c.VkCommandPool,
     handle: c.VkCommandBuffer,
+
     current_program: ?gfx.ProgramHandle = null,
     current_vertex_buffer: ?gfx.VertexBufferHandle = null,
     current_index_buffer: ?gfx.IndexBufferHandle = null,
+    current_uniform_bindings: [gfx.MaxUniformHandles]UniformBinding = undefined,
+
     last_pipeline_layout: ?gfx.PipelineLayoutHandle = null,
     last_pipeline_program: ?gfx.ProgramHandle = null,
     last_vertex_buffer: ?gfx.VertexBufferHandle = null,
@@ -109,27 +127,27 @@ fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.
     for (0..layout_count) |binding_index| {
         const uniform_handle = vk.programs.uniformHandle(program_handle, @intCast(binding_index));
         const descriptor_type = vk.programs.descriptorType(program_handle, @intCast(binding_index));
+        const uniform_binding = command_buffers[handle].current_uniform_bindings[uniform_handle];
 
         switch (descriptor_type) {
             c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
+                std.debug.assert(uniform_binding == .uniform_buffer);
+                const buffer = vk.uniform_buffers.buffer(uniform_binding.uniform_buffer.buffer_handle);
+                const uniform_size = vk.programs.uniformSize(program_handle, @intCast(binding_index));
                 write_descriptor_sets[binding_index].pBufferInfo = &.{
-                    .buffer = vk.descriptor_registry.getBuffer(uniform_handle),
-                    .offset = 0,
-                    .range = vk.descriptor_registry.getBufferSize(uniform_handle),
+                    .buffer = buffer,
+                    .offset = uniform_binding.uniform_buffer.offset,
+                    .range = uniform_size,
                 };
             },
             c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
-                const texture_handle = vk.descriptor_registry.getCombinedSamplerTexture(uniform_handle);
-                if (texture_handle) |texture_handle_value| {
-                    write_descriptor_sets[binding_index].pImageInfo = &.{
-                        .imageLayout = vk.textures.getImageLayout(texture_handle_value),
-                        .imageView = vk.textures.getImageView(texture_handle_value),
-                        .sampler = vk.textures.getSampler(texture_handle_value),
-                    };
-                } else {
-                    vk.log.err("Texture handle is null for descriptor {d}", .{binding_index});
-                    return error.TextureHandleIsNull;
-                }
+                std.debug.assert(uniform_binding == .combined_sampler);
+                const texture_handle = uniform_binding.combined_sampler.texture_handle;
+                write_descriptor_sets[binding_index].pImageInfo = &.{
+                    .imageLayout = vk.textures.getImageLayout(texture_handle),
+                    .imageView = vk.textures.getImageView(texture_handle),
+                    .sampler = vk.textures.getSampler(texture_handle),
+                };
             },
             else => {
                 vk.log.err(
@@ -416,6 +434,32 @@ pub fn bindIndexBuffer(
     index_buffer: gfx.IndexBufferHandle,
 ) void {
     command_buffers[handle].current_index_buffer = index_buffer;
+}
+
+pub fn bindUniformBuffer(
+    handle: gfx.CommandBufferHandle,
+    uniform: gfx.UniformHandle,
+    buffer: gfx.UniformBufferHandle,
+    offset: u32,
+) void {
+    command_buffers[handle].current_uniform_bindings[uniform] = .{
+        .uniform_buffer = .{
+            .buffer_handle = buffer,
+            .offset = offset,
+        },
+    };
+}
+
+pub fn bindCombinedSampler(
+    handle: gfx.CommandBufferHandle,
+    uniform: gfx.UniformHandle,
+    texture: gfx.TextureHandle,
+) void {
+    command_buffers[handle].current_uniform_bindings[uniform] = .{
+        .combined_sampler = .{
+            .texture_handle = texture,
+        },
+    };
 }
 
 pub fn draw(

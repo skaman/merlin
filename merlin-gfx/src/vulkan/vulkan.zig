@@ -25,7 +25,7 @@ pub const shaders = @import("shaders.zig");
 pub const surface = @import("surface.zig");
 pub const swap_chain = @import("swap_chain.zig");
 pub const textures = @import("textures.zig");
-pub const uniform_buffer = @import("uniform_buffer.zig");
+pub const uniform_buffers = @import("uniform_buffers.zig");
 pub const vertex_buffers = @import("vertex_buffers.zig");
 
 pub const log = std.log.scoped(.gfx_vk);
@@ -62,7 +62,7 @@ var render_finished_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
 var in_flight_fences: [MaxFramesInFlight]c.VkFence = undefined;
 
 var current_image_index: u32 = 0;
-var current_frame: u32 = 0;
+var current_frame_in_flight: u32 = 0;
 
 var framebuffer_invalidated: bool = false;
 
@@ -96,6 +96,7 @@ fn setupDebugMessenger(options: *const gfx.Options) !?c.VkDebugUtilsMessengerEXT
 fn destroyPendingResources() void {
     vertex_buffers.destroyPendingResources();
     index_buffers.destroyPendingResources();
+    uniform_buffers.destroyPendingResources();
     programs.destroyPendingResources();
     shaders.destroyPendingResources();
     textures.destroyPendingResources();
@@ -338,8 +339,6 @@ pub fn init(
         );
     }
 
-    //pipelines = .init(gpa);
-
     try descriptor_registry.init();
     errdefer descriptor_registry.deinit();
 
@@ -369,6 +368,7 @@ pub fn init(
     pipeline.init();
     vertex_buffers.init();
     index_buffers.init();
+    uniform_buffers.init();
     programs.init();
     shaders.init();
     textures.init();
@@ -386,6 +386,7 @@ pub fn deinit() void {
     textures.deinit();
     shaders.deinit();
     programs.deinit();
+    uniform_buffers.deinit();
     index_buffers.deinit();
     vertex_buffers.deinit();
     pipeline.deinit();
@@ -430,6 +431,14 @@ pub fn swapchainSize() [2]u32 {
         main_swap_chain.extent.width,
         main_swap_chain.extent.height,
     };
+}
+
+pub fn maxFramesInFlight() u32 {
+    return MaxFramesInFlight;
+}
+
+pub fn currentFrameInFlight() u32 {
+    return current_frame_in_flight;
 }
 
 pub fn createShader(loader: utils.loaders.ShaderLoader) !gfx.ShaderHandle {
@@ -483,44 +492,16 @@ pub fn destroyIndexBuffer(handle: gfx.IndexBufferHandle) void {
     index_buffers.destroy(handle);
 }
 
-pub fn createUniformBuffer(
-    name: []const u8,
-    size: u32,
-) !gfx.UniformHandle {
-    const handle = try descriptor_registry.createBuffer(name, size);
-
-    log.debug("Created uniform buffer:", .{});
-    log.debug("  - Handle: {d}", .{handle});
-
-    return handle;
+pub fn createUniformBuffer(size: u32) !gfx.UniformBufferHandle {
+    return uniform_buffers.create(size);
 }
 
-pub fn destroyUniformBuffer(handle: gfx.UniformHandle) void {
-    descriptor_registry.destroy(handle);
-
-    log.debug("Destroyed uniform buffer with handle {d}", .{handle});
+pub fn destroyUniformBuffer(handle: gfx.UniformBufferHandle) void {
+    uniform_buffers.destroy(handle);
 }
 
-pub fn updateUniformBuffer(
-    handle: gfx.UniformHandle,
-    data: []const u8,
-) !void {
-    try descriptor_registry.updateBuffer(handle, data);
-}
-
-pub fn createCombinedSampler(name: []const u8) !gfx.UniformHandle {
-    const handle = try descriptor_registry.createCombinedSampler(name);
-
-    log.debug("Created combined sampler:", .{});
-    log.debug("  - Handle: {d}", .{handle});
-
-    return handle;
-}
-
-pub fn destroyCombinedSampler(handle: gfx.UniformHandle) void {
-    descriptor_registry.destroy(handle);
-
-    log.debug("Destroyed combined sampler with handle {d}", .{handle});
+pub fn updateUniformBuffer(handle: gfx.UniformBufferHandle, data: []const u8, offset: u32) void {
+    uniform_buffers.update(handle, data, offset);
 }
 
 pub fn createTexture(loader: utils.loaders.TextureLoader) !gfx.TextureHandle {
@@ -535,10 +516,14 @@ pub fn destroyTexture(handle: gfx.TextureHandle) void {
     return textures.destroy(handle);
 }
 
+pub fn registerUniformName(name: []const u8) !gfx.UniformHandle {
+    return descriptor_registry.registerName(name);
+}
+
 pub fn beginFrame() !bool {
     try device.waitForFences(
         1,
-        &in_flight_fences[current_frame],
+        &in_flight_fences[current_frame_in_flight],
         c.VK_TRUE,
         c.UINT64_MAX,
     );
@@ -546,7 +531,7 @@ pub fn beginFrame() !bool {
     if (try device.acquireNextImageKHR(
         main_swap_chain.handle,
         c.UINT64_MAX,
-        image_available_semaphores[current_frame],
+        image_available_semaphores[current_frame_in_flight],
         null,
         &current_image_index,
     ) == c.VK_ERROR_OUT_OF_DATE_KHR) {
@@ -554,14 +539,14 @@ pub fn beginFrame() !bool {
         return false;
     }
 
-    try device.resetFences(1, &in_flight_fences[current_frame]);
+    try device.resetFences(1, &in_flight_fences[current_frame_in_flight]);
 
-    try command_buffers.reset(main_command_buffers[current_frame]);
+    try command_buffers.reset(main_command_buffers[current_frame_in_flight]);
     destroyPendingResources();
-    try command_buffers.begin(main_command_buffers[current_frame]);
+    try command_buffers.begin(main_command_buffers[current_frame_in_flight]);
 
     try command_buffers.beginRenderPass(
-        main_command_buffers[current_frame],
+        main_command_buffers[current_frame_in_flight],
         main_render_pass,
         main_swap_chain.frame_buffers.?[current_image_index],
         main_swap_chain.extent,
@@ -571,12 +556,12 @@ pub fn beginFrame() !bool {
 }
 
 pub fn endFrame() !void {
-    command_buffers.endRenderPass(main_command_buffers[current_frame]);
-    try command_buffers.end(main_command_buffers[current_frame]);
+    command_buffers.endRenderPass(main_command_buffers[current_frame_in_flight]);
+    try command_buffers.end(main_command_buffers[current_frame_in_flight]);
 
     const wait_stages = [_]c.VkPipelineStageFlags{c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    const wait_semaphores = [_]c.VkSemaphore{image_available_semaphores[current_frame]};
-    const signal_semaphores = [_]c.VkSemaphore{render_finished_semaphores[current_frame]};
+    const wait_semaphores = [_]c.VkSemaphore{image_available_semaphores[current_frame_in_flight]};
+    const signal_semaphores = [_]c.VkSemaphore{render_finished_semaphores[current_frame_in_flight]};
     const submit_info = std.mem.zeroInit(
         c.VkSubmitInfo,
         .{
@@ -585,7 +570,7 @@ pub fn endFrame() !void {
             .pWaitSemaphores = &wait_semaphores,
             .pWaitDstStageMask = &wait_stages,
             .commandBufferCount = 1,
-            .pCommandBuffers = &command_buffers.commandBuffer(main_command_buffers[current_frame]),
+            .pCommandBuffers = &command_buffers.commandBuffer(main_command_buffers[current_frame_in_flight]),
             .signalSemaphoreCount = 1,
             .pSignalSemaphores = &signal_semaphores,
         },
@@ -595,7 +580,7 @@ pub fn endFrame() !void {
         graphics_queue,
         1,
         &submit_info,
-        in_flight_fences[current_frame],
+        in_flight_fences[current_frame_in_flight],
     );
 
     const present_info = std.mem.zeroInit(
@@ -621,7 +606,7 @@ pub fn endFrame() !void {
         try recreateSwapChain();
     }
 
-    current_frame = (current_frame + 1) % MaxFramesInFlight;
+    current_frame_in_flight = (current_frame_in_flight + 1) % MaxFramesInFlight;
 
     _ = arena_impl.reset(.retain_capacity);
 }
@@ -640,7 +625,7 @@ pub fn setViewport(position: [2]u32, size: [2]u32) void {
     );
 
     command_buffers.setViewport(
-        main_command_buffers[current_frame],
+        main_command_buffers[current_frame_in_flight],
         &vk_viewport,
     );
 }
@@ -660,36 +645,47 @@ pub fn setScissor(position: [2]u32, size: [2]u32) void {
         },
     );
     command_buffers.setScissor(
-        main_command_buffers[current_frame],
+        main_command_buffers[current_frame_in_flight],
         &vk_scissor,
     );
 }
 
 pub fn bindProgram(program: gfx.ProgramHandle) void {
     command_buffers.bindProgram(
-        main_command_buffers[current_frame],
+        main_command_buffers[current_frame_in_flight],
         program,
     );
 }
 
 pub fn bindVertexBuffer(vertex_buffer: gfx.VertexBufferHandle) void {
     command_buffers.bindVertexBuffer(
-        main_command_buffers[current_frame],
+        main_command_buffers[current_frame_in_flight],
         vertex_buffer,
     );
 }
 
 pub fn bindIndexBuffer(index_buffer: gfx.IndexBufferHandle) void {
     command_buffers.bindIndexBuffer(
-        main_command_buffers[current_frame],
+        main_command_buffers[current_frame_in_flight],
         index_buffer,
     );
 }
 
-pub fn bindUniformSampler(uniform: gfx.UniformHandle, texture: gfx.TextureHandle) void {
-    descriptor_registry.updateCombinedSampler(uniform, texture) catch {
-        log.err("Failed to update Vulkan combined sampler", .{});
-    };
+pub fn bindUniformBuffer(uniform: gfx.UniformHandle, uniform_buffer: gfx.UniformBufferHandle, offset: u32) void {
+    command_buffers.bindUniformBuffer(
+        main_command_buffers[current_frame_in_flight],
+        uniform,
+        uniform_buffer,
+        offset,
+    );
+}
+
+pub fn bindCombinedSampler(uniform: gfx.UniformHandle, texture: gfx.TextureHandle) void {
+    command_buffers.bindCombinedSampler(
+        main_command_buffers[current_frame_in_flight],
+        uniform,
+        texture,
+    );
 }
 
 pub fn draw(
@@ -699,7 +695,7 @@ pub fn draw(
     first_instance: u32,
 ) void {
     command_buffers.draw(
-        main_command_buffers[current_frame],
+        main_command_buffers[current_frame_in_flight],
         vertex_count,
         instance_count,
         first_vertex,
@@ -715,7 +711,7 @@ pub fn drawIndexed(
     first_instance: u32,
 ) void {
     command_buffers.drawIndexed(
-        main_command_buffers[current_frame],
+        main_command_buffers[current_frame_in_flight],
         index_count,
         instance_count,
         first_index,

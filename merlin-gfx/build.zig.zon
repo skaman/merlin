@@ -19,9 +19,6 @@
         .ktx_software = .{
             .path = "../vendor/ktx-software",
         },
-        .zmath = .{
-            .path = "../vendor/zmath",
-        },
     },
 
     .paths = .{

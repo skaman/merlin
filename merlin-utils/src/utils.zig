@@ -10,7 +10,6 @@ const dbg = builtin.mode == std.builtin.Mode.Debug;
 pub fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
     return struct {
         const Self = @This();
-
         free_list: [size]THandle,
         free_count: u32 = size,
 
@@ -49,6 +48,10 @@ pub fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
 
             self.free_list[self.free_count] = handle;
             self.free_count += 1;
+        }
+
+        pub fn clear(self: *Self) void {
+            self.free_count = size;
         }
     };
 }

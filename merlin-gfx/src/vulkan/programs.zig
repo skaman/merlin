@@ -21,6 +21,7 @@ const Program = struct {
     uniform_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.UniformHandle,
     write_descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet,
     descriptor_types: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorType,
+    uninform_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32,
 
     layout_count: u32,
 };
@@ -41,7 +42,7 @@ var programs_to_destroy_count: u32 = 0;
 
 fn convertBindingType(bind_type: types.DescriptorBindType) c.VkDescriptorType {
     return switch (bind_type) {
-        .uniform => c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        .uniform_buffer => c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
         .combined_sampler => c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
     };
 }
@@ -181,29 +182,17 @@ pub fn create(
 
     var write_descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet = undefined;
     var descriptor_types: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorType = undefined;
+    var uniform_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32 = undefined;
     var uniform_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.UniformHandle = undefined;
 
     for (0..layout_count) |binding_index| {
         const name = layout_names[binding_index];
         const descriptor_type = layouts[binding_index].descriptorType;
+        const size = layout_sizes[binding_index];
 
         descriptor_types[binding_index] = descriptor_type;
-
-        switch (descriptor_type) {
-            c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
-                uniform_handles[binding_index] = try vk.descriptor_registry.registerName(name);
-            },
-            c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
-                uniform_handles[binding_index] = try vk.descriptor_registry.registerName(name);
-            },
-            else => {
-                vk.log.err(
-                    "Unsupported descriptor type: {s}",
-                    .{c.string_VkDescriptorType(descriptor_type)},
-                );
-                return error.UnsupportedDescriptorType;
-            },
-        }
+        uniform_sizes[binding_index] = size;
+        uniform_handles[binding_index] = try vk.descriptor_registry.registerName(name);
 
         write_descriptor_sets[binding_index] = std.mem.zeroInit(
             c.VkWriteDescriptorSet,
@@ -228,6 +217,7 @@ pub fn create(
         .uniform_handles = uniform_handles,
         .write_descriptor_sets = write_descriptor_sets,
         .descriptor_types = descriptor_types,
+        .uninform_sizes = uniform_sizes,
         .layout_count = layout_count,
     };
 
@@ -281,6 +271,10 @@ pub inline fn writeDescriptorSets(handle: gfx.ProgramHandle) [*]c.VkWriteDescrip
 
 pub inline fn uniformHandle(handle: gfx.ProgramHandle, binding_index: u32) gfx.UniformHandle {
     return programs[handle].uniform_handles[binding_index];
+}
+
+pub inline fn uniformSize(handle: gfx.ProgramHandle, binding_index: u32) u32 {
+    return programs[handle].uninform_sizes[binding_index];
 }
 
 pub inline fn descriptorType(handle: gfx.ProgramHandle, binding_index: u32) c.VkDescriptorType {

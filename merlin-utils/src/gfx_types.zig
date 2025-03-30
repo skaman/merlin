@@ -56,12 +56,12 @@ pub const IndexType = enum(u8) {
 };
 
 pub const DescriptorBindType = enum(u8) {
-    uniform,
+    uniform_buffer,
     combined_sampler,
 
     pub fn name(self: DescriptorBindType) []const u8 {
         return switch (self) {
-            .uniform => "uniform",
+            .uniform_buffer => "uniform_buffer",
             .combined_sampler => "combined_sampler",
         };
     }

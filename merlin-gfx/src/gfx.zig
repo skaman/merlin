@@ -3,7 +3,6 @@ const std = @import("std");
 const platform = @import("merlin_platform");
 const utils = @import("merlin_utils");
 const types = utils.gfx_types;
-const zm = @import("zmath");
 
 const noop = @import("noop/noop.zig");
 const vulkan = @import("vulkan/vulkan.zig");
@@ -18,6 +17,7 @@ pub const ShaderHandle = u16;
 pub const ProgramHandle = u16;
 pub const VertexBufferHandle = u16;
 pub const IndexBufferHandle = u16;
+pub const UniformBufferHandle = u16;
 pub const UniformHandle = u16;
 pub const TextureHandle = u16;
 pub const CommandBufferHandle = u16;
@@ -27,6 +27,7 @@ pub const MaxShaderHandles = 512;
 pub const MaxProgramHandles = 512;
 pub const MaxVertexBufferHandles = 512;
 pub const MaxIndexBufferHandles = 512;
+pub const MaxUniformBufferHandles = 512;
 pub const MaxUniformHandles = 512;
 pub const MaxTextureHandles = 512;
 pub const MaxCommandBufferHandles = 512;
@@ -46,16 +47,12 @@ pub const RendererType = enum {
     vulkan,
 };
 
-pub const ModelViewProj = struct {
-    model: zm.Mat align(16),
-    view: zm.Mat align(16),
-    proj: zm.Mat align(16),
-};
-
 const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
     swapchainSize: *const fn () [2]u32,
+    maxFramesInFlight: *const fn () u32,
+    currentFrameInFlight: *const fn () u32,
     createShader: *const fn (loader: utils.loaders.ShaderLoader) anyerror!ShaderHandle,
     destroyShader: *const fn (handle: ShaderHandle) void,
     createProgram: *const fn (vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!ProgramHandle,
@@ -64,13 +61,12 @@ const VTab = struct {
     destroyVertexBuffer: *const fn (handle: VertexBufferHandle) void,
     createIndexBuffer: *const fn (loader: utils.loaders.IndexBufferLoader) anyerror!IndexBufferHandle,
     destroyIndexBuffer: *const fn (handle: IndexBufferHandle) void,
-    createUniformBuffer: *const fn (name: []const u8, size: u32) anyerror!UniformHandle,
-    destroyUniformBuffer: *const fn (handle: UniformHandle) void,
-    updateUniformBuffer: *const fn (handle: UniformHandle, data: []const u8) anyerror!void,
-    createCombinedSampler: *const fn (name: []const u8) anyerror!UniformHandle,
-    destroyCombinedSampler: *const fn (handle: UniformHandle) void,
+    createUniformBuffer: *const fn (size: u32) anyerror!UniformBufferHandle,
+    destroyUniformBuffer: *const fn (handle: UniformBufferHandle) void,
+    updateUniformBuffer: *const fn (handle: UniformBufferHandle, data: []const u8, offset: u32) void,
     createTexture: *const fn (loader: utils.loaders.TextureLoader) anyerror!TextureHandle,
     destroyTexture: *const fn (handle: TextureHandle) void,
+    registerUniformName: *const fn (name: []const u8) anyerror!UniformHandle,
     beginFrame: *const fn () anyerror!bool,
     endFrame: *const fn () anyerror!void,
     setViewport: *const fn (position: [2]u32, size: [2]u32) void,
@@ -78,7 +74,8 @@ const VTab = struct {
     bindProgram: *const fn (program: ProgramHandle) void,
     bindVertexBuffer: *const fn (vertex_buffer: VertexBufferHandle) void,
     bindIndexBuffer: *const fn (index_buffer: IndexBufferHandle) void,
-    bindUniformSampler: *const fn (uniform: UniformHandle, texture: TextureHandle) void,
+    bindUniformBuffer: *const fn (uniform: UniformHandle, uniform_buffer: UniformBufferHandle, offset: u32) void,
+    bindCombinedSampler: *const fn (uniform: UniformHandle, texture: TextureHandle) void,
     draw: *const fn (vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void,
     drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32) void,
 };
@@ -93,7 +90,7 @@ pub var arena: std.mem.Allocator = undefined;
 
 var current_renderer: RendererType = undefined;
 
-var mvp_uniform_handle: UniformHandle = undefined;
+//var mvp_uniform_handle: UniformHandle = undefined;
 
 var v_tab: VTab = undefined;
 
@@ -108,6 +105,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .init = noop.init,
                 .deinit = noop.deinit,
                 .swapchainSize = noop.swapchainSize,
+                .maxFramesInFlight = noop.maxFramesInFlight,
+                .currentFrameInFlight = noop.currentFrameInFlight,
                 .createShader = noop.createShader,
                 .destroyShader = noop.destroyShader,
                 .createProgram = noop.createProgram,
@@ -119,10 +118,9 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .createUniformBuffer = noop.createUniformBuffer,
                 .destroyUniformBuffer = noop.destroyUniformBuffer,
                 .updateUniformBuffer = noop.updateUniformBuffer,
-                .createCombinedSampler = noop.createCombinedSampler,
-                .destroyCombinedSampler = noop.destroyCombinedSampler,
                 .createTexture = noop.createTexture,
                 .destroyTexture = noop.destroyTexture,
+                .registerUniformName = noop.registerUniformName,
                 .beginFrame = noop.beginFrame,
                 .endFrame = noop.endFrame,
                 .setViewport = noop.setViewport,
@@ -130,7 +128,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .bindProgram = noop.bindProgram,
                 .bindVertexBuffer = noop.bindVertexBuffer,
                 .bindIndexBuffer = noop.bindIndexBuffer,
-                .bindUniformSampler = noop.bindUniformSampler,
+                .bindUniformBuffer = noop.bindUniformBuffer,
+                .bindCombinedSampler = noop.bindCombinedSampler,
                 .draw = noop.draw,
                 .drawIndexed = noop.drawIndexed,
             };
@@ -140,6 +139,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .init = vulkan.init,
                 .deinit = vulkan.deinit,
                 .swapchainSize = vulkan.swapchainSize,
+                .maxFramesInFlight = vulkan.maxFramesInFlight,
+                .currentFrameInFlight = vulkan.currentFrameInFlight,
                 .createShader = vulkan.createShader,
                 .destroyShader = vulkan.destroyShader,
                 .createProgram = vulkan.createProgram,
@@ -151,10 +152,9 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .createUniformBuffer = vulkan.createUniformBuffer,
                 .destroyUniformBuffer = vulkan.destroyUniformBuffer,
                 .updateUniformBuffer = vulkan.updateUniformBuffer,
-                .createCombinedSampler = vulkan.createCombinedSampler,
-                .destroyCombinedSampler = vulkan.destroyCombinedSampler,
                 .createTexture = vulkan.createTexture,
                 .destroyTexture = vulkan.destroyTexture,
+                .registerUniformName = vulkan.registerUniformName,
                 .beginFrame = vulkan.beginFrame,
                 .endFrame = vulkan.endFrame,
                 .setViewport = vulkan.setViewport,
@@ -162,7 +162,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .bindProgram = vulkan.bindProgram,
                 .bindVertexBuffer = vulkan.bindVertexBuffer,
                 .bindIndexBuffer = vulkan.bindIndexBuffer,
-                .bindUniformSampler = vulkan.bindUniformSampler,
+                .bindUniformBuffer = vulkan.bindUniformBuffer,
+                .bindCombinedSampler = vulkan.bindCombinedSampler,
                 .draw = vulkan.draw,
                 .drawIndexed = vulkan.drawIndexed,
             };
@@ -194,14 +195,14 @@ pub fn init(
 
     current_renderer = options.renderer_type;
 
-    mvp_uniform_handle = try createUniformBuffer("u_mvp", @sizeOf(ModelViewProj));
+    //mvp_uniform_handle = try createUniformBuffer("u_mvp", @sizeOf(ModelViewProj));
 }
 
 /// Deinitializes the renderer.
 pub fn deinit() void {
     log.debug("Deinitializing renderer", .{});
 
-    destroyUniformBuffer(mvp_uniform_handle);
+    //destroyUniformBuffer(mvp_uniform_handle);
 
     v_tab.deinit();
     arena_impl.deinit();
@@ -212,13 +213,14 @@ pub inline fn swapchainSize() [2]u32 {
     return v_tab.swapchainSize();
 }
 
-// TODO: remove this function
-pub inline fn setModelViewProj(mvp: ModelViewProj) void {
-    const ptr: [*]const u8 = @ptrCast(&mvp);
-    updateUniformBuffer(
-        mvp_uniform_handle,
-        ptr[0..@sizeOf(ModelViewProj)],
-    );
+/// Returns the maximum number of frames in flight.
+pub inline fn maxFramesInFlight() u32 {
+    return v_tab.maxFramesInFlight();
+}
+
+/// Returns the current frame in flight.
+pub inline fn currentFrameInFlight() u32 {
+    return v_tab.currentFrameInFlight();
 }
 
 /// Creates a shader from a loader.
@@ -232,8 +234,14 @@ pub inline fn destroyShader(handle: ShaderHandle) void {
 }
 
 /// Creates a program from vertex and fragment shaders.
-pub inline fn createProgram(vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) !ProgramHandle {
-    return try v_tab.createProgram(vertex_shader, fragment_shader);
+pub inline fn createProgram(
+    vertex_shader: ShaderHandle,
+    fragment_shader: ShaderHandle,
+) !ProgramHandle {
+    return try v_tab.createProgram(
+        vertex_shader,
+        fragment_shader,
+    );
 }
 
 /// Destroys a program.
@@ -262,30 +270,18 @@ pub inline fn destroyIndexBuffer(handle: IndexBufferHandle) void {
 }
 
 /// Creates a uniform buffer.
-pub inline fn createUniformBuffer(name: []const u8, size: u32) !UniformHandle {
-    return try v_tab.createUniformBuffer(name, size);
+pub inline fn createUniformBuffer(size: u32) !UniformBufferHandle {
+    return try v_tab.createUniformBuffer(size);
 }
 
 /// Destroys a uniform buffer.
-pub inline fn destroyUniformBuffer(handle: UniformHandle) void {
+pub inline fn destroyUniformBuffer(handle: UniformBufferHandle) void {
     v_tab.destroyUniformBuffer(handle);
 }
 
 /// Updates a uniform buffer.
-pub inline fn updateUniformBuffer(handle: UniformHandle, data: []const u8) void {
-    v_tab.updateUniformBuffer(handle, data) catch |err| {
-        log.err("Failed to update uniform buffer: {}", .{err});
-    };
-}
-
-/// Creates a combined sampler.
-pub inline fn createCombinedSampler(name: []const u8) !UniformHandle {
-    return try v_tab.createCombinedSampler(name);
-}
-
-/// Destroys a combined sampler.
-pub inline fn destroyCombinedSampler(handle: UniformHandle) void {
-    v_tab.destroyCombinedSampler(handle);
+pub inline fn updateUniformBuffer(handle: UniformHandle, data: []const u8, offset: u32) void {
+    v_tab.updateUniformBuffer(handle, data, offset);
 }
 
 /// Creates a texture from a loader.
@@ -296,6 +292,11 @@ pub inline fn createTexture(loader: utils.loaders.TextureLoader) !TextureHandle 
 /// Destroys a texture.
 pub inline fn destroyTexture(handle: TextureHandle) void {
     v_tab.destroyTexture(handle);
+}
+
+/// Registers a uniform name.
+pub inline fn registerUniformName(name: []const u8) !UniformHandle {
+    return try v_tab.registerUniformName(name);
 }
 
 /// Begins a frame.
@@ -331,14 +332,20 @@ pub inline fn bindIndexBuffer(handle: IndexBufferHandle) void {
     v_tab.bindIndexBuffer(handle);
 }
 
-pub inline fn bindUniformSampler(uniform: UniformHandle, texture: TextureHandle) void {
-    v_tab.bindUniformSampler(uniform, texture);
+pub inline fn bindUniformBuffer(
+    uniform: UniformHandle,
+    uniform_buffer: UniformBufferHandle,
+    offset: u32,
+) void {
+    v_tab.bindUniformBuffer(
+        uniform,
+        uniform_buffer,
+        offset,
+    );
 }
 
-pub inline fn bindUniformBufferOffset(handle: UniformHandle, offset: u32) void {
-    // v_tab.bindUniformOffset(uniform, offset);
-    _ = handle;
-    _ = offset;
+pub inline fn bindCombinedSampler(uniform: UniformHandle, texture: TextureHandle) void {
+    v_tab.bindCombinedSampler(uniform, texture);
 }
 
 pub inline fn draw(
