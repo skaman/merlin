@@ -1,6 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const utils = @import("merlin_utils");
+
 const c = @import("c.zig").c;
 const platform = @import("platform.zig");
 
@@ -14,7 +16,11 @@ pub var gpa: std.mem.Allocator = undefined;
 var arena_impl: std.heap.ArenaAllocator = undefined;
 pub var arena: std.mem.Allocator = undefined;
 
-var windows: [platform.MaxWindowHandles]*c.GLFWwindow = undefined;
+var windows: utils.HandleArray(
+    platform.WindowHandle,
+    *c.GLFWwindow,
+    platform.MaxWindowHandles,
+) = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -65,22 +71,22 @@ pub fn createWindow(handle: platform.WindowHandle, options: *const platform.Wind
         null,
     ) orelse return error.WindowInitFailed;
 
-    windows[handle] = window;
+    windows.setValue(handle, window);
 }
 
 pub fn destroyWindow(handle: platform.WindowHandle) void {
-    c.glfwDestroyWindow(windows[handle]);
+    c.glfwDestroyWindow(windows.value(handle));
 }
 
 pub fn getWindowFramebufferSize(handle: platform.WindowHandle) [2]u32 {
     var width: c_int = undefined;
     var height: c_int = undefined;
-    c.glfwGetFramebufferSize(windows[handle], &width, &height);
+    c.glfwGetFramebufferSize(windows.value(handle), &width, &height);
     return .{ @intCast(width), @intCast(height) };
 }
 
 pub fn shouldCloseWindow(handle: platform.WindowHandle) bool {
-    return c.glfwWindowShouldClose(windows[handle]) == c.GLFW_TRUE;
+    return c.glfwWindowShouldClose(windows.value(handle)) == c.GLFW_TRUE;
 }
 
 pub fn pollEvents() void {
@@ -98,7 +104,7 @@ pub fn getNativeWindowHandleType() platform.NativeWindowHandleType {
     return .default;
 }
 pub fn getNativeWindowHandle(handle: platform.WindowHandle) ?*anyopaque {
-    const window = windows[handle];
+    const window = windows.value(handle);
     switch (builtin.os.tag) {
         .linux => {
             if (c.glfwGetPlatform() == c.GLFW_PLATFORM_WAYLAND)

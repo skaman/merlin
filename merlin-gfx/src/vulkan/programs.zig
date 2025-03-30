@@ -30,8 +30,16 @@ const Program = struct {
 // Globals
 // *********************************************************************************************
 
-var programs: [gfx.MaxProgramHandles]Program = undefined;
-var program_handles: utils.HandlePool(gfx.ProgramHandle, gfx.MaxProgramHandles) = undefined;
+var programs: utils.HandleArray(
+    gfx.ProgramHandle,
+    Program,
+    gfx.MaxProgramHandles,
+) = undefined;
+
+var program_handles: utils.HandlePool(
+    gfx.ProgramHandle,
+    gfx.MaxProgramHandles,
+) = undefined;
 
 var programs_to_destroy: [gfx.MaxProgramHandles]Program = undefined;
 var programs_to_destroy_count: u32 = 0;
@@ -205,21 +213,24 @@ pub fn create(
         );
     }
 
-    const handle = try program_handles.alloc();
-    errdefer program_handles.free(handle);
+    const handle = try program_handles.create();
+    errdefer program_handles.destroy(handle);
 
-    programs[handle] = .{
-        .pipeline_layout = pipeline_layout,
-        .vertex_shader = vertex_shader,
-        .fragment_shader = fragment_shader,
-        .descriptor_pool = descriptor_pool,
-        .descriptor_set_layout = descriptor_set_layout,
-        .uniform_handles = uniform_handles,
-        .write_descriptor_sets = write_descriptor_sets,
-        .descriptor_types = descriptor_types,
-        .uninform_sizes = uniform_sizes,
-        .layout_count = layout_count,
-    };
+    programs.setValue(
+        handle,
+        .{
+            .pipeline_layout = pipeline_layout,
+            .vertex_shader = vertex_shader,
+            .fragment_shader = fragment_shader,
+            .descriptor_pool = descriptor_pool,
+            .descriptor_set_layout = descriptor_set_layout,
+            .uniform_handles = uniform_handles,
+            .write_descriptor_sets = write_descriptor_sets,
+            .descriptor_types = descriptor_types,
+            .uninform_sizes = uniform_sizes,
+            .layout_count = layout_count,
+        },
+    );
 
     vk.log.debug("Created program:", .{});
     vk.log.debug("  - Handle: {d}", .{handle});
@@ -230,10 +241,10 @@ pub fn create(
 }
 
 pub fn destroy(handle: gfx.ProgramHandle) void {
-    programs_to_destroy[programs_to_destroy_count] = programs[handle];
+    programs_to_destroy[programs_to_destroy_count] = programs.value(handle);
     programs_to_destroy_count += 1;
 
-    program_handles.free(handle);
+    program_handles.destroy(handle);
 
     vk.log.debug("Destroyed program with handle {d}", .{handle});
 }
@@ -250,33 +261,41 @@ pub fn destroyPendingResources() void {
 }
 
 pub inline fn vertexShader(handle: gfx.ProgramHandle) gfx.ShaderHandle {
-    return programs[handle].vertex_shader;
+    const program = programs.valuePtr(handle);
+    return program.vertex_shader;
 }
 
 pub inline fn fragmentShader(handle: gfx.ProgramHandle) gfx.ShaderHandle {
-    return programs[handle].fragment_shader;
+    const program = programs.valuePtr(handle);
+    return program.fragment_shader;
 }
 
 pub inline fn pipelineLayout(handle: gfx.ProgramHandle) c.VkPipelineLayout {
-    return programs[handle].pipeline_layout;
+    const program = programs.valuePtr(handle);
+    return program.pipeline_layout;
 }
 
 pub inline fn layoutCount(handle: gfx.ProgramHandle) u32 {
-    return programs[handle].layout_count;
+    const program = programs.valuePtr(handle);
+    return program.layout_count;
 }
 
 pub inline fn writeDescriptorSets(handle: gfx.ProgramHandle) [*]c.VkWriteDescriptorSet {
-    return &programs[handle].write_descriptor_sets;
+    const program = programs.valuePtr(handle);
+    return &program.write_descriptor_sets;
 }
 
 pub inline fn uniformHandle(handle: gfx.ProgramHandle, binding_index: u32) gfx.UniformHandle {
-    return programs[handle].uniform_handles[binding_index];
+    const program = programs.valuePtr(handle);
+    return program.uniform_handles[binding_index];
 }
 
 pub inline fn uniformSize(handle: gfx.ProgramHandle, binding_index: u32) u32 {
-    return programs[handle].uninform_sizes[binding_index];
+    const program = programs.valuePtr(handle);
+    return program.uninform_sizes[binding_index];
 }
 
 pub inline fn descriptorType(handle: gfx.ProgramHandle, binding_index: u32) c.VkDescriptorType {
-    return programs[handle].descriptor_types[binding_index];
+    const program = programs.valuePtr(handle);
+    return program.descriptor_types[binding_index];
 }

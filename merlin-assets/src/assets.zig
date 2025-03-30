@@ -6,7 +6,7 @@ const utils = @import("merlin_utils");
 // Constants
 // *********************************************************************************************
 
-pub const AssetHandle = u16;
+pub const AssetHandle = enum(u16) { _ };
 pub const MaxAssetHandles = 1024;
 pub const MaxSubMeshes = 16;
 

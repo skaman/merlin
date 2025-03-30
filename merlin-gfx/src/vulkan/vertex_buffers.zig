@@ -20,8 +20,16 @@ pub const VertexBuffer = struct {
 // Globals
 // *********************************************************************************************
 
-var vertex_buffers: [gfx.MaxVertexBufferHandles]VertexBuffer = undefined;
-var vertex_buffer_handles: utils.HandlePool(gfx.VertexBufferHandle, gfx.MaxVertexBufferHandles) = undefined;
+var vertex_buffers: utils.HandleArray(
+    gfx.VertexBufferHandle,
+    VertexBuffer,
+    gfx.MaxVertexBufferHandles,
+) = undefined;
+
+var vertex_buffer_handles: utils.HandlePool(
+    gfx.VertexBufferHandle,
+    gfx.MaxVertexBufferHandles,
+) = undefined;
 
 var vertex_buffers_to_destroy: [gfx.MaxVertexBufferHandles]VertexBuffer = undefined;
 var vertex_buffers_to_destroy_count: u32 = 0;
@@ -88,13 +96,16 @@ pub fn create(
         @intCast(data_size),
     );
 
-    const handle = try vertex_buffer_handles.alloc();
-    errdefer vertex_buffer_handles.free(handle);
+    const handle = try vertex_buffer_handles.create();
+    errdefer vertex_buffer_handles.destroy(handle);
 
-    vertex_buffers[handle] = .{
-        .buffer = vertex_buffer,
-        .layout = layout_handle,
-    };
+    vertex_buffers.setValue(
+        handle,
+        .{
+            .buffer = vertex_buffer,
+            .layout = layout_handle,
+        },
+    );
 
     vk.log.debug("Created vertex buffer:", .{});
     vk.log.debug("  - Handle: {d}", .{handle});
@@ -103,10 +114,10 @@ pub fn create(
 }
 
 pub fn destroy(handle: gfx.VertexBufferHandle) void {
-    vertex_buffers_to_destroy[vertex_buffers_to_destroy_count] = vertex_buffers[handle];
+    vertex_buffers_to_destroy[vertex_buffers_to_destroy_count] = vertex_buffers.value(handle);
     vertex_buffers_to_destroy_count += 1;
 
-    vertex_buffer_handles.free(handle);
+    vertex_buffer_handles.destroy(handle);
 
     vk.log.debug("Destroyed vertex buffer with handle {d}", .{handle});
 }
@@ -120,9 +131,11 @@ pub fn destroyPendingResources() void {
 }
 
 pub inline fn buffer(handle: gfx.VertexBufferHandle) c.VkBuffer {
-    return vertex_buffers[handle].buffer.handle;
+    const vertex_buffer = vertex_buffers.valuePtr(handle);
+    return vertex_buffer.buffer.handle;
 }
 
 pub inline fn layout(handle: gfx.VertexBufferHandle) gfx.PipelineLayoutHandle {
-    return vertex_buffers[handle].layout;
+    const vertex_buffer = vertex_buffers.valuePtr(handle);
+    return vertex_buffer.layout;
 }

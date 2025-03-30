@@ -41,7 +41,7 @@ fn loadTexture(allocator: std.mem.Allocator, filename: []const u8) !gfx.TextureH
     return try gfx.createTexture(loader);
 }
 
-fn loadVertexBuffer(allocator: std.mem.Allocator, filename: []const u8) !gfx.TextureHandle {
+fn loadVertexBuffer(allocator: std.mem.Allocator, filename: []const u8) !gfx.VertexBufferHandle {
     const path = try getAssetPath(allocator, filename);
     defer allocator.free(path);
 
@@ -50,7 +50,7 @@ fn loadVertexBuffer(allocator: std.mem.Allocator, filename: []const u8) !gfx.Tex
     return try gfx.createVertexBuffer(loader);
 }
 
-fn loadIndexBuffer(allocator: std.mem.Allocator, filename: []const u8) !gfx.TextureHandle {
+fn loadIndexBuffer(allocator: std.mem.Allocator, filename: []const u8) !gfx.IndexBufferHandle {
     const path = try getAssetPath(allocator, filename);
     defer allocator.free(path);
 

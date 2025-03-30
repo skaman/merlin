@@ -7,7 +7,7 @@ const noop = @import("noop.zig");
 
 pub const log = std.log.scoped(.gfx);
 
-pub const WindowHandle = u16;
+pub const WindowHandle = enum(u16) { _ };
 pub const MaxWindowHandles = 64;
 
 // *********************************************************************************************
@@ -52,7 +52,7 @@ const VTab = struct {
 // Globals
 // *********************************************************************************************
 
-var default_window_handle: WindowHandle = 0;
+var default_window_handle: WindowHandle = undefined;
 var window_handles: utils.HandlePool(WindowHandle, MaxWindowHandles) = undefined;
 
 var v_tab: VTab = undefined;
@@ -114,8 +114,8 @@ pub fn deinit() void {
 }
 
 pub fn createWindow(options: WindowOptions) !WindowHandle {
-    const handle = try window_handles.alloc();
-    errdefer window_handles.free(handle);
+    const handle = try window_handles.create();
+    errdefer window_handles.destroy(handle);
 
     try v_tab.createWindow(handle, &options);
     return handle;
@@ -123,7 +123,7 @@ pub fn createWindow(options: WindowOptions) !WindowHandle {
 
 pub fn destroyWindow(handle: WindowHandle) void {
     v_tab.destroyWindow(handle);
-    window_handles.free(handle);
+    window_handles.destroy(handle);
 }
 
 pub inline fn getWindowFramebufferSize(handle: WindowHandle) [2]u32 {

@@ -17,32 +17,32 @@ pub fn currentFrameInFlight() u32 {
     return 0;
 }
 pub fn createShader(_: utils.loaders.ShaderLoader) !gfx.ShaderHandle {
-    return 0;
+    return @enumFromInt(0);
 }
 pub fn destroyShader(_: gfx.ShaderHandle) void {}
 pub fn createProgram(_: gfx.ShaderHandle, _: gfx.ShaderHandle) !gfx.ProgramHandle {
-    return 0;
+    return @enumFromInt(0);
 }
 pub fn destroyProgram(_: gfx.ProgramHandle) void {}
 pub fn createVertexBuffer(_: utils.loaders.VertexBufferLoader) !gfx.VertexBufferHandle {
-    return 0;
+    return @enumFromInt(0);
 }
 pub fn destroyVertexBuffer(_: gfx.VertexBufferHandle) void {}
 pub fn createIndexBuffer(_: utils.loaders.IndexBufferLoader) !gfx.IndexBufferHandle {
-    return 0;
+    return @enumFromInt(0);
 }
 pub fn destroyIndexBuffer(_: gfx.IndexBufferHandle) void {}
 pub fn createUniformBuffer(_: u32) !gfx.UniformBufferHandle {
-    return 0;
+    return @enumFromInt(0);
 }
 pub fn destroyUniformBuffer(_: gfx.UniformBufferHandle) void {}
 pub fn updateUniformBuffer(_: gfx.UniformBufferHandle, _: []const u8, _: u32) void {}
 pub fn createTexture(_: utils.loaders.TextureLoader) !gfx.TextureHandle {
-    return 0;
+    return @enumFromInt(0);
 }
 pub fn destroyTexture(_: gfx.TextureHandle) void {}
 pub fn registerUniformName(_: []const u8) !gfx.UniformHandle {
-    return 0;
+    return @enumFromInt(0);
 }
 pub fn beginFrame() !bool {
     return true;

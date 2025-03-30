@@ -20,8 +20,16 @@ const IndexBuffer = struct {
 // Globals
 // *********************************************************************************************
 
-var index_buffers: [gfx.MaxIndexBufferHandles]IndexBuffer = undefined;
-var index_buffer_handles: utils.HandlePool(gfx.IndexBufferHandle, gfx.MaxIndexBufferHandles) = undefined;
+var index_buffers: utils.HandleArray(
+    gfx.IndexBufferHandle,
+    IndexBuffer,
+    gfx.MaxIndexBufferHandles,
+) = undefined;
+
+var index_buffer_handles: utils.HandlePool(
+    gfx.IndexBufferHandle,
+    gfx.MaxIndexBufferHandles,
+) = undefined;
 
 var index_buffers_to_destroy: [gfx.MaxIndexBufferHandles]IndexBuffer = undefined;
 var index_buffers_to_destroy_count: u32 = 0;
@@ -87,13 +95,13 @@ pub fn create(
         @intCast(data_size),
     );
 
-    const handle = try index_buffer_handles.alloc();
-    errdefer index_buffer_handles.free(handle);
+    const handle = try index_buffer_handles.create();
+    errdefer index_buffer_handles.destroy(handle);
 
-    index_buffers[handle] = .{
+    index_buffers.setValue(handle, .{
         .buffer = buffer,
         .index_type = index_type,
-    };
+    });
 
     vk.log.debug("Created index buffer:", .{});
     vk.log.debug("  - Handle: {d}", .{handle});
@@ -102,10 +110,10 @@ pub fn create(
 }
 
 pub fn destroy(handle: gfx.IndexBufferHandle) void {
-    index_buffers_to_destroy[index_buffers_to_destroy_count] = index_buffers[handle];
+    index_buffers_to_destroy[index_buffers_to_destroy_count] = index_buffers.value(handle);
     index_buffers_to_destroy_count += 1;
 
-    index_buffer_handles.free(handle);
+    index_buffer_handles.destroy(handle);
 
     vk.log.debug("Destroyed index buffer with handle {d}", .{handle});
 }
@@ -118,9 +126,11 @@ pub fn destroyPendingResources() void {
 }
 
 pub inline fn getBuffer(handle: gfx.IndexBufferHandle) c.VkBuffer {
-    return index_buffers[handle].buffer.handle;
+    const index_buffer = index_buffers.valuePtr(handle);
+    return index_buffer.buffer.handle;
 }
 
 pub inline fn getIndexType(handle: gfx.IndexBufferHandle) types.IndexType {
-    return index_buffers[handle].index_type;
+    const index_buffer = index_buffers.valuePtr(handle);
+    return index_buffer.index_type;
 }

@@ -20,9 +20,21 @@ pub const PipelineLayout = struct {
 // Globals
 // *********************************************************************************************
 
-var pipeline_layouts: [gfx.MaxPipelineLayoutHandles]PipelineLayout = undefined;
-var pipeline_layout_handles: utils.HandlePool(gfx.PipelineLayoutHandle, gfx.MaxPipelineLayoutHandles) = undefined;
-var pipeline_layouts_map: std.AutoHashMap(types.VertexLayout, gfx.PipelineLayoutHandle) = undefined;
+var pipeline_layouts: utils.HandleArray(
+    gfx.PipelineLayoutHandle,
+    PipelineLayout,
+    gfx.MaxPipelineLayoutHandles,
+) = undefined;
+
+var pipeline_layout_handles: utils.HandlePool(
+    gfx.PipelineLayoutHandle,
+    gfx.MaxPipelineLayoutHandles,
+) = undefined;
+
+var pipeline_layouts_map: std.AutoHashMap(
+    types.VertexLayout,
+    gfx.PipelineLayoutHandle,
+) = undefined;
 
 // *********************************************************************************************
 // Public API
@@ -41,17 +53,21 @@ pub fn deinit() void {
 pub fn create(vertex_layout: types.VertexLayout) !gfx.PipelineLayoutHandle {
     var pipeline_layout_handle = pipeline_layouts_map.get(vertex_layout);
     if (pipeline_layout_handle) |handle| {
-        pipeline_layouts[handle].ref_count += 1;
+        var pipeline_layout = pipeline_layouts.valuePtr(handle);
+        pipeline_layout.ref_count += 1;
         return handle;
     }
 
-    pipeline_layout_handle = try pipeline_layout_handles.alloc();
-    errdefer pipeline_layout_handles.free(pipeline_layout_handle.?);
+    pipeline_layout_handle = try pipeline_layout_handles.create();
+    errdefer pipeline_layout_handles.destroy(pipeline_layout_handle.?);
 
-    pipeline_layouts[pipeline_layout_handle.?] = .{
-        .layout = vertex_layout,
-        .ref_count = 1,
-    };
+    pipeline_layouts.setValue(
+        pipeline_layout_handle.?,
+        .{
+            .layout = vertex_layout,
+            .ref_count = 1,
+        },
+    );
 
     try pipeline_layouts_map.put(vertex_layout, pipeline_layout_handle.?);
     errdefer _ = pipeline_layouts_map.remove(vertex_layout);
@@ -60,14 +76,16 @@ pub fn create(vertex_layout: types.VertexLayout) !gfx.PipelineLayoutHandle {
 }
 
 pub fn destroy(handle: gfx.PipelineLayoutHandle) void {
-    if (pipeline_layouts[handle].ref_count == 1) {
-        _ = pipeline_layouts_map.remove(pipeline_layouts[handle].layout);
-        pipeline_layout_handles.free(handle);
+    const pipeline_layout = pipeline_layouts.valuePtr(handle);
+    if (pipeline_layout.ref_count == 1) {
+        _ = pipeline_layouts_map.remove(pipeline_layout.layout);
+        pipeline_layout_handles.destroy(handle);
     } else {
-        pipeline_layouts[handle].ref_count -= 1;
+        pipeline_layout.ref_count -= 1;
     }
 }
 
 pub inline fn layout(handle: gfx.PipelineLayoutHandle) *const types.VertexLayout {
-    return &pipeline_layouts[handle].layout;
+    const pipeline_layout = pipeline_layouts.valuePtr(handle);
+    return &pipeline_layout.layout;
 }

@@ -20,8 +20,16 @@ pub const Texture = struct {
 // Globals
 // *********************************************************************************************
 
-var textures: [gfx.MaxTextureHandles]Texture = undefined;
-var texture_handles: utils.HandlePool(gfx.TextureHandle, gfx.MaxTextureHandles) = undefined;
+var textures: utils.HandleArray(
+    gfx.TextureHandle,
+    Texture,
+    gfx.MaxTextureHandles,
+) = undefined;
+
+var texture_handles: utils.HandlePool(
+    gfx.TextureHandle,
+    gfx.MaxTextureHandles,
+) = undefined;
 
 var textures_to_destroy: [gfx.MaxTextureHandles]Texture = undefined;
 var textures_to_destroy_count: u32 = 0;
@@ -38,7 +46,7 @@ fn checkKtxError(comptime message: []const u8, result: c.KTX_error_code) !void {
 }
 
 // I got how to use KTX from https://github.com/spices-lib/Spices-Engine/
-fn format_supported(
+fn formatSupported(
     format: c.VkFormat,
 ) bool {
     var properties: c.VkFormatProperties = undefined;
@@ -52,30 +60,30 @@ fn format_supported(
     return (properties.optimalTilingFeatures & needed_features) == needed_features;
 }
 
-fn get_available_target_format() c.ktx_transcode_fmt_e {
+fn availableTargetFormat() c.ktx_transcode_fmt_e {
     const features = vk.device.features.features;
 
     // Block compression
     if (features.textureCompressionBC == c.VK_TRUE) {
-        if (format_supported(c.VK_FORMAT_BC7_SRGB_BLOCK)) {
+        if (formatSupported(c.VK_FORMAT_BC7_SRGB_BLOCK)) {
             return c.KTX_TTF_BC7_RGBA;
         }
 
-        if (format_supported(c.VK_FORMAT_BC3_SRGB_BLOCK)) {
+        if (formatSupported(c.VK_FORMAT_BC3_SRGB_BLOCK)) {
             return c.KTX_TTF_BC3_RGBA;
         }
     }
 
     // Adaptive scalable texture compression
     if (features.textureCompressionASTC_LDR == c.VK_TRUE) {
-        if (format_supported(c.VK_FORMAT_ASTC_4x4_SRGB_BLOCK)) {
+        if (formatSupported(c.VK_FORMAT_ASTC_4x4_SRGB_BLOCK)) {
             return c.KTX_TTF_ASTC_4x4_RGBA;
         }
     }
 
     // Ericsson texture compression
     if (features.textureCompressionETC2 == c.VK_TRUE) {
-        if (format_supported(c.VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK)) {
+        if (formatSupported(c.VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK)) {
             return c.KTX_TTF_ETC2_RGBA;
         }
     }
@@ -118,7 +126,7 @@ pub fn create(
     defer c.ktxTexture2_Destroy(ktx_texture);
 
     if (c.ktxTexture2_NeedsTranscoding(ktx_texture)) {
-        const format = get_available_target_format();
+        const format = availableTargetFormat();
         try checkKtxError(
             "Failed to transcode KTX texture",
             c.ktxTexture2_TranscodeBasis(ktx_texture, format, 0),
@@ -222,14 +230,17 @@ pub fn create(
     vk.log.debug("  - Anisotropy enable: {}", .{sampler_info.anisotropyEnable == c.VK_TRUE});
     vk.log.debug("  - Max anisotropy: {d}", .{sampler_info.maxAnisotropy});
 
-    const handle = try texture_handles.alloc();
-    errdefer texture_handles.free(handle);
+    const handle = try texture_handles.create();
+    errdefer texture_handles.destroy(handle);
 
-    textures[handle] = .{
-        .ktx_texture = texture,
-        .image_view = texture_image_view,
-        .sampler = sampler,
-    };
+    textures.setValue(
+        handle,
+        .{
+            .ktx_texture = texture,
+            .image_view = texture_image_view,
+            .sampler = sampler,
+        },
+    );
 
     vk.log.debug("Created texture:", .{});
     vk.log.debug("  - Handle: {d}", .{handle});
@@ -238,10 +249,10 @@ pub fn create(
 }
 
 pub fn destroy(handle: gfx.TextureHandle) void {
-    textures_to_destroy[textures_to_destroy_count] = textures[handle];
+    textures_to_destroy[textures_to_destroy_count] = textures.value(handle);
     textures_to_destroy_count += 1;
 
-    texture_handles.free(handle);
+    texture_handles.destroy(handle);
 
     vk.log.debug("Destroyed texture with handle {d}", .{handle});
 }
@@ -262,13 +273,16 @@ pub fn destroyPendingResources() void {
 }
 
 pub inline fn getImageLayout(handle: gfx.TextureHandle) c.VkImageLayout {
-    return textures[handle].ktx_texture.imageLayout;
+    const texture = textures.valuePtr(handle);
+    return texture.ktx_texture.imageLayout;
 }
 
 pub inline fn getImageView(handle: gfx.TextureHandle) c.VkImageView {
-    return textures[handle].image_view;
+    const texture = textures.valuePtr(handle);
+    return texture.image_view;
 }
 
 pub inline fn getSampler(handle: gfx.TextureHandle) c.VkSampler {
-    return textures[handle].sampler;
+    const texture = textures.valuePtr(handle);
+    return texture.sampler;
 }

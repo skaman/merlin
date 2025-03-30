@@ -44,8 +44,8 @@ pub fn registerName(name: []const u8) !gfx.UniformHandle {
     const name_copy = try vk.gpa.dupe(u8, name);
     errdefer vk.gpa.free(name_copy);
 
-    const handle = try handles.alloc();
-    errdefer handles.free(handle);
+    const handle = try handles.create();
+    errdefer handles.destroy(handle);
 
     try name_map.put(name_copy, handle);
     errdefer _ = name_map.remove(name_copy);

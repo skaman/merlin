@@ -20,7 +20,7 @@ pub fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
             };
 
             for (0..size) |i| {
-                self.free_list[i] = @intCast((size - 1) - i);
+                self.free_list[i] = @enumFromInt((size - 1) - i);
             }
 
             return self;
@@ -30,7 +30,7 @@ pub fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
             std.debug.assert(self.free_count == size);
         }
 
-        pub fn alloc(self: *Self) !THandle {
+        pub fn create(self: *Self) !THandle {
             if (self.free_count == 0) {
                 return error.NoAvailableHandles;
             }
@@ -39,7 +39,7 @@ pub fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
             return self.free_list[self.free_count];
         }
 
-        pub fn free(self: *Self, handle: THandle) void {
+        pub fn destroy(self: *Self, handle: THandle) void {
             if (dbg) {
                 for (self.free_list[0..self.free_count]) |h| {
                     std.debug.assert(h != handle);
@@ -52,6 +52,34 @@ pub fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
 
         pub fn clear(self: *Self) void {
             self.free_count = size;
+        }
+    };
+}
+
+pub fn HandleArray(comptime THandle: type, comptime TData: type, comptime size: comptime_int) type {
+    return struct {
+        const Self = @This();
+        data: [size]TData,
+
+        pub fn value(self: *Self, handle: THandle) TData {
+            const index: usize = @intFromEnum(handle);
+            std.debug.assert(index < size);
+
+            return self.data[index];
+        }
+
+        pub fn valuePtr(self: *Self, handle: THandle) *TData {
+            const index: usize = @intFromEnum(handle);
+            std.debug.assert(index < size);
+
+            return &self.data[index];
+        }
+
+        pub fn setValue(self: *Self, handle: THandle, data: TData) void {
+            const index: usize = @intFromEnum(handle);
+            std.debug.assert(index < size);
+
+            self.data[index] = data;
         }
     };
 }

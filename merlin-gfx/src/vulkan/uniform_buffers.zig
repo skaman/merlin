@@ -21,8 +21,16 @@ pub const UniformBuffer = struct {
 // Globals
 // *********************************************************************************************
 
-var uniform_buffers: [gfx.MaxUniformBufferHandles]UniformBuffer = undefined;
-var uniform_buffer_handles: utils.HandlePool(gfx.UniformBufferHandle, gfx.MaxUniformBufferHandles) = undefined;
+var uniform_buffers: utils.HandleArray(
+    gfx.UniformBufferHandle,
+    UniformBuffer,
+    gfx.MaxUniformBufferHandles,
+) = undefined;
+
+var uniform_buffer_handles: utils.HandlePool(
+    gfx.UniformBufferHandle,
+    gfx.MaxUniformBufferHandles,
+) = undefined;
 
 var uniform_buffers_to_destroy: [gfx.MaxUniformBufferHandles]UniformBuffer = undefined;
 var uniform_buffers_to_destroy_count: u32 = 0;
@@ -58,14 +66,17 @@ pub fn create(size: u32) !gfx.UniformBufferHandle {
     );
     errdefer vk.device.unmapMemory(uniform_buffer.memory);
 
-    const handle = try uniform_buffer_handles.alloc();
-    errdefer uniform_buffer_handles.free(handle);
+    const handle = try uniform_buffer_handles.create();
+    errdefer uniform_buffer_handles.destroy(handle);
 
-    uniform_buffers[handle] = .{
-        .buffer = uniform_buffer,
-        .mapped_data = mapped_data,
-        .mapped_data_size = size,
-    };
+    uniform_buffers.setValue(
+        handle,
+        .{
+            .buffer = uniform_buffer,
+            .mapped_data = mapped_data,
+            .mapped_data_size = size,
+        },
+    );
 
     vk.log.debug("Created uniform buffer:", .{});
     vk.log.debug("  - Handle: {d}", .{handle});
@@ -74,10 +85,10 @@ pub fn create(size: u32) !gfx.UniformBufferHandle {
 }
 
 pub fn destroy(handle: gfx.UniformBufferHandle) void {
-    uniform_buffers_to_destroy[uniform_buffers_to_destroy_count] = uniform_buffers[handle];
+    uniform_buffers_to_destroy[uniform_buffers_to_destroy_count] = uniform_buffers.value(handle);
     uniform_buffers_to_destroy_count += 1;
 
-    uniform_buffer_handles.free(handle);
+    uniform_buffer_handles.destroy(handle);
 
     vk.log.debug("Destroyed uniform buffer with handle {d}", .{handle});
 }
@@ -91,10 +102,12 @@ pub fn destroyPendingResources() void {
 }
 
 pub inline fn update(handle: gfx.UniformBufferHandle, data: []const u8, offset: u32) void {
-    std.debug.assert(data.len <= uniform_buffers[handle].mapped_data_size);
-    @memcpy(uniform_buffers[handle].mapped_data[offset .. data.len + offset], data);
+    const uniform_buffer = uniform_buffers.valuePtr(handle);
+    std.debug.assert(data.len <= uniform_buffer.mapped_data_size);
+    @memcpy(uniform_buffer.mapped_data[offset .. data.len + offset], data);
 }
 
-pub inline fn buffer(handle: gfx.VertexBufferHandle) c.VkBuffer {
-    return uniform_buffers[handle].buffer.handle;
+pub inline fn buffer(handle: gfx.UniformBufferHandle) c.VkBuffer {
+    const uniform_buffer = uniform_buffers.valuePtr(handle);
+    return uniform_buffer.buffer.handle;
 }

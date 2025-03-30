@@ -13,15 +13,15 @@ const vulkan = @import("vulkan/vulkan.zig");
 
 pub const log = std.log.scoped(.gfx);
 
-pub const ShaderHandle = u16;
-pub const ProgramHandle = u16;
-pub const VertexBufferHandle = u16;
-pub const IndexBufferHandle = u16;
-pub const UniformBufferHandle = u16;
-pub const UniformHandle = u16;
-pub const TextureHandle = u16;
-pub const CommandBufferHandle = u16;
-pub const PipelineLayoutHandle = u16;
+pub const ShaderHandle = enum(u16) { _ };
+pub const ProgramHandle = enum(u16) { _ };
+pub const VertexBufferHandle = enum(u16) { _ };
+pub const IndexBufferHandle = enum(u16) { _ };
+pub const UniformBufferHandle = enum(u16) { _ };
+pub const UniformHandle = enum(u16) { _ };
+pub const TextureHandle = enum(u16) { _ };
+pub const CommandBufferHandle = enum(u16) { _ };
+pub const PipelineLayoutHandle = enum(u16) { _ };
 
 pub const MaxShaderHandles = 512;
 pub const MaxProgramHandles = 512;
@@ -280,7 +280,7 @@ pub inline fn destroyUniformBuffer(handle: UniformBufferHandle) void {
 }
 
 /// Updates a uniform buffer.
-pub inline fn updateUniformBuffer(handle: UniformHandle, data: []const u8, offset: u32) void {
+pub inline fn updateUniformBuffer(handle: UniformBufferHandle, data: []const u8, offset: u32) void {
     v_tab.updateUniformBuffer(handle, data, offset);
 }
 
