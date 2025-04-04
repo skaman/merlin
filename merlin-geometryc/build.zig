@@ -13,10 +13,6 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    const merlin_assets = b.dependency("merlin_assets", .{
-        .target = target,
-        .optimize = optimize,
-    });
     const merlin_gltf = b.dependency("merlin_gltf", .{
         .target = target,
         .optimize = optimize,
@@ -37,7 +33,6 @@ pub fn build(b: *std.Build) !void {
     });
 
     geometryc_mod.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
-    geometryc_mod.addImport("merlin_assets", merlin_assets.module("merlin_assets"));
     geometryc_mod.addImport("merlin_gltf", merlin_gltf.module("merlin_gltf"));
 
     const geometryc = b.addLibrary(.{
@@ -60,7 +55,7 @@ pub fn build(b: *std.Build) !void {
     exe_mod.addImport("geometryc", geometryc_mod);
     exe_mod.addImport("clap", clap.module("clap"));
     exe_mod.addImport("merlin_gltf", merlin_gltf.module("merlin_gltf"));
-    exe_mod.addImport("merlin_assets", merlin_assets.module("merlin_assets"));
+    exe_mod.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
 
     const exe = b.addExecutable(.{
         .name = "geometryc",

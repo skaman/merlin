@@ -50,6 +50,7 @@ fn addTextures(
 const SourceMesh = struct {
     source: []const u8,
     output: []const u8,
+    sub_mesh: u32 = 0,
     normal: bool = true,
     tangent: bool = false,
     color: bool = false,
@@ -67,7 +68,11 @@ fn addMeshes(
     const geometryc_exe = merlin_geometryc.artifact("geometryc");
 
     for (meshes) |mesh| {
+        const sub_mesh = try std.fmt.allocPrint(b.allocator, "{d}", .{mesh.sub_mesh});
+        defer b.allocator.free(sub_mesh);
         const tool_step = b.addRunArtifact(geometryc_exe);
+        tool_step.addArg("-s");
+        tool_step.addArg(sub_mesh);
         tool_step.addArg("-n");
         tool_step.addArg(if (mesh.normal) "1" else "0");
         tool_step.addArg("-t");
@@ -79,13 +84,9 @@ fn addMeshes(
         tool_step.addArg("-T");
         tool_step.addArg(if (mesh.tex_coord) "1" else "0");
         tool_step.addFileArg(b.path(mesh.source));
-        const output = tool_step.addOutputDirectoryArg(mesh.output);
+        const output = tool_step.addOutputFileArg(mesh.output);
 
-        b.getInstallStep().dependOn(&b.addInstallDirectory(.{
-            .source_dir = output,
-            .install_dir = .bin,
-            .install_subdir = mesh.output,
-        }).step);
+        b.getInstallStep().dependOn(&b.addInstallFileWithDir(output, .bin, mesh.output).step);
     }
 }
 
@@ -136,6 +137,12 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+
+    const merlin_assets = b.dependency("merlin_assets", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const zmath = b.dependency("zmath", .{
         .target = target,
         .optimize = optimize,
@@ -166,12 +173,38 @@ pub fn build(b: *std.Build) !void {
     const meshes = [_]SourceMesh{
         SourceMesh{
             .source = "assets/Box/Box.gltf",
-            .output = "assets/Box",
+            .output = "assets/box.0.mesh",
             .tex_coord = false,
         },
         SourceMesh{
             .source = "assets/FlightHelmet/FlightHelmet.gltf",
-            .output = "assets/FlightHelmet",
+            .output = "assets/flight-helmet.0.mesh",
+            .sub_mesh = 0,
+        },
+        SourceMesh{
+            .source = "assets/FlightHelmet/FlightHelmet.gltf",
+            .output = "assets/flight-helmet.1.mesh",
+            .sub_mesh = 1,
+        },
+        SourceMesh{
+            .source = "assets/FlightHelmet/FlightHelmet.gltf",
+            .output = "assets/flight-helmet.2.mesh",
+            .sub_mesh = 2,
+        },
+        SourceMesh{
+            .source = "assets/FlightHelmet/FlightHelmet.gltf",
+            .output = "assets/flight-helmet.3.mesh",
+            .sub_mesh = 3,
+        },
+        SourceMesh{
+            .source = "assets/FlightHelmet/FlightHelmet.gltf",
+            .output = "assets/flight-helmet.4.mesh",
+            .sub_mesh = 4,
+        },
+        SourceMesh{
+            .source = "assets/FlightHelmet/FlightHelmet.gltf",
+            .output = "assets/flight-helmet.5.mesh",
+            .sub_mesh = 5,
         },
     };
     try addMeshes(b, &meshes);
@@ -188,6 +221,7 @@ pub fn build(b: *std.Build) !void {
     example1.root_module.addImport("merlin_platform", merlin_platform.module("merlin_platform"));
     example1.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
     example1.root_module.addImport("merlin_gfx", merlin_gfx.module("merlin_gfx"));
+    example1.root_module.addImport("merlin_assets", merlin_assets.module("merlin_assets"));
     example1.root_module.addImport("zmath", zmath.module("root"));
 
     const run_cmd = b.addRunArtifact(example1);

@@ -107,11 +107,16 @@ pub fn deinit() void {
 pub fn create(
     command_pool: c.VkCommandPool,
     transfer_queue: c.VkQueue,
-    loader: utils.loaders.TextureLoader,
+    reader: std.io.AnyReader,
+    size: u32,
 ) !gfx.TextureHandle {
     // TODO: use a specialized arena?
     // TODO: Optimize this without using a temporary buffer?
-    const data = try loader.read(vk.arena);
+    const data = try vk.arena.alloc(u8, size);
+    if (try reader.readAll(data) != size) {
+        vk.log.err("Failed to read KTX texture data", .{});
+        return error.KTXError;
+    }
 
     var ktx_texture: *c.ktxTexture2 = undefined;
     try checkKtxError(
@@ -230,7 +235,7 @@ pub fn create(
     vk.log.debug("  - Anisotropy enable: {}", .{sampler_info.anisotropyEnable == c.VK_TRUE});
     vk.log.debug("  - Max anisotropy: {d}", .{sampler_info.maxAnisotropy});
 
-    const handle = try texture_handles.create();
+    const handle = texture_handles.create();
     errdefer texture_handles.destroy(handle);
 
     textures.setValue(

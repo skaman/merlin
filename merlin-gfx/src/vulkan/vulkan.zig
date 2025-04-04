@@ -7,14 +7,13 @@ const types = utils.gfx_types;
 
 const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
-pub const buffer = @import("buffer.zig");
+pub const buffers = @import("buffers.zig");
 pub const command_buffers = @import("command_buffers.zig");
 pub const command_pool = @import("command_pool.zig");
 pub const depth_image = @import("depth_image.zig");
 pub const descriptor_registry = @import("descriptor_registry.zig");
 pub const device = @import("device.zig");
 pub const image = @import("image.zig");
-pub const index_buffers = @import("index_buffers.zig");
 pub const instance = @import("instance.zig");
 pub const library = @import("library.zig");
 pub const pipeline = @import("pipeline.zig");
@@ -25,8 +24,6 @@ pub const shaders = @import("shaders.zig");
 pub const surface = @import("surface.zig");
 pub const swap_chain = @import("swap_chain.zig");
 pub const textures = @import("textures.zig");
-pub const uniform_buffers = @import("uniform_buffers.zig");
-pub const vertex_buffers = @import("vertex_buffers.zig");
 
 pub const log = std.log.scoped(.gfx_vk);
 
@@ -94,9 +91,7 @@ fn setupDebugMessenger(options: *const gfx.Options) !?c.VkDebugUtilsMessengerEXT
 }
 
 fn destroyPendingResources() void {
-    vertex_buffers.destroyPendingResources();
-    index_buffers.destroyPendingResources();
-    uniform_buffers.destroyPendingResources();
+    buffers.destroyPendingResources();
     programs.destroyPendingResources();
     shaders.destroyPendingResources();
     textures.destroyPendingResources();
@@ -366,9 +361,7 @@ pub fn init(
 
     pipeline_layouts.init();
     pipeline.init();
-    vertex_buffers.init();
-    index_buffers.init();
-    uniform_buffers.init();
+    buffers.init();
     programs.init();
     shaders.init();
     textures.init();
@@ -386,9 +379,7 @@ pub fn deinit() void {
     textures.deinit();
     shaders.deinit();
     programs.deinit();
-    uniform_buffers.deinit();
-    index_buffers.deinit();
-    vertex_buffers.deinit();
+    buffers.deinit();
     pipeline.deinit();
     pipeline_layouts.deinit();
 
@@ -441,12 +432,22 @@ pub fn currentFrameInFlight() u32 {
     return current_frame_in_flight;
 }
 
-pub fn createShader(loader: utils.loaders.ShaderLoader) !gfx.ShaderHandle {
-    return shaders.create(loader);
+pub fn createShader(reader: std.io.AnyReader) !gfx.ShaderHandle {
+    return shaders.create(reader);
 }
 
 pub fn destroyShader(handle: gfx.ShaderHandle) void {
     shaders.destroy(handle);
+}
+
+pub fn createPipelineLayout(
+    vertex_layout: types.VertexLayout,
+) !gfx.PipelineLayoutHandle {
+    return pipeline_layouts.create(vertex_layout);
+}
+
+pub fn destroyPipelineLayout(handle: gfx.PipelineLayoutHandle) void {
+    pipeline_layouts.destroy(handle);
 }
 
 pub fn createProgram(
@@ -464,51 +465,40 @@ pub fn destroyProgram(handle: gfx.ProgramHandle) void {
     programs.destroy(handle);
 }
 
-pub fn createVertexBuffer(
-    loader: utils.loaders.VertexBufferLoader,
-) !gfx.VertexBufferHandle {
-    return vertex_buffers.create(
+pub fn createBuffer(
+    size: u32,
+    usage: gfx.BufferUsage,
+    location: gfx.BufferLocation,
+) !gfx.BufferHandle {
+    return buffers.create(size, usage, location);
+}
+
+pub fn destroyBuffer(handle: gfx.BufferHandle) void {
+    buffers.destroy(handle);
+}
+
+pub fn updateBuffer(
+    handle: gfx.BufferHandle,
+    reader: std.io.AnyReader,
+    offset: u32,
+    size: u32,
+) !void {
+    try buffers.update(
         transfer_command_pool,
         transfer_queue,
-        loader,
+        handle,
+        reader,
+        offset,
+        size,
     );
 }
 
-pub fn destroyVertexBuffer(handle: gfx.VertexBufferHandle) void {
-    vertex_buffers.destroy(handle);
-}
-
-pub fn createIndexBuffer(
-    loader: utils.loaders.IndexBufferLoader,
-) !gfx.IndexBufferHandle {
-    return index_buffers.create(
-        transfer_command_pool,
-        transfer_queue,
-        loader,
-    );
-}
-
-pub fn destroyIndexBuffer(handle: gfx.IndexBufferHandle) void {
-    index_buffers.destroy(handle);
-}
-
-pub fn createUniformBuffer(size: u32) !gfx.UniformBufferHandle {
-    return uniform_buffers.create(size);
-}
-
-pub fn destroyUniformBuffer(handle: gfx.UniformBufferHandle) void {
-    uniform_buffers.destroy(handle);
-}
-
-pub fn updateUniformBuffer(handle: gfx.UniformBufferHandle, data: []const u8, offset: u32) void {
-    uniform_buffers.update(handle, data, offset);
-}
-
-pub fn createTexture(loader: utils.loaders.TextureLoader) !gfx.TextureHandle {
+pub fn createTexture(reader: std.io.AnyReader, size: u32) !gfx.TextureHandle {
     return textures.create(
         transfer_command_pool,
         transfer_queue,
-        loader,
+        reader,
+        size,
     );
 }
 
@@ -650,6 +640,13 @@ pub fn setScissor(position: [2]u32, size: [2]u32) void {
     );
 }
 
+pub fn bindPipelineLayout(pipeline_layout: gfx.PipelineLayoutHandle) void {
+    command_buffers.bindPipelineLayout(
+        main_command_buffers[current_frame_in_flight],
+        pipeline_layout,
+    );
+}
+
 pub fn bindProgram(program: gfx.ProgramHandle) void {
     command_buffers.bindProgram(
         main_command_buffers[current_frame_in_flight],
@@ -657,25 +654,27 @@ pub fn bindProgram(program: gfx.ProgramHandle) void {
     );
 }
 
-pub fn bindVertexBuffer(vertex_buffer: gfx.VertexBufferHandle) void {
+pub fn bindVertexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
     command_buffers.bindVertexBuffer(
         main_command_buffers[current_frame_in_flight],
-        vertex_buffer,
+        buffer,
+        offset,
     );
 }
 
-pub fn bindIndexBuffer(index_buffer: gfx.IndexBufferHandle) void {
+pub fn bindIndexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
     command_buffers.bindIndexBuffer(
         main_command_buffers[current_frame_in_flight],
-        index_buffer,
+        buffer,
+        offset,
     );
 }
 
-pub fn bindUniformBuffer(uniform: gfx.UniformHandle, uniform_buffer: gfx.UniformBufferHandle, offset: u32) void {
+pub fn bindUniformBuffer(uniform: gfx.UniformHandle, buffer: gfx.BufferHandle, offset: u32) void {
     command_buffers.bindUniformBuffer(
         main_command_buffers[current_frame_in_flight],
         uniform,
-        uniform_buffer,
+        buffer,
         offset,
     );
 }
@@ -709,6 +708,7 @@ pub fn drawIndexed(
     first_index: u32,
     vertex_offset: i32,
     first_instance: u32,
+    index_type: types.IndexType,
 ) void {
     command_buffers.drawIndexed(
         main_command_buffers[current_frame_in_flight],
@@ -717,5 +717,6 @@ pub fn drawIndexed(
         first_index,
         vertex_offset,
         first_instance,
+        index_type,
     );
 }

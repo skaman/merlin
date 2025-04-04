@@ -58,7 +58,7 @@ pub fn create(vertex_layout: types.VertexLayout) !gfx.PipelineLayoutHandle {
         return handle;
     }
 
-    pipeline_layout_handle = try pipeline_layout_handles.create();
+    pipeline_layout_handle = pipeline_layout_handles.create();
     errdefer pipeline_layout_handles.destroy(pipeline_layout_handle.?);
 
     pipeline_layouts.setValue(

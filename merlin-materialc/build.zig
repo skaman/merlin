@@ -13,10 +13,6 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    const merlin_assets = b.dependency("merlin_assets", .{
-        .target = target,
-        .optimize = optimize,
-    });
     const merlin_ktx = b.dependency("merlin_ktx", .{
         .target = target,
         .optimize = optimize,
@@ -49,7 +45,6 @@ pub fn build(b: *std.Build) !void {
     });
 
     materialc_mod.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
-    materialc_mod.addImport("merlin_assets", merlin_assets.module("merlin_assets"));
     materialc_mod.addImport("merlin_ktx", merlin_ktx.module("merlin_ktx"));
     materialc_mod.addImport("merlin_texturec", merlin_texturec.module("merlin_texturec"));
     materialc_mod.addImport("merlin_gltf", merlin_gltf.module("merlin_gltf"));

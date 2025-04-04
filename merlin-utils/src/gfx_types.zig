@@ -7,11 +7,11 @@ const std = @import("std");
 pub const ShaderMagic = @as(u32, @bitCast([_]u8{ 'M', 'S', 'H', 'A' }));
 pub const ShaderVersion: u8 = 1;
 
-pub const VertexBufferMagic = @as(u32, @bitCast([_]u8{ 'M', 'V', 'B', 'D' }));
-pub const VertexBufferVersion: u8 = 1;
-
-pub const IndexBufferMagic = @as(u32, @bitCast([_]u8{ 'M', 'I', 'B', 'D' }));
-pub const IndexBufferVersion: u8 = 1;
+//pub const VertexBufferMagic = @as(u32, @bitCast([_]u8{ 'M', 'V', 'B', 'D' }));
+//pub const VertexBufferVersion: u8 = 1;
+//
+//pub const IndexBufferMagic = @as(u32, @bitCast([_]u8{ 'M', 'I', 'B', 'D' }));
+//pub const IndexBufferVersion: u8 = 1;
 
 // *********************************************************************************************
 // Structs and Enums

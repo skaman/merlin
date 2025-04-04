@@ -213,7 +213,7 @@ pub fn create(
         );
     }
 
-    const handle = try program_handles.create();
+    const handle = program_handles.create();
     errdefer program_handles.destroy(handle);
 
     programs.setValue(

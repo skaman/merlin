@@ -15,9 +15,7 @@ pub const log = std.log.scoped(.gfx);
 
 pub const ShaderHandle = enum(u16) { _ };
 pub const ProgramHandle = enum(u16) { _ };
-pub const VertexBufferHandle = enum(u16) { _ };
-pub const IndexBufferHandle = enum(u16) { _ };
-pub const UniformBufferHandle = enum(u16) { _ };
+pub const BufferHandle = enum(u16) { _ };
 pub const UniformHandle = enum(u16) { _ };
 pub const TextureHandle = enum(u16) { _ };
 pub const CommandBufferHandle = enum(u16) { _ };
@@ -25,9 +23,7 @@ pub const PipelineLayoutHandle = enum(u16) { _ };
 
 pub const MaxShaderHandles = 512;
 pub const MaxProgramHandles = 512;
-pub const MaxVertexBufferHandles = 512;
-pub const MaxIndexBufferHandles = 512;
-pub const MaxUniformBufferHandles = 512;
+pub const MaxBufferHandles = 512;
 pub const MaxUniformHandles = 512;
 pub const MaxTextureHandles = 512;
 pub const MaxCommandBufferHandles = 512;
@@ -47,37 +43,56 @@ pub const RendererType = enum {
     vulkan,
 };
 
+pub const BufferUsage = packed struct(u8) {
+    index: bool = false,
+    vertex: bool = false,
+    uniform: bool = false,
+
+    _padding: u5 = 0,
+};
+
+pub const BufferLocation = enum(u8) {
+    host,
+    device,
+
+    pub fn name(self: BufferLocation) []const u8 {
+        return switch (self) {
+            .host => "host",
+            .device => "device",
+        };
+    }
+};
+
 const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
     swapchainSize: *const fn () [2]u32,
     maxFramesInFlight: *const fn () u32,
     currentFrameInFlight: *const fn () u32,
-    createShader: *const fn (loader: utils.loaders.ShaderLoader) anyerror!ShaderHandle,
+    createShader: *const fn (reader: std.io.AnyReader) anyerror!ShaderHandle,
     destroyShader: *const fn (handle: ShaderHandle) void,
+    createPipelineLayout: *const fn (vertex_layout: types.VertexLayout) anyerror!PipelineLayoutHandle,
+    destroyPipelineLayout: *const fn (handle: PipelineLayoutHandle) void,
     createProgram: *const fn (vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!ProgramHandle,
     destroyProgram: *const fn (handle: ProgramHandle) void,
-    createVertexBuffer: *const fn (loader: utils.loaders.VertexBufferLoader) anyerror!VertexBufferHandle,
-    destroyVertexBuffer: *const fn (handle: VertexBufferHandle) void,
-    createIndexBuffer: *const fn (loader: utils.loaders.IndexBufferLoader) anyerror!IndexBufferHandle,
-    destroyIndexBuffer: *const fn (handle: IndexBufferHandle) void,
-    createUniformBuffer: *const fn (size: u32) anyerror!UniformBufferHandle,
-    destroyUniformBuffer: *const fn (handle: UniformBufferHandle) void,
-    updateUniformBuffer: *const fn (handle: UniformBufferHandle, data: []const u8, offset: u32) void,
-    createTexture: *const fn (loader: utils.loaders.TextureLoader) anyerror!TextureHandle,
+    createBuffer: *const fn (size: u32, usage: BufferUsage, location: BufferLocation) anyerror!BufferHandle,
+    destroyBuffer: *const fn (handle: BufferHandle) void,
+    updateBuffer: *const fn (handle: BufferHandle, reader: std.io.AnyReader, offset: u32, size: u32) anyerror!void,
+    createTexture: *const fn (reader: std.io.AnyReader, size: u32) anyerror!TextureHandle,
     destroyTexture: *const fn (handle: TextureHandle) void,
     registerUniformName: *const fn (name: []const u8) anyerror!UniformHandle,
     beginFrame: *const fn () anyerror!bool,
     endFrame: *const fn () anyerror!void,
     setViewport: *const fn (position: [2]u32, size: [2]u32) void,
     setScissor: *const fn (position: [2]u32, size: [2]u32) void,
+    bindPipelineLayout: *const fn (handle: PipelineLayoutHandle) void,
     bindProgram: *const fn (program: ProgramHandle) void,
-    bindVertexBuffer: *const fn (vertex_buffer: VertexBufferHandle) void,
-    bindIndexBuffer: *const fn (index_buffer: IndexBufferHandle) void,
-    bindUniformBuffer: *const fn (uniform: UniformHandle, uniform_buffer: UniformBufferHandle, offset: u32) void,
+    bindVertexBuffer: *const fn (buffer: BufferHandle, offset: u32) void,
+    bindIndexBuffer: *const fn (buffer: BufferHandle, offset: u32) void,
+    bindUniformBuffer: *const fn (uniform: UniformHandle, buffer: BufferHandle, offset: u32) void,
     bindCombinedSampler: *const fn (uniform: UniformHandle, texture: TextureHandle) void,
     draw: *const fn (vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void,
-    drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32) void,
+    drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32, index_type: types.IndexType) void,
 };
 
 // *********************************************************************************************
@@ -90,8 +105,6 @@ pub var arena: std.mem.Allocator = undefined;
 
 var current_renderer: RendererType = undefined;
 
-//var mvp_uniform_handle: UniformHandle = undefined;
-
 var v_tab: VTab = undefined;
 
 // *********************************************************************************************
@@ -101,7 +114,7 @@ var v_tab: VTab = undefined;
 fn getVTab(renderer_type: RendererType) !VTab {
     switch (renderer_type) {
         RendererType.noop => {
-            return VTab{
+            return .{
                 .init = noop.init,
                 .deinit = noop.deinit,
                 .swapchainSize = noop.swapchainSize,
@@ -109,15 +122,13 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .currentFrameInFlight = noop.currentFrameInFlight,
                 .createShader = noop.createShader,
                 .destroyShader = noop.destroyShader,
+                .createPipelineLayout = noop.createPipelineLayout,
+                .destroyPipelineLayout = noop.destroyPipelineLayout,
                 .createProgram = noop.createProgram,
                 .destroyProgram = noop.destroyProgram,
-                .createVertexBuffer = noop.createVertexBuffer,
-                .destroyVertexBuffer = noop.destroyVertexBuffer,
-                .createIndexBuffer = noop.createIndexBuffer,
-                .destroyIndexBuffer = noop.destroyIndexBuffer,
-                .createUniformBuffer = noop.createUniformBuffer,
-                .destroyUniformBuffer = noop.destroyUniformBuffer,
-                .updateUniformBuffer = noop.updateUniformBuffer,
+                .createBuffer = noop.createBuffer,
+                .destroyBuffer = noop.destroyBuffer,
+                .updateBuffer = noop.updateBuffer,
                 .createTexture = noop.createTexture,
                 .destroyTexture = noop.destroyTexture,
                 .registerUniformName = noop.registerUniformName,
@@ -125,6 +136,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .endFrame = noop.endFrame,
                 .setViewport = noop.setViewport,
                 .setScissor = noop.setScissor,
+                .bindPipelineLayout = noop.bindPipelineLayout,
                 .bindProgram = noop.bindProgram,
                 .bindVertexBuffer = noop.bindVertexBuffer,
                 .bindIndexBuffer = noop.bindIndexBuffer,
@@ -135,7 +147,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
             };
         },
         RendererType.vulkan => {
-            return VTab{
+            return .{
                 .init = vulkan.init,
                 .deinit = vulkan.deinit,
                 .swapchainSize = vulkan.swapchainSize,
@@ -143,15 +155,13 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .currentFrameInFlight = vulkan.currentFrameInFlight,
                 .createShader = vulkan.createShader,
                 .destroyShader = vulkan.destroyShader,
+                .createPipelineLayout = vulkan.createPipelineLayout,
+                .destroyPipelineLayout = vulkan.destroyPipelineLayout,
                 .createProgram = vulkan.createProgram,
                 .destroyProgram = vulkan.destroyProgram,
-                .createVertexBuffer = vulkan.createVertexBuffer,
-                .destroyVertexBuffer = vulkan.destroyVertexBuffer,
-                .createIndexBuffer = vulkan.createIndexBuffer,
-                .destroyIndexBuffer = vulkan.destroyIndexBuffer,
-                .createUniformBuffer = vulkan.createUniformBuffer,
-                .destroyUniformBuffer = vulkan.destroyUniformBuffer,
-                .updateUniformBuffer = vulkan.updateUniformBuffer,
+                .createBuffer = vulkan.createBuffer,
+                .destroyBuffer = vulkan.destroyBuffer,
+                .updateBuffer = vulkan.updateBuffer,
                 .createTexture = vulkan.createTexture,
                 .destroyTexture = vulkan.destroyTexture,
                 .registerUniformName = vulkan.registerUniformName,
@@ -159,6 +169,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .endFrame = vulkan.endFrame,
                 .setViewport = vulkan.setViewport,
                 .setScissor = vulkan.setScissor,
+                .bindPipelineLayout = vulkan.bindPipelineLayout,
                 .bindProgram = vulkan.bindProgram,
                 .bindVertexBuffer = vulkan.bindVertexBuffer,
                 .bindIndexBuffer = vulkan.bindIndexBuffer,
@@ -194,15 +205,11 @@ pub fn init(
     errdefer v_tab.deinit();
 
     current_renderer = options.renderer_type;
-
-    //mvp_uniform_handle = try createUniformBuffer("u_mvp", @sizeOf(ModelViewProj));
 }
 
 /// Deinitializes the renderer.
 pub fn deinit() void {
     log.debug("Deinitializing renderer", .{});
-
-    //destroyUniformBuffer(mvp_uniform_handle);
 
     v_tab.deinit();
     arena_impl.deinit();
@@ -214,18 +221,21 @@ pub inline fn swapchainSize() [2]u32 {
 }
 
 /// Returns the maximum number of frames in flight.
+/// This is the number of frames that can be rendered simultaneously.
 pub inline fn maxFramesInFlight() u32 {
     return v_tab.maxFramesInFlight();
 }
 
 /// Returns the current frame in flight.
+/// This is the index of the current frame being rendered.
+/// This value is in the range [0, maxFramesInFlight).
 pub inline fn currentFrameInFlight() u32 {
     return v_tab.currentFrameInFlight();
 }
 
 /// Creates a shader from a loader.
-pub fn createShader(loader: utils.loaders.ShaderLoader) !ShaderHandle {
-    return try v_tab.createShader(loader);
+pub fn createShader(reader: std.io.AnyReader) !ShaderHandle {
+    return try v_tab.createShader(reader);
 }
 
 /// Destroys a shader.
@@ -249,44 +259,57 @@ pub inline fn destroyProgram(handle: ProgramHandle) void {
     v_tab.destroyProgram(handle);
 }
 
-/// Creates a vertex buffer from a loader.
-pub inline fn createVertexBuffer(loader: utils.loaders.VertexBufferLoader) !VertexBufferHandle {
-    return try v_tab.createVertexBuffer(loader);
+/// Creates a pipeline layout.
+pub inline fn createPipelineLayout(vertex_layout: types.VertexLayout) !PipelineLayoutHandle {
+    return try v_tab.createPipelineLayout(vertex_layout);
 }
 
-/// Destroys a vertex buffer.
-pub inline fn destroyVertexBuffer(handle: VertexBufferHandle) void {
-    v_tab.destroyVertexBuffer(handle);
+/// Destroys a pipeline layout.
+pub inline fn destroyPipelineLayout(handle: PipelineLayoutHandle) void {
+    v_tab.destroyPipelineLayout(handle);
 }
 
-/// Creates an index buffer from a loader.
-pub inline fn createIndexBuffer(loader: utils.loaders.IndexBufferLoader) !IndexBufferHandle {
-    return try v_tab.createIndexBuffer(loader);
+/// Creates a buffer.
+pub inline fn createBuffer(
+    size: u32,
+    usage: BufferUsage,
+    location: BufferLocation,
+) !BufferHandle {
+    return try v_tab.createBuffer(size, usage, location);
 }
 
-/// Destroys an index buffer.
-pub inline fn destroyIndexBuffer(handle: IndexBufferHandle) void {
-    v_tab.destroyIndexBuffer(handle);
+/// Destroys a buffer.
+pub inline fn destroyBuffer(handle: BufferHandle) void {
+    v_tab.destroyBuffer(handle);
 }
 
-/// Creates a uniform buffer.
-pub inline fn createUniformBuffer(size: u32) !UniformBufferHandle {
-    return try v_tab.createUniformBuffer(size);
+/// Updates a buffer.
+pub inline fn updateBuffer(
+    handle: BufferHandle,
+    reader: std.io.AnyReader,
+    offset: u32,
+    size: u32,
+) !void {
+    try v_tab.updateBuffer(handle, reader, offset, size);
 }
 
-/// Destroys a uniform buffer.
-pub inline fn destroyUniformBuffer(handle: UniformBufferHandle) void {
-    v_tab.destroyUniformBuffer(handle);
-}
-
-/// Updates a uniform buffer.
-pub inline fn updateUniformBuffer(handle: UniformBufferHandle, data: []const u8, offset: u32) void {
-    v_tab.updateUniformBuffer(handle, data, offset);
+pub inline fn updateBufferFromMemory(
+    handle: BufferHandle,
+    data: []const u8,
+    offset: u32,
+) !void {
+    var stream = std.io.fixedBufferStream(data);
+    try v_tab.updateBuffer(
+        handle,
+        stream.reader().any(),
+        offset,
+        @intCast(data.len),
+    );
 }
 
 /// Creates a texture from a loader.
-pub inline fn createTexture(loader: utils.loaders.TextureLoader) !TextureHandle {
-    return try v_tab.createTexture(loader);
+pub inline fn createTexture(reader: std.io.AnyReader, size: u32) !TextureHandle {
+    return try v_tab.createTexture(reader, size);
 }
 
 /// Destroys a texture.
@@ -320,26 +343,30 @@ pub inline fn setScissor(position: [2]u32, size: [2]u32) void {
     v_tab.setScissor(position, size);
 }
 
+pub fn bindPipelineLayout(handle: PipelineLayoutHandle) void {
+    v_tab.bindPipelineLayout(handle);
+}
+
 pub inline fn bindProgram(handle: ProgramHandle) void {
     v_tab.bindProgram(handle);
 }
 
-pub inline fn bindVertexBuffer(handle: VertexBufferHandle) void {
-    v_tab.bindVertexBuffer(handle);
+pub inline fn bindVertexBuffer(handle: BufferHandle, offset: u32) void {
+    v_tab.bindVertexBuffer(handle, offset);
 }
 
-pub inline fn bindIndexBuffer(handle: IndexBufferHandle) void {
-    v_tab.bindIndexBuffer(handle);
+pub inline fn bindIndexBuffer(handle: BufferHandle, offset: u32) void {
+    v_tab.bindIndexBuffer(handle, offset);
 }
 
 pub inline fn bindUniformBuffer(
     uniform: UniformHandle,
-    uniform_buffer: UniformBufferHandle,
+    buffer: BufferHandle,
     offset: u32,
 ) void {
     v_tab.bindUniformBuffer(
         uniform,
-        uniform_buffer,
+        buffer,
         offset,
     );
 }
@@ -368,6 +395,7 @@ pub inline fn drawIndexed(
     first_index: u32,
     vertex_offset: i32,
     first_instance: u32,
+    index_type: types.IndexType,
 ) void {
     v_tab.drawIndexed(
         index_count,
@@ -375,5 +403,6 @@ pub inline fn drawIndexed(
         first_index,
         vertex_offset,
         first_instance,
+        index_type,
     );
 }

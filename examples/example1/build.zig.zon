@@ -25,6 +25,9 @@
         .merlin_materialc = .{
             .path = "../../merlin-materialc",
         },
+        .merlin_assets = .{
+            .path = "../../merlin-assets",
+        },
         .zmath = .{
             .path = "../../vendor/zmath",
         },

@@ -7,9 +7,6 @@
         .merlin_utils = .{
             .path = "../merlin-utils",
         },
-        .merlin_assets = .{
-            .path = "../merlin-assets",
-        },
         .merlin_gltf = .{
             .path = "../merlin-gltf",
         },

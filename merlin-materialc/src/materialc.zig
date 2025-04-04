@@ -1,19 +1,19 @@
 const std = @import("std");
 
-const assets = @import("merlin_assets");
 const gltf = @import("merlin_gltf");
 const image = @import("merlin_image");
 const ktx = @import("merlin_ktx");
 const texturec = @import("merlin_texturec");
 const utils = @import("merlin_utils");
 const gfx_types = utils.gfx_types;
+const asset_types = utils.asset_types;
 
 // *********************************************************************************************
 // Structs
 // *********************************************************************************************
 
 pub const ConvertedMaterial = struct {
-    material_data: assets.MaterialData,
+    material_data: asset_types.MaterialData,
     textures: std.ArrayList(ktx.Texture),
 
     pub fn deinit(self: ConvertedMaterial) void {
@@ -222,15 +222,15 @@ pub fn convert(
 
 pub fn saveMaterialData(
     path: []const u8,
-    material_data: *const assets.MaterialData,
+    material_data: *const asset_types.MaterialData,
 ) !void {
     var file = try std.fs.cwd().createFile(path, .{});
     defer file.close();
 
     try utils.Serializer.writeHeader(
         file.writer(),
-        assets.MaterialMagic,
-        assets.MaterialVersion,
+        asset_types.MaterialMagic,
+        asset_types.MaterialVersion,
     );
     try utils.Serializer.write(file.writer(), material_data);
 }

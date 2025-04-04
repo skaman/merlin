@@ -2,21 +2,23 @@ const std = @import("std");
 const expect = std.testing.expect;
 const builtin = @import("builtin");
 
+pub const asset_types = @import("asset_types.zig");
 pub const gfx_types = @import("gfx_types.zig");
-pub const loaders = @import("loaders.zig");
 
-const dbg = builtin.mode == std.builtin.Mode.Debug;
+//pub const loaders = @import("loaders.zig");
 
 pub fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
     return struct {
         const Self = @This();
         free_list: [size]THandle,
         free_count: u32 = size,
+        mutex: std.Thread.Mutex,
 
         pub fn init() Self {
             var self: Self = .{
                 .free_list = undefined,
                 .free_count = size,
+                .mutex = .{},
             };
 
             for (0..size) |i| {
@@ -30,27 +32,26 @@ pub fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
             std.debug.assert(self.free_count == size);
         }
 
-        pub fn create(self: *Self) !THandle {
-            if (self.free_count == 0) {
-                return error.NoAvailableHandles;
-            }
+        pub fn create(self: *Self) THandle {
+            self.mutex.lock();
+            defer self.mutex.unlock();
 
             self.free_count -= 1;
             return self.free_list[self.free_count];
         }
 
         pub fn destroy(self: *Self, handle: THandle) void {
-            if (dbg) {
-                for (self.free_list[0..self.free_count]) |h| {
-                    std.debug.assert(h != handle);
-                }
-            }
+            self.mutex.lock();
+            defer self.mutex.unlock();
 
             self.free_list[self.free_count] = handle;
             self.free_count += 1;
         }
 
         pub fn clear(self: *Self) void {
+            self.mutex.lock();
+            defer self.mutex.unlock();
+
             self.free_count = size;
         }
     };

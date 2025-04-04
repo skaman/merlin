@@ -50,8 +50,13 @@ pub fn deinit() void {
     shader_handles.deinit();
 }
 
-pub fn create(loader: utils.loaders.ShaderLoader) !gfx.ShaderHandle {
-    const data = try loader.read(vk.arena);
+pub fn create(reader: std.io.AnyReader) !gfx.ShaderHandle {
+    try utils.Serializer.checkHeader(reader, types.ShaderMagic, types.ShaderVersion);
+    const data = try utils.Serializer.read(
+        types.ShaderData,
+        vk.arena,
+        reader,
+    );
 
     if (data.input_attributes.len > vk.pipeline.MaxVertexAttributes) {
         vk.log.err("Input attributes count exceeds maximum vertex attributes", .{});
@@ -71,7 +76,7 @@ pub fn create(loader: utils.loaders.ShaderLoader) !gfx.ShaderHandle {
     };
     try vk.device.createShaderModule(&create_info, &module);
 
-    const handle = try shader_handles.create();
+    const handle = shader_handles.create();
     errdefer shader_handles.destroy(handle);
 
     shaders.setValue(
@@ -96,13 +101,13 @@ pub fn create(loader: utils.loaders.ShaderLoader) !gfx.ShaderHandle {
     vk.log.debug("  - Handle: {d}", .{handle});
 
     for (data.input_attributes) |input_attribute| {
-        vk.log.debug("  - Attribute {d}: {}", .{ input_attribute.location, input_attribute.attribute });
+        vk.log.debug("  - Attribute {d}: {s}", .{ input_attribute.location, input_attribute.attribute.name() });
     }
 
     for (data.descriptor_sets) |descriptor_set| {
         vk.log.debug("  - Descriptor set {d}:", .{descriptor_set.set});
         for (descriptor_set.bindings) |binding| {
-            vk.log.debug("    Binding {d}: {s} {}", .{ binding.binding, binding.name, binding.type });
+            vk.log.debug("    Binding {d}: {s} {s}", .{ binding.binding, binding.name, binding.type.name() });
         }
     }
 

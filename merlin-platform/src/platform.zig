@@ -114,7 +114,7 @@ pub fn deinit() void {
 }
 
 pub fn createWindow(options: WindowOptions) !WindowHandle {
-    const handle = try window_handles.create();
+    const handle = window_handles.create();
     errdefer window_handles.destroy(handle);
 
     try v_tab.createWindow(handle, &options);

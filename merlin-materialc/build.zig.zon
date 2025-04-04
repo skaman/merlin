@@ -10,9 +10,6 @@
         .merlin_texturec = .{
             .path = "../merlin-texturec",
         },
-        .merlin_assets = .{
-            .path = "../merlin-assets",
-        },
         .merlin_image = .{
             .path = "../merlin-image",
         },

@@ -9,6 +9,10 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    const merlin_gfx = b.dependency("merlin_gfx", .{
+        .target = target,
+        .optimize = optimize,
+    });
 
     const merlin_assets_mod = b.addModule("merlin_assets", .{
         .root_source_file = b.path("src/assets.zig"),
@@ -17,6 +21,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     merlin_assets_mod.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
+    merlin_assets_mod.addImport("merlin_gfx", merlin_gfx.module("merlin_gfx"));
 
     const merlin_assets = b.addLibrary(.{
         .linkage = .static,
