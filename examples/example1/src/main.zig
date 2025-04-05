@@ -17,6 +17,11 @@ const ModelViewProj = struct {
     proj: zm.Mat align(16),
 };
 
+const MeshInstance = struct {
+    mesh: assets.MeshHandle,
+    material: assets.MaterialHandle,
+};
+
 const Context = struct {
     gpa_allocator: std.mem.Allocator,
     arena_allocator: std.mem.Allocator,
@@ -27,7 +32,7 @@ const Context = struct {
     tex_sampler_uniform_handle: gfx.UniformHandle,
     mvp_uniform_buffer_handle: gfx.BufferHandle,
     texture_handle: gfx.TextureHandle,
-    meshes: std.ArrayList(assets.MeshInfo),
+    meshes: std.ArrayList(MeshInstance),
 };
 
 // *********************************************************************************************
@@ -67,24 +72,10 @@ fn loadTexture(allocator: std.mem.Allocator, filename: []const u8) !gfx.TextureH
     return try gfx.createTexture(file.reader().any(), @intCast(stat.size));
 }
 
-fn loadMesh(allocator: std.mem.Allocator, filename: []const u8) !assets.MeshInfo {
-    const path = try getAssetPath(allocator, filename);
-    defer allocator.free(path);
-
-    var file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    return try assets.loadMesh(allocator, file.reader().any());
-}
-
-fn destroyMesh(mesh: *assets.MeshInfo) void {
-    gfx.destroyPipelineLayout(mesh.pipeline_handle);
-    gfx.destroyBuffer(mesh.buffer_handle);
-}
-
-fn destroyMeshes(meshes: *std.ArrayList(assets.MeshInfo)) void {
-    for (meshes.items) |*mesh| {
-        destroyMesh(mesh);
+fn destroyMeshes(meshes: *std.ArrayList(MeshInstance)) void {
+    for (meshes.items) |mesh_instance| {
+        assets.destroyMesh(mesh_instance.mesh);
+        assets.destroyMaterial(mesh_instance.material);
     }
     meshes.deinit();
 }
@@ -134,33 +125,20 @@ pub fn init(gpa_allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator
     errdefer gfx.destroyTexture(texture_handle);
 
     // Meshes
-    var meshes = std.ArrayList(assets.MeshInfo).init(gpa_allocator);
+    var meshes = std.ArrayList(MeshInstance).init(gpa_allocator);
     errdefer destroyMeshes(&meshes);
 
-    try meshes.append(try loadMesh(
-        arena_allocator,
-        "flight-helmet.0.mesh",
-    ));
-    try meshes.append(try loadMesh(
-        arena_allocator,
-        "flight-helmet.1.mesh",
-    ));
-    try meshes.append(try loadMesh(
-        arena_allocator,
-        "flight-helmet.2.mesh",
-    ));
-    try meshes.append(try loadMesh(
-        arena_allocator,
-        "flight-helmet.3.mesh",
-    ));
-    try meshes.append(try loadMesh(
-        arena_allocator,
-        "flight-helmet.4.mesh",
-    ));
-    try meshes.append(try loadMesh(
-        arena_allocator,
-        "flight-helmet.5.mesh",
-    ));
+    //try meshes.append(try assets.loadMesh("flight-helmet.0.mesh"));
+    //try meshes.append(try assets.loadMesh("flight-helmet.1.mesh"));
+    //try meshes.append(try assets.loadMesh("flight-helmet.2.mesh"));
+    //try meshes.append(try assets.loadMesh("flight-helmet.3.mesh"));
+    //try meshes.append(try assets.loadMesh("flight-helmet.4.mesh"));
+    //try meshes.append(try assets.loadMesh("flight-helmet.5.mesh"));
+    const mesh_0 = MeshInstance{
+        .mesh = try assets.loadMesh("box-textured.0.mesh"),
+        .material = try assets.loadMaterial("BoxTextured/material.0.mat"),
+    };
+    try meshes.append(mesh_0);
 
     return Context{
         .gpa_allocator = gpa_allocator,
@@ -177,13 +155,13 @@ pub fn init(gpa_allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator
 }
 
 pub fn deinit(context: *Context) void {
+    destroyMeshes(&context.meshes);
+
     gfx.destroyShader(context.vertex_shader_handle);
     gfx.destroyShader(context.fragment_shader_handle);
     gfx.destroyProgram(context.program_handle);
     gfx.destroyBuffer(context.mvp_uniform_buffer_handle);
     gfx.destroyTexture(context.texture_handle);
-
-    destroyMeshes(&context.meshes);
 }
 
 pub fn update(context: *Context, time: f32) void {
@@ -193,7 +171,7 @@ pub fn update(context: *Context, time: f32) void {
     const mvp = ModelViewProj{
         .model = zm.rotationY(std.math.rad_per_deg * 90.0 * time),
         .view = zm.lookAtLh(
-            zm.f32x4(1.0, 1.0, 1.0, 1.0),
+            zm.f32x4(2.0, 2.0, 2.0, 1.0),
             zm.f32x4(0.0, 0.3, 0.0, 1.0),
             zm.f32x4(0.0, -1.0, 0.0, 0.0),
         ),
@@ -224,22 +202,28 @@ pub fn update(context: *Context, time: f32) void {
         context.mvp_uniform_buffer_handle,
         mvp_offset,
     );
-    gfx.bindCombinedSampler(
-        context.tex_sampler_uniform_handle,
-        context.texture_handle,
-    );
 
-    for (context.meshes.items) |mesh| {
+    for (context.meshes.items) |mesh_instance| {
+        const mesh = assets.mesh(mesh_instance.mesh);
+        const material = assets.material(mesh_instance.material);
+
+        if (material.base_color_texture_handle) |base_color_texture_handle| {
+            gfx.bindCombinedSampler(
+                context.tex_sampler_uniform_handle,
+                base_color_texture_handle,
+            );
+        }
+
         gfx.bindPipelineLayout(mesh.pipeline_handle);
         gfx.bindVertexBuffer(mesh.buffer_handle, mesh.vertex_buffer_offset);
         gfx.bindIndexBuffer(mesh.buffer_handle, mesh.index_buffer_offset);
         gfx.drawIndexed(
-            mesh.data.indices_count,
+            mesh.indices_count,
             1,
             0,
             0,
             0,
-            mesh.data.index_type,
+            mesh.index_type,
         );
     }
 }
@@ -279,6 +263,9 @@ pub fn main() !void {
         },
     );
     defer gfx.deinit();
+
+    try assets.init(gpa_allocator);
+    defer assets.deinit();
 
     var context = try init(gpa_allocator, arena_allocator);
     defer deinit(&context);

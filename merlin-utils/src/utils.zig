@@ -5,8 +5,6 @@ const builtin = @import("builtin");
 pub const asset_types = @import("asset_types.zig");
 pub const gfx_types = @import("gfx_types.zig");
 
-//pub const loaders = @import("loaders.zig");
-
 pub fn HandlePool(comptime THandle: type, comptime size: comptime_int) type {
     return struct {
         const Self = @This();

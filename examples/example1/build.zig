@@ -159,22 +159,24 @@ pub fn build(b: *std.Build) !void {
         .root_module = example1_mod,
     });
 
-    const shaders = [_][]const u8{
+    try addShaders(b, &[_][]const u8{
         "assets/shader.vert",
         "assets/shader.frag",
-    };
-    try addShaders(b, &shaders);
+    });
 
-    const textures = [_][]const u8{
+    try addTextures(b, &[_][]const u8{
         "assets/uv_texture.png",
-    };
-    try addTextures(b, &textures);
+    });
 
-    const meshes = [_]SourceMesh{
+    try addMeshes(b, &[_]SourceMesh{
         SourceMesh{
             .source = "assets/Box/Box.gltf",
             .output = "assets/box.0.mesh",
             .tex_coord = false,
+        },
+        SourceMesh{
+            .source = "assets/BoxTextured/BoxTextured.gltf",
+            .output = "assets/box-textured.0.mesh",
         },
         SourceMesh{
             .source = "assets/FlightHelmet/FlightHelmet.gltf",
@@ -206,16 +208,18 @@ pub fn build(b: *std.Build) !void {
             .output = "assets/flight-helmet.5.mesh",
             .sub_mesh = 5,
         },
-    };
-    try addMeshes(b, &meshes);
+    });
 
-    const materials = [_]SourceMaterial{
+    try addMaterials(b, &[_]SourceMaterial{
         SourceMaterial{
             .source = "assets/FlightHelmet/FlightHelmet.gltf",
             .output = "assets/FlightHelmet",
         },
-    };
-    try addMaterials(b, &materials);
+        SourceMaterial{
+            .source = "assets/BoxTextured/BoxTextured.gltf",
+            .output = "assets/BoxTextured",
+        },
+    });
 
     b.installArtifact(example1);
     example1.root_module.addImport("merlin_platform", merlin_platform.module("merlin_platform"));

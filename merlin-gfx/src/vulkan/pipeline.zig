@@ -105,7 +105,7 @@ pub fn create(
     for (vk.shaders.getInputAttributes(vertex_shader)) |input_attribute| {
         const attribute_data = vertex_layout.attributes[@intFromEnum(input_attribute.attribute)];
         if (attribute_data.num == 0) {
-            std.log.warn("Attribute {} not found in vertex layout", .{input_attribute.attribute});
+            vk.log.warn("Attribute {s} not found in vertex layout", .{input_attribute.attribute.name()});
             continue;
         }
 
