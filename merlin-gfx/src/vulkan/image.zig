@@ -12,6 +12,7 @@ const vk = @import("vulkan.zig");
 pub const Image = struct {
     image: c.VkImage,
     memory: c.VkDeviceMemory,
+    size: u64,
 };
 
 // *********************************************************************************************
@@ -21,9 +22,13 @@ pub const Image = struct {
 pub fn create(
     width: u32,
     height: u32,
+    depth: u32,
     format: c.VkFormat,
+    mip_levels: u32,
+    array_layers: u32,
     tiling: c.VkImageTiling,
     usage: c.VkImageUsageFlags,
+    initial_layout: c.VkImageLayout,
     properties: c.VkMemoryPropertyFlags,
 ) !Image {
     const image_info = std.mem.zeroInit(
@@ -34,13 +39,13 @@ pub fn create(
             .extent = .{
                 .width = width,
                 .height = height,
-                .depth = 1,
+                .depth = depth,
             },
-            .mipLevels = 1,
-            .arrayLayers = 1,
+            .mipLevels = mip_levels,
+            .arrayLayers = array_layers,
             .format = format,
             .tiling = tiling,
-            .initialLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
+            .initialLayout = initial_layout,
             .usage = usage,
             .samples = c.VK_SAMPLE_COUNT_1_BIT,
             .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
@@ -77,7 +82,11 @@ pub fn create(
 
     try vk.device.bindImageMemory(image, memory, 0);
 
-    return .{ .image = image, .memory = memory };
+    return .{
+        .image = image,
+        .memory = memory,
+        .size = memory_requirements.size,
+    };
 }
 
 pub fn destroy(image: Image) void {
@@ -125,77 +134,117 @@ pub fn destroyView(view: c.VkImageView) void {
     vk.device.destroyImageView(view);
 }
 
-//pub fn transitionLayout(
-//    command_pool: c.VkCommandPool,
-//    image: c.VkImage,
-//    //format: c.VkFormat,
-//    old_layout: c.VkImageLayout,
-//    new_layout: c.VkImageLayout,
-//) !void {
-//    std.debug.assert(image != null);
-//    std.debug.assert(old_layout != new_layout);
-//
-//    var command_buffer = try vk.command_buffers.create(
-//        command_pool,
-//        1,
-//    );
-//    defer vk.command_buffers.destroy(&command_buffer);
-//
-//    try command_buffer.begin(0, true);
-//
-//    const barrier = std.mem.zeroInit(
-//        c.VkImageMemoryBarrier,
-//        .{
-//            .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-//            .oldLayout = old_layout,
-//            .newLayout = new_layout,
-//            .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-//            .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-//            .image = image,
-//            .subresourceRange = .{
-//                .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
-//                .baseMipLevel = 0,
-//                .levelCount = 1,
-//                .baseArrayLayer = 0,
-//                .layerCount = 1,
-//            },
-//        },
-//    );
-//
-//    var source_stage: c.VkPipelineStageFlags = 0;
-//    var destination_stage: c.VkPipelineStageFlags = 0;
-//
-//    if (old_layout == c.VK_IMAGE_LAYOUT_UNDEFINED and
-//        new_layout == c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
-//    {
-//        barrier.srcAccessMask = 0;
-//        barrier.dstAccessMask = c.VK_ACCESS_TRANSFER_WRITE_BIT;
-//
-//        source_stage = c.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-//        destination_stage = c.VK_PIPELINE_STAGE_TRANSFER_BIT;
-//    } else if (old_layout == c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL and
-//        new_layout == c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-//    {
-//        barrier.srcAccessMask = c.VK_ACCESS_TRANSFER_WRITE_BIT;
-//        barrier.dstAccessMask = c.VK_ACCESS_SHADER_READ_BIT;
-//
-//        source_stage = c.VK_PIPELINE_STAGE_TRANSFER_BIT;
-//        destination_stage = c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-//    } else {
-//        vk.log.err("Unsupported layout transition");
-//        return error.UnsupportedTransition;
-//    }
-//
-//    command_buffer.pipelineBarrier(
-//        0,
-//        source_stage,
-//        destination_stage,
-//        0,
-//        0,
-//        null,
-//        0,
-//        null,
-//        1,
-//        &barrier,
-//    );
-//}
+pub fn setImageLayout(
+    command_buffer: c.VkCommandBuffer,
+    image: c.VkImage,
+    old_image_layout: c.VkImageLayout,
+    new_image_layout: c.VkImageLayout,
+    subresource_range: c.VkImageSubresourceRange,
+) !void {
+    var barrier = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
+        .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+        .oldLayout = old_image_layout,
+        .newLayout = new_image_layout,
+        .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
+        .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
+        .image = image,
+        .subresourceRange = subresource_range,
+    });
+
+    // Source layouts (old)
+    // The source access mask controls actions to be finished on the old
+    // layout before it will be transitioned to the new layout.
+    switch (old_image_layout) {
+        c.VK_IMAGE_LAYOUT_UNDEFINED => {
+            // Image layout is undefined (or does not matter).
+            // Only valid as initial layout. No flags required.
+            barrier.srcAccessMask = 0;
+        },
+        c.VK_IMAGE_LAYOUT_PREINITIALIZED => {
+            // Image is preinitialized.
+            // Only valid as initial layout for linear images; preserves memory
+            // contents. Make sure host writes have finished.
+            barrier.srcAccessMask = c.VK_ACCESS_HOST_WRITE_BIT;
+        },
+        c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL => {
+            // Image is a color attachment.
+            // Make sure any writes to the color buffer have been finished.
+            barrier.srcAccessMask = c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        },
+        c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL => {
+            // Image is a depth/stencil attachment.
+            // Make sure any writes to the depth/stencil buffer have been finished.
+            barrier.srcAccessMask = c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        },
+        c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL => {
+            // Image is a transfer source.
+            // Make sure any reads from the image have been finished.
+            barrier.srcAccessMask = c.VK_ACCESS_TRANSFER_READ_BIT;
+        },
+        c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL => {
+            // Image is a transfer destination.
+            // Make sure any writes to the image have been finished.
+            barrier.srcAccessMask = c.VK_ACCESS_TRANSFER_WRITE_BIT;
+        },
+        else => {
+            vk.log.err("Unsupported old image layout: {s}", .{c.string_VkImageLayout(old_image_layout)});
+            return error.UnsupportedImageLayout;
+        },
+    }
+
+    // Target layouts (new)
+    // The destination access mask controls the dependency for the new image
+    // layout.
+    switch (new_image_layout) {
+        c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL => {
+            // Image will be used as a transfer destination.
+            // Make sure any writes to the image have finished.
+            barrier.dstAccessMask = c.VK_ACCESS_TRANSFER_WRITE_BIT;
+        },
+        c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL => {
+            // Image will be used as a transfer source.
+            // Make sure any reads from and writes to the image have finished.
+            barrier.srcAccessMask |= c.VK_ACCESS_TRANSFER_READ_BIT;
+            barrier.dstAccessMask = c.VK_ACCESS_TRANSFER_READ_BIT;
+        },
+        c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL => {
+            // Image will be used as a color attachment.
+            // Make sure any writes to the color buffer have finished.
+            barrier.srcAccessMask |= c.VK_ACCESS_TRANSFER_READ_BIT;
+            barrier.dstAccessMask = c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        },
+        c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL => {
+            // Image layout will be used as a depth/stencil attachment.
+            // Make sure any writes to depth/stencil buffer have finished.
+            barrier.dstAccessMask = c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        },
+        c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL => {
+            // Image will be read in a shader (sampler, input attachment).
+            // Make sure any writes to the image have finished.
+            if (barrier.srcAccessMask == 0) {
+                barrier.srcAccessMask = c.VK_ACCESS_HOST_WRITE_BIT | c.VK_ACCESS_TRANSFER_WRITE_BIT;
+            }
+            barrier.dstAccessMask = c.VK_ACCESS_SHADER_READ_BIT;
+        },
+        else => {
+            vk.log.err("Unsupported new image layout: {s}", .{c.string_VkImageLayout(new_image_layout)});
+            return error.UnsupportedImageLayout;
+        },
+    }
+
+    const src_stage_flags = c.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+    const dest_stage_flags = c.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+
+    vk.device.cmdPipelineBarrier(
+        command_buffer,
+        src_stage_flags,
+        dest_stage_flags,
+        0,
+        0,
+        null,
+        0,
+        null,
+        1,
+        &barrier,
+    );
+}

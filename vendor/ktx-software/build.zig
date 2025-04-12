@@ -68,10 +68,6 @@ pub fn build(b: *std.Build) void {
             src_dir ++ "external/basisu/encoder/basisu_ssim.cpp",
             src_dir ++ "external/basisu/encoder/basisu_uastc_enc.cpp",
 
-            // KTX_FEATURE_VK_UPLOAD
-            src_dir ++ "lib/vk_funcs.c",
-            src_dir ++ "lib/vkloader.c",
-
             // KTX_FEATURE_WRITE
             src_dir ++ "lib/basis_encode.cpp",
             src_dir ++ "lib/astc_codec.cpp",
@@ -82,11 +78,10 @@ pub fn build(b: *std.Build) void {
             "-DLIBKTX",
             "-DKTX_FEATURE_KTX1",
             "-DKTX_FEATURE_KTX2",
-            "-DKTX_FEATURE_VK_UPLOAD",
             "-DKTX_FEATURE_WRITE",
             "-DBASISD_SUPPORT_KTX2_ZSTD=0",
             "-DBASISD_SUPPORT_KTX2=1",
-            "-DBASISU_SUPPORT_SSE=0", // TODO: Enable this
+            //"-DBASISU_SUPPORT_SSE=1", // TODO: As default it use AVX512?
             "-DBASISU_SUPPORT_OPENCL=0",
             //"-msse4.1",
             "-DKHRONOS_STATIC",

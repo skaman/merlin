@@ -3,7 +3,7 @@ const std = @import("std");
 const c = @import("c.zig").c;
 
 // *********************************************************************************************
-// Structs
+// Enums
 // *********************************************************************************************
 
 pub const ResizeEdge = enum(u8) {
@@ -243,7 +243,7 @@ pub const Image = struct {
         };
     }
 
-    pub fn load(allocator: std.mem.Allocator, path: []const u8) !Image {
+    pub fn load(allocator: std.mem.Allocator, path: []const u8, desired_channels: u8) !Image {
         var width: c_int = 0;
         var height: c_int = 0;
         var channels: c_int = 0;
@@ -255,13 +255,13 @@ pub const Image = struct {
         c.stbi_set_flip_vertically_on_load(1);
 
         if (c.stbi_is_hdr(path.ptr) == 1) {
-            image = c.stbi_load(
+            image = @ptrCast(c.stbi_loadf(
                 path.ptr,
                 &width,
                 &height,
                 &channels,
-                0,
-            );
+                desired_channels,
+            ));
             channel_size = .f32;
         } else if (c.stbi_is_16_bit(path.ptr) == 1) {
             image = @ptrCast(c.stbi_load_16(
@@ -269,7 +269,7 @@ pub const Image = struct {
                 &width,
                 &height,
                 &channels,
-                0,
+                desired_channels,
             ));
             channel_size = .u16;
         } else {
@@ -278,9 +278,13 @@ pub const Image = struct {
                 &width,
                 &height,
                 &channels,
-                0,
+                desired_channels,
             );
             channel_size = .u8;
+        }
+
+        if (desired_channels != 0) {
+            channels = @intCast(desired_channels);
         }
 
         if (image == null) {

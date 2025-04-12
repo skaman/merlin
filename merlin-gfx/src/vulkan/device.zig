@@ -100,7 +100,6 @@ pub var dispatch: Dispatch = undefined;
 pub var queue_family_indices: QueueFamilyIndices = undefined;
 pub var features: c.VkPhysicalDeviceFeatures2 = undefined;
 pub var properties: c.VkPhysicalDeviceProperties = undefined;
-pub var ktx_vulkan_functions: c.struct_ktxVulkanFunctions = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -426,39 +425,6 @@ pub fn init(
         &handle,
     );
     errdefer dispatch.DestroyDevice(handle, vk.instance.allocation_callbacks);
-
-    ktx_vulkan_functions = c.struct_ktxVulkanFunctions{
-        .vkGetInstanceProcAddr = vk.library.get_instance_proc_addr,
-        .vkGetDeviceProcAddr = vk.library.get_device_proc_addr,
-        .vkAllocateCommandBuffers = dispatch.AllocateCommandBuffers,
-        .vkAllocateMemory = dispatch.AllocateMemory,
-        .vkBeginCommandBuffer = dispatch.BeginCommandBuffer,
-        .vkBindBufferMemory = dispatch.BindBufferMemory,
-        .vkBindImageMemory = dispatch.BindImageMemory,
-        .vkCmdBlitImage = dispatch.CmdBlitImage,
-        .vkCmdCopyBufferToImage = dispatch.CmdCopyBufferToImage,
-        .vkCmdPipelineBarrier = dispatch.CmdPipelineBarrier,
-        .vkCreateImage = dispatch.CreateImage,
-        .vkDestroyImage = dispatch.DestroyImage,
-        .vkCreateBuffer = dispatch.CreateBuffer,
-        .vkDestroyBuffer = dispatch.DestroyBuffer,
-        .vkCreateFence = dispatch.CreateFence,
-        .vkDestroyFence = dispatch.DestroyFence,
-        .vkEndCommandBuffer = dispatch.EndCommandBuffer,
-        .vkFreeCommandBuffers = dispatch.FreeCommandBuffers,
-        .vkFreeMemory = dispatch.FreeMemory,
-        .vkGetBufferMemoryRequirements = dispatch.GetBufferMemoryRequirements,
-        .vkGetImageMemoryRequirements = dispatch.GetImageMemoryRequirements,
-        .vkGetImageSubresourceLayout = dispatch.GetImageSubresourceLayout,
-        .vkGetPhysicalDeviceImageFormatProperties = vk.instance.dispatch.GetPhysicalDeviceImageFormatProperties,
-        .vkGetPhysicalDeviceFormatProperties = vk.instance.dispatch.GetPhysicalDeviceFormatProperties,
-        .vkGetPhysicalDeviceMemoryProperties = vk.instance.dispatch.GetPhysicalDeviceMemoryProperties,
-        .vkMapMemory = dispatch.MapMemory,
-        .vkQueueSubmit = dispatch.QueueSubmit,
-        .vkQueueWaitIdle = dispatch.QueueWaitIdle,
-        .vkUnmapMemory = dispatch.UnmapMemory,
-        .vkWaitForFences = dispatch.WaitForFences,
-    };
 
     physical_device = selected_physical_device;
     features = physical_device_features;

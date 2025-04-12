@@ -36,7 +36,7 @@ pub const Texture = struct {
     texture: *c.ktxTexture2,
 
     pub fn load(allocator: std.mem.Allocator, path: []const u8) !Texture {
-        const source = try image.Image.load(allocator, path);
+        const source = try image.Image.load(allocator, path, 0);
         errdefer source.deinit();
 
         var create_info = std.mem.zeroInit(

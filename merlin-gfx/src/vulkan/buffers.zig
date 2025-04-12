@@ -67,53 +67,6 @@ fn allocateMemory(
     return memory;
 }
 
-fn createBuffer(
-    size: c.VkDeviceSize,
-    usage: c.VkBufferUsageFlags,
-    property_flags: c.VkMemoryPropertyFlags,
-) !Buffer {
-    const buffer_info = std.mem.zeroInit(
-        c.VkBufferCreateInfo,
-        .{
-            .sType = c.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            .size = size,
-            .usage = usage,
-            .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
-        },
-    );
-
-    var handle: c.VkBuffer = undefined;
-    try vk.device.createBuffer(
-        &buffer_info,
-        &handle,
-    );
-    errdefer vk.device.destroyBuffer(handle);
-
-    var requirements: c.VkMemoryRequirements = undefined;
-    vk.device.getBufferMemoryRequirements(handle, &requirements);
-
-    const memory = try allocateMemory(
-        &requirements,
-        property_flags,
-    );
-    errdefer vk.device.freeMemory(memory);
-
-    try vk.device.bindBufferMemory(handle, memory, 0);
-
-    return Buffer{
-        .handle = handle,
-        .memory = memory,
-        .property_flags = property_flags,
-        .mapped_data = null,
-        .mapped_data_size = 0,
-    };
-}
-
-fn destroyBuffer(buf: *Buffer) void {
-    vk.device.destroyBuffer(buf.handle);
-    vk.device.freeMemory(buf.memory);
-}
-
 fn copyBuffer(
     command_pool: c.VkCommandPool,
     queue: c.VkQueue,
@@ -289,4 +242,51 @@ pub fn update(
             offset,
         );
     }
+}
+
+pub fn createBuffer(
+    size: c.VkDeviceSize,
+    usage: c.VkBufferUsageFlags,
+    property_flags: c.VkMemoryPropertyFlags,
+) !Buffer {
+    const buffer_info = std.mem.zeroInit(
+        c.VkBufferCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+            .size = size,
+            .usage = usage,
+            .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
+        },
+    );
+
+    var handle: c.VkBuffer = undefined;
+    try vk.device.createBuffer(
+        &buffer_info,
+        &handle,
+    );
+    errdefer vk.device.destroyBuffer(handle);
+
+    var requirements: c.VkMemoryRequirements = undefined;
+    vk.device.getBufferMemoryRequirements(handle, &requirements);
+
+    const memory = try allocateMemory(
+        &requirements,
+        property_flags,
+    );
+    errdefer vk.device.freeMemory(memory);
+
+    try vk.device.bindBufferMemory(handle, memory, 0);
+
+    return Buffer{
+        .handle = handle,
+        .memory = memory,
+        .property_flags = property_flags,
+        .mapped_data = null,
+        .mapped_data_size = 0,
+    };
+}
+
+pub fn destroyBuffer(buf: *Buffer) void {
+    vk.device.destroyBuffer(buf.handle);
+    vk.device.freeMemory(buf.memory);
 }

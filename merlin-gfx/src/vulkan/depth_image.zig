@@ -79,9 +79,13 @@ pub fn create(
     const image = try vk.image.create(
         width,
         height,
+        1,
         depth_format,
+        1,
+        1,
         c.VK_IMAGE_TILING_OPTIMAL,
         c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        c.VK_IMAGE_LAYOUT_UNDEFINED,
         c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
     );
 
