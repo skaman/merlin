@@ -10,6 +10,7 @@ const gfx = @import("../gfx.zig");
 pub const buffers = @import("buffers.zig");
 pub const command_buffers = @import("command_buffers.zig");
 pub const command_pool = @import("command_pool.zig");
+pub const debug = @import("debug.zig");
 pub const depth_image = @import("depth_image.zig");
 pub const descriptor_registry = @import("descriptor_registry.zig");
 pub const device = @import("device.zig");
@@ -52,8 +53,6 @@ var main_descriptor_pool: c.VkDescriptorPool = undefined;
 var graphics_command_pool: c.VkCommandPool = undefined;
 var transfer_command_pool: c.VkCommandPool = undefined;
 
-var debug_messenger: ?c.VkDebugUtilsMessengerEXT = null;
-
 var image_available_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
 var render_finished_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
 var in_flight_fences: [MaxFramesInFlight]c.VkFence = undefined;
@@ -66,29 +65,6 @@ var framebuffer_invalidated: bool = false;
 // *********************************************************************************************
 // Private API
 // *********************************************************************************************
-
-fn setupDebugMessenger(options: *const gfx.Options) !?c.VkDebugUtilsMessengerEXT {
-    if (!options.enable_vulkan_debug) {
-        return null;
-    }
-
-    const create_info = std.mem.zeroInit(
-        c.VkDebugUtilsMessengerCreateInfoEXT,
-        .{
-            .sType = c.VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-            .messageSeverity = c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-            .messageType = c.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-            .pfnUserCallback = @as(c.PFN_vkDebugUtilsMessengerCallbackEXT, @ptrCast(&debugCallback)),
-        },
-    );
-
-    var debug_utils_messenger: c.VkDebugUtilsMessengerEXT = undefined;
-    try instance.createDebugUtilsMessengerEXT(
-        &create_info,
-        &debug_utils_messenger,
-    );
-    return debug_utils_messenger;
-}
 
 fn destroyPendingResources() void {
     buffers.destroyPendingResources();
@@ -230,7 +206,8 @@ pub fn init(
     try instance.init(options);
     errdefer instance.deinit();
 
-    debug_messenger = try setupDebugMessenger(options);
+    try debug.init(options);
+    errdefer debug.deinit();
 
     main_surface = try surface.create();
     errdefer surface.destroy(main_surface);
@@ -406,11 +383,7 @@ pub fn deinit() void {
     swap_chain.destroy(&main_swap_chain);
     surface.destroy(main_surface);
     device.deinit();
-
-    if (debug_messenger) |debug_messenger_value| {
-        instance.destroyDebugUtilsMessengerEXT(debug_messenger_value);
-    }
-
+    debug.deinit();
     instance.deinit();
     library.deinit();
 
@@ -432,8 +405,8 @@ pub fn currentFrameInFlight() u32 {
     return current_frame_in_flight;
 }
 
-pub fn createShader(reader: std.io.AnyReader) !gfx.ShaderHandle {
-    return shaders.create(reader);
+pub fn createShader(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderHandle {
+    return shaders.create(reader, options);
 }
 
 pub fn destroyShader(handle: gfx.ShaderHandle) void {
@@ -469,8 +442,9 @@ pub fn createBuffer(
     size: u32,
     usage: gfx.BufferUsage,
     location: gfx.BufferLocation,
+    options: gfx.BufferOptions,
 ) !gfx.BufferHandle {
-    return buffers.create(size, usage, location);
+    return buffers.create(size, usage, location, options);
 }
 
 pub fn destroyBuffer(handle: gfx.BufferHandle) void {
@@ -503,12 +477,13 @@ pub fn createTexture(reader: std.io.AnyReader, size: u32, options: gfx.TextureOp
     );
 }
 
-pub fn createTextureFromKTX(reader: std.io.AnyReader, size: u32) !gfx.TextureHandle {
+pub fn createTextureFromKTX(reader: std.io.AnyReader, size: u32, options: gfx.TextureKTXOptions) !gfx.TextureHandle {
     return textures.createFromKTX(
         transfer_command_pool,
         transfer_queue,
         reader,
         size,
+        options,
     );
 }
 

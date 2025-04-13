@@ -230,7 +230,7 @@ pub fn create(command_pool: c.VkCommandPool) !gfx.CommandBufferHandle {
     );
 
     const handle = command_buffer_handles.create();
-    errdefer command_buffer_handles.destroy(command_buffer);
+    errdefer command_buffer_handles.destroy(handle);
 
     command_buffers.setValue(handle, .{
         .command_pool = command_pool,

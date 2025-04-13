@@ -93,7 +93,11 @@ pub const TextureTiling = enum(u8) {
     }
 };
 
-pub const TextureOptions = packed struct {
+pub const ShaderOptions = struct {
+    debug_name: ?[]const u8 = null,
+};
+
+pub const TextureOptions = struct {
     format: ImageFormat,
     width: u32,
     height: u32,
@@ -103,6 +107,15 @@ pub const TextureOptions = packed struct {
     is_cubemap: bool = false,
     is_array: bool = false,
     generate_mipmaps: bool = false,
+    debug_name: ?[]const u8 = null,
+};
+
+pub const TextureKTXOptions = struct {
+    debug_name: ?[]const u8 = null,
+};
+
+pub const BufferOptions = struct {
+    debug_name: ?[]const u8 = null,
 };
 
 const VTab = struct {
@@ -111,17 +124,17 @@ const VTab = struct {
     swapchainSize: *const fn () [2]u32,
     maxFramesInFlight: *const fn () u32,
     currentFrameInFlight: *const fn () u32,
-    createShader: *const fn (reader: std.io.AnyReader) anyerror!ShaderHandle,
+    createShader: *const fn (reader: std.io.AnyReader, options: ShaderOptions) anyerror!ShaderHandle,
     destroyShader: *const fn (handle: ShaderHandle) void,
     createPipelineLayout: *const fn (vertex_layout: types.VertexLayout) anyerror!PipelineLayoutHandle,
     destroyPipelineLayout: *const fn (handle: PipelineLayoutHandle) void,
     createProgram: *const fn (vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!ProgramHandle,
     destroyProgram: *const fn (handle: ProgramHandle) void,
-    createBuffer: *const fn (size: u32, usage: BufferUsage, location: BufferLocation) anyerror!BufferHandle,
+    createBuffer: *const fn (size: u32, usage: BufferUsage, location: BufferLocation, options: BufferOptions) anyerror!BufferHandle,
     destroyBuffer: *const fn (handle: BufferHandle) void,
     updateBuffer: *const fn (handle: BufferHandle, reader: std.io.AnyReader, offset: u32, size: u32) anyerror!void,
     createTexture: *const fn (reader: std.io.AnyReader, size: u32, options: TextureOptions) anyerror!TextureHandle,
-    createTextureFromKTX: *const fn (reader: std.io.AnyReader, size: u32) anyerror!TextureHandle,
+    createTextureFromKTX: *const fn (reader: std.io.AnyReader, size: u32, options: TextureKTXOptions) anyerror!TextureHandle,
     destroyTexture: *const fn (handle: TextureHandle) void,
     registerUniformName: *const fn (name: []const u8) anyerror!UniformHandle,
     beginFrame: *const fn () anyerror!bool,
@@ -279,8 +292,8 @@ pub inline fn currentFrameInFlight() u32 {
 }
 
 /// Creates a shader from a loader.
-pub fn createShader(reader: std.io.AnyReader) !ShaderHandle {
-    return try v_tab.createShader(reader);
+pub fn createShader(reader: std.io.AnyReader, options: ShaderOptions) !ShaderHandle {
+    return try v_tab.createShader(reader, options);
 }
 
 /// Destroys a shader.
@@ -319,8 +332,9 @@ pub inline fn createBuffer(
     size: u32,
     usage: BufferUsage,
     location: BufferLocation,
+    options: BufferOptions,
 ) !BufferHandle {
-    return try v_tab.createBuffer(size, usage, location);
+    return try v_tab.createBuffer(size, usage, location, options);
 }
 
 /// Destroys a buffer.
@@ -366,8 +380,12 @@ pub inline fn createTextureFromMemory(
 }
 
 /// Creates a KTX texture from a loader.
-pub inline fn createTextureFromKTX(reader: std.io.AnyReader, size: u32) !TextureHandle {
-    return try v_tab.createTextureFromKTX(reader, size);
+pub inline fn createTextureFromKTX(
+    reader: std.io.AnyReader,
+    size: u32,
+    options: TextureKTXOptions,
+) !TextureHandle {
+    return try v_tab.createTextureFromKTX(reader, size, options);
 }
 
 /// Destroys a texture.

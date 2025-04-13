@@ -121,7 +121,7 @@ fn loadMaterialTexture(
     texture_index: ?u8,
 ) !gfx.TextureHandle {
     if (texture_index) |index| {
-        const base_color_texture_filename = try std.fmt.allocPrint(
+        const texture_filename = try std.fmt.allocPrint(
             arena,
             "{s}.{d}.ktx",
             .{
@@ -129,29 +129,27 @@ fn loadMaterialTexture(
                 index,
             },
         );
-        const base_color_texture_path = try getAssetPath(
+
+        const relative_path = try std.fs.path.join(
             arena,
-            try std.fs.path.join(
-                arena,
-                &[_][]const u8{
-                    dirname,
-                    base_color_texture_filename,
-                },
-            ),
+            &[_][]const u8{
+                dirname,
+                texture_filename,
+            },
         );
+        const texture_path = try getAssetPath(arena, relative_path);
 
-        log.debug("Base color texture path: {s}", .{base_color_texture_path});
+        //log.debug("Base color texture path: {s}", .{texture_path});
 
-        var texture_file = try std.fs.cwd().openFile(base_color_texture_path, .{});
+        var texture_file = try std.fs.cwd().openFile(texture_path, .{});
         defer texture_file.close();
 
         const stats = try texture_file.stat();
         const texture_reader = texture_file.reader().any();
 
-        return try gfx.createTextureFromKTX(
-            texture_reader,
-            @intCast(stats.size),
-        );
+        return try gfx.createTextureFromKTX(texture_reader, @intCast(stats.size), .{
+            .debug_name = relative_path,
+        });
     }
 
     return default_texture_handle;
@@ -252,6 +250,7 @@ pub fn init(allocator: std.mem.Allocator) !void {
             .format = .rgba8,
             .width = 1,
             .height = 1,
+            .debug_name = "Default empty material texture",
         },
     );
 }
@@ -307,6 +306,9 @@ pub fn loadMesh(filename: []const u8) !MeshHandle {
             .vertex = true,
         },
         .device,
+        .{
+            .debug_name = filename,
+        },
     );
     errdefer gfx.destroyBuffer(buffer_handle);
 

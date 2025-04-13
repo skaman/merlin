@@ -16,7 +16,7 @@ pub fn maxFramesInFlight() u32 {
 pub fn currentFrameInFlight() u32 {
     return 0;
 }
-pub fn createShader(_: std.io.AnyReader) !gfx.ShaderHandle {
+pub fn createShader(_: std.io.AnyReader, _: gfx.ShaderOptions) !gfx.ShaderHandle {
     return @enumFromInt(0);
 }
 pub fn destroyShader(_: gfx.ShaderHandle) void {}
@@ -29,7 +29,7 @@ pub fn createProgram(_: gfx.ShaderHandle, _: gfx.ShaderHandle) !gfx.ProgramHandl
     return @enumFromInt(0);
 }
 pub fn destroyProgram(_: gfx.ProgramHandle) void {}
-pub fn createBuffer(_: u32, _: gfx.BufferUsage, _: gfx.BufferLocation) !gfx.BufferHandle {
+pub fn createBuffer(_: u32, _: gfx.BufferUsage, _: gfx.BufferLocation, _: gfx.BufferOptions) !gfx.BufferHandle {
     return @enumFromInt(0);
 }
 pub fn destroyBuffer(_: gfx.BufferHandle) void {}
@@ -37,7 +37,7 @@ pub fn updateBuffer(_: gfx.BufferHandle, _: std.io.AnyReader, _: u32, _: u32) !v
 pub fn createTexture(_: std.io.AnyReader, _: u32, _: gfx.TextureOptions) !gfx.TextureHandle {
     return @enumFromInt(0);
 }
-pub fn createTextureFromKTX(_: std.io.AnyReader, _: u32) !gfx.TextureHandle {
+pub fn createTextureFromKTX(_: std.io.AnyReader, _: u32, _: gfx.TextureKTXOptions) !gfx.TextureHandle {
     return @enumFromInt(0);
 }
 pub fn destroyTexture(_: gfx.TextureHandle) void {}

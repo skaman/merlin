@@ -50,7 +50,7 @@ pub fn deinit() void {
     shader_handles.deinit();
 }
 
-pub fn create(reader: std.io.AnyReader) !gfx.ShaderHandle {
+pub fn create(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderHandle {
     try utils.Serializer.checkHeader(reader, types.ShaderMagic, types.ShaderVersion);
     const data = try utils.Serializer.read(
         types.ShaderData,
@@ -99,6 +99,10 @@ pub fn create(reader: std.io.AnyReader) !gfx.ShaderHandle {
         .fragment => "fragment",
     }});
     vk.log.debug("  - Handle: {d}", .{handle});
+    if (options.debug_name) |name| {
+        try vk.debug.setObjectName(c.VK_OBJECT_TYPE_SHADER_MODULE, module, name);
+        vk.log.debug("  - Name: {s}", .{name});
+    }
 
     for (data.input_attributes) |input_attribute| {
         vk.log.debug("  - Attribute {d}: {s}", .{ input_attribute.location, input_attribute.attribute.name() });

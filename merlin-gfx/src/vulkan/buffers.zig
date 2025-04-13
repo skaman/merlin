@@ -121,6 +121,7 @@ pub fn create(
     size: u32,
     usage: gfx.BufferUsage,
     location: gfx.BufferLocation,
+    options: gfx.BufferOptions,
 ) !gfx.BufferHandle {
     var buffer_usage_flags: c.VkBufferUsageFlags = 0;
     if (usage.vertex) buffer_usage_flags |= c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
@@ -130,44 +131,49 @@ pub fn create(
     const handle = buffer_handles.create();
     errdefer buffer_handles.destroy(handle);
 
+    var result_buffer: Buffer = undefined;
     switch (location) {
         .device => {
-            var device_buffer = try createBuffer(
+            result_buffer = try createBuffer(
                 @intCast(size),
                 buffer_usage_flags | c.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
             );
-            errdefer destroyBuffer(&device_buffer);
+            errdefer destroyBuffer(&result_buffer);
 
-            buffers.setValue(handle, device_buffer);
+            buffers.setValue(handle, result_buffer);
         },
         .host => {
-            var local_buffer = try createBuffer(
+            result_buffer = try createBuffer(
                 @intCast(size),
                 buffer_usage_flags,
                 c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
             );
-            errdefer destroyBuffer(&local_buffer);
+            errdefer destroyBuffer(&result_buffer);
 
             var mapped_data: [*c]u8 = undefined;
             try vk.device.mapMemory(
-                local_buffer.memory,
+                result_buffer.memory,
                 0,
                 size,
                 0,
                 @ptrCast(&mapped_data),
             );
-            errdefer vk.device.unmapMemory(local_buffer.memory);
+            errdefer vk.device.unmapMemory(result_buffer.memory);
 
-            local_buffer.mapped_data = mapped_data;
-            local_buffer.mapped_data_size = size;
+            result_buffer.mapped_data = mapped_data;
+            result_buffer.mapped_data_size = size;
 
-            buffers.setValue(handle, local_buffer);
+            buffers.setValue(handle, result_buffer);
         },
     }
 
     vk.log.debug("Created buffer:", .{});
     vk.log.debug("  - Handle: {d}", .{handle});
+    if (options.debug_name) |name| {
+        try vk.debug.setObjectName(c.VK_OBJECT_TYPE_BUFFER, result_buffer.handle, name);
+        vk.log.debug("  - Name: {s}", .{name});
+    }
     vk.log.debug("  - Size: {s}", .{std.fmt.fmtIntSizeDec(size)});
     vk.log.debug("  - Usage uniform: {}", .{usage.uniform});
     vk.log.debug("  - Usage vertex: {}", .{usage.vertex});

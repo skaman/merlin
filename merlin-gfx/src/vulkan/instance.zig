@@ -26,6 +26,7 @@ const Dispatch = struct {
 const DebugExtDispatch = struct {
     CreateDebugUtilsMessengerEXT: std.meta.Child(c.PFN_vkCreateDebugUtilsMessengerEXT) = undefined,
     DestroyDebugUtilsMessengerEXT: std.meta.Child(c.PFN_vkDestroyDebugUtilsMessengerEXT) = undefined,
+    SetDebugUtilsObjectNameEXT: std.meta.Child(c.PFN_vkSetDebugUtilsObjectNameEXT) = undefined,
 };
 
 // *********************************************************************************************
@@ -184,7 +185,7 @@ pub fn init(options: *const gfx.Options) !void {
                 .sType = c.VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
                 .messageSeverity = c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
                 .messageType = c.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-                .pfnUserCallback = @as(c.PFN_vkDebugUtilsMessengerCallbackEXT, @ptrCast(&vk.debugCallback)),
+                .pfnUserCallback = @as(c.PFN_vkDebugUtilsMessengerCallbackEXT, @ptrCast(&vk.debug.debugCallback)),
             },
         );
         create_info.pNext = &debug_create_info;
@@ -577,5 +578,20 @@ pub inline fn destroyDebugUtilsMessengerEXT(messenger: c.VkDebugUtilsMessengerEX
         handle,
         messenger,
         allocation_callbacks,
+    );
+}
+
+pub inline fn setDebugUtilsObjectNameEXT(
+    device: c.VkDevice,
+    name_info: *const c.VkDebugUtilsObjectNameInfoEXT,
+) !void {
+    std.debug.assert(debug_dispatch != null);
+
+    try vk.checkVulkanError(
+        "Failed to set debug utils object name",
+        debug_dispatch.?.SetDebugUtilsObjectNameEXT(
+            device,
+            name_info,
+        ),
     );
 }

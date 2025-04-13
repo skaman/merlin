@@ -436,7 +436,11 @@ fn tilingFromGfxTextureTiling(tiling: gfx.TextureTiling) c.VkImageTiling {
     }
 }
 
-fn createTexture(image: vk.image.Image, params: TextureParams) !gfx.TextureHandle {
+fn createTexture(
+    image: vk.image.Image,
+    params: TextureParams,
+    debug_name: ?[]const u8,
+) !gfx.TextureHandle {
     const texture_image_view = try vk.image.createView(
         image.image,
         params.format,
@@ -446,6 +450,24 @@ fn createTexture(image: vk.image.Image, params: TextureParams) !gfx.TextureHandl
         params.num_image_layers,
     );
     errdefer vk.image.destroyView(texture_image_view);
+
+    const handle = texture_handles.create();
+    errdefer texture_handles.destroy(handle);
+
+    vk.log.debug("Created texture:", .{});
+    vk.log.debug("  - Handle: {d}", .{handle});
+    if (debug_name) |name| {
+        try vk.debug.setObjectName(c.VK_OBJECT_TYPE_IMAGE, image.image, name);
+        vk.log.debug("  - Name: {s}", .{name});
+    }
+    vk.log.debug("  - Width: {d}", .{params.width});
+    vk.log.debug("  - Height: {d}", .{params.height});
+    vk.log.debug("  - Depth: {d}", .{params.depth});
+    vk.log.debug("  - Level count: {d}", .{params.num_image_levels});
+    vk.log.debug("  - Layer count: {d}", .{params.num_image_layers});
+    vk.log.debug("  - Format: {s}", .{c.string_VkFormat(params.format)});
+    vk.log.debug("  - Image layout: {s}", .{c.string_VkImageLayout(params.final_layout)});
+    vk.log.debug("  - View type: {s}", .{c.string_VkImageViewType(params.view_type)});
 
     var sampler_info = c.VkSamplerCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -474,6 +496,10 @@ fn createTexture(image: vk.image.Image, params: TextureParams) !gfx.TextureHandl
     errdefer vk.device.destroySampler(sampler);
 
     vk.log.debug("Created sampler:", .{});
+    if (debug_name) |name| {
+        try vk.debug.setObjectName(c.VK_OBJECT_TYPE_SAMPLER, sampler, name);
+        vk.log.debug("  - Name: {s}", .{name});
+    }
     vk.log.debug("  - Mag filter: {s}", .{c.string_VkFilter(sampler_info.magFilter)});
     vk.log.debug("  - Min filter: {s}", .{c.string_VkFilter(sampler_info.minFilter)});
     vk.log.debug("  - Address mode U: {s}", .{c.string_VkSamplerAddressMode(sampler_info.addressModeU)});
@@ -490,9 +516,6 @@ fn createTexture(image: vk.image.Image, params: TextureParams) !gfx.TextureHandl
     vk.log.debug("  - Anisotropy enable: {}", .{sampler_info.anisotropyEnable == c.VK_TRUE});
     vk.log.debug("  - Max anisotropy: {d}", .{sampler_info.maxAnisotropy});
 
-    const handle = texture_handles.create();
-    errdefer texture_handles.destroy(handle);
-
     textures.setValue(
         handle,
         .{
@@ -502,17 +525,6 @@ fn createTexture(image: vk.image.Image, params: TextureParams) !gfx.TextureHandl
             .sampler = sampler,
         },
     );
-
-    vk.log.debug("Created texture:", .{});
-    vk.log.debug("  - Handle: {d}", .{handle});
-    vk.log.debug("  - Width: {d}", .{params.width});
-    vk.log.debug("  - Height: {d}", .{params.height});
-    vk.log.debug("  - Depth: {d}", .{params.depth});
-    vk.log.debug("  - Level count: {d}", .{params.num_image_levels});
-    vk.log.debug("  - Layer count: {d}", .{params.num_image_layers});
-    vk.log.debug("  - Format: {s}", .{c.string_VkFormat(params.format)});
-    vk.log.debug("  - Image layout: {s}", .{c.string_VkImageLayout(params.final_layout)});
-    vk.log.debug("  - View type: {s}", .{c.string_VkImageViewType(params.view_type)});
 
     return handle;
 }
@@ -729,7 +741,7 @@ pub fn create(
     }
     errdefer vk.image.destroy(image);
 
-    return try createTexture(image, params);
+    return try createTexture(image, params, options.debug_name);
 }
 
 pub fn createFromKTX(
@@ -737,6 +749,7 @@ pub fn createFromKTX(
     transfer_queue: c.VkQueue,
     reader: std.io.AnyReader,
     size: u32,
+    options: gfx.TextureKTXOptions,
 ) !gfx.TextureHandle {
     // TODO: use a specialized arena?
     // TODO: Optimize this without using a temporary buffer?
@@ -975,7 +988,7 @@ pub fn createFromKTX(
     }
     errdefer vk.image.destroy(image);
 
-    return try createTexture(image, params);
+    return try createTexture(image, params, options.debug_name);
 }
 
 pub fn destroy(handle: gfx.TextureHandle) void {
