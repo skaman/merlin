@@ -705,3 +705,31 @@ pub fn drawIndexed(
         index_type,
     );
 }
+
+pub fn beginDebugLabel(
+    label_name: []const u8,
+    color: [4]f32,
+) void {
+    command_buffers.beginDebugLabel(
+        main_command_buffers[current_frame_in_flight],
+        label_name,
+        color,
+    );
+}
+
+pub fn endDebugLabel() void {
+    command_buffers.endDebugLabel(
+        main_command_buffers[current_frame_in_flight],
+    );
+}
+
+pub fn insertDebugLabel(
+    label_name: []const u8,
+    color: [4]f32,
+) void {
+    command_buffers.insertDebugLabel(
+        main_command_buffers[current_frame_in_flight],
+        label_name,
+        color,
+    );
+}

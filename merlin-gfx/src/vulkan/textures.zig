@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const utils = @import("merlin_utils");
+const types = utils.gfx_types;
 
 const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
@@ -567,6 +568,7 @@ pub fn create(
             size,
             c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            options.debug_name,
         );
         defer vk.buffers.destroyBuffer(&staging_buffer);
 
@@ -803,6 +805,7 @@ pub fn createFromKTX(
             texture_size,
             c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            options.debug_name,
         );
         defer vk.buffers.destroyBuffer(&staging_buffer);
 
@@ -859,6 +862,22 @@ pub fn createFromKTX(
             command_buffer,
             transfer_queue,
         );
+
+        vk.debug.beginCommandBufferLabel(
+            command_buffer,
+            try std.fmt.allocPrint(
+                vk.arena,
+                "Copy buffer to image {s}",
+                .{
+                    if (options.debug_name) |label|
+                        label
+                    else
+                        "-",
+                },
+            ),
+            types.Colors.DarkSlateBlue,
+        );
+        defer vk.debug.endCommandBufferLabel(command_buffer);
 
         const subresource_range = c.VkImageSubresourceRange{
             .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
@@ -955,6 +974,22 @@ pub fn createFromKTX(
             command_buffer,
             transfer_queue,
         );
+
+        vk.debug.beginCommandBufferLabel(
+            command_buffer,
+            try std.fmt.allocPrint(
+                vk.arena,
+                "Copy buffer to image {s}",
+                .{
+                    if (options.debug_name) |label|
+                        label
+                    else
+                        "-",
+                },
+            ),
+            types.Colors.DarkSlateBlue,
+        );
+        defer vk.debug.endCommandBufferLabel(command_buffer);
 
         if (ktx_texture.generateMipmaps) {
             try generateMipmaps(

@@ -17,6 +17,7 @@ pub const Buffer = struct {
     property_flags: c.VkMemoryPropertyFlags,
     mapped_data: [*c]u8,
     mapped_data_size: u32,
+    debug_name: ?[]const u8,
 };
 
 // *********************************************************************************************
@@ -75,6 +76,7 @@ fn copyBuffer(
     size: c.VkDeviceSize,
     src_offset: u32,
     dst_offset: u32,
+    debug_label: ?[]const u8,
 ) !void {
     std.debug.assert(src_buffer != null);
 
@@ -85,6 +87,22 @@ fn copyBuffer(
         command_buffer,
         queue,
     );
+
+    vk.debug.beginCommandBufferLabel(
+        command_buffer,
+        try std.fmt.allocPrint(
+            vk.arena,
+            "Copy buffer {s}",
+            .{
+                if (debug_label) |label|
+                    label
+                else
+                    "-",
+            },
+        ),
+        types.Colors.DarkSlateBlue,
+    );
+    defer vk.debug.endCommandBufferLabel(command_buffer);
 
     const copy_region = std.mem.zeroInit(
         c.VkBufferCopy,
@@ -138,6 +156,7 @@ pub fn create(
                 @intCast(size),
                 buffer_usage_flags | c.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                options.debug_name,
             );
             errdefer destroyBuffer(&result_buffer);
 
@@ -148,6 +167,7 @@ pub fn create(
                 @intCast(size),
                 buffer_usage_flags,
                 c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                options.debug_name,
             );
             errdefer destroyBuffer(&result_buffer);
 
@@ -223,6 +243,7 @@ pub fn update(
             @intCast(size),
             c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            buf.debug_name,
         );
         defer destroyBuffer(&staging_buffer);
 
@@ -246,6 +267,7 @@ pub fn update(
             @intCast(size),
             0,
             offset,
+            buf.debug_name,
         );
     }
 }
@@ -254,6 +276,7 @@ pub fn createBuffer(
     size: c.VkDeviceSize,
     usage: c.VkBufferUsageFlags,
     property_flags: c.VkMemoryPropertyFlags,
+    debug_name: ?[]const u8,
 ) !Buffer {
     const buffer_info = std.mem.zeroInit(
         c.VkBufferCreateInfo,
@@ -289,6 +312,7 @@ pub fn createBuffer(
         .property_flags = property_flags,
         .mapped_data = null,
         .mapped_data_size = 0,
+        .debug_name = debug_name,
     };
 }
 

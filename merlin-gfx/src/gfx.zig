@@ -149,6 +149,9 @@ const VTab = struct {
     bindCombinedSampler: *const fn (uniform: UniformHandle, texture: TextureHandle) void,
     draw: *const fn (vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void,
     drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32, index_type: types.IndexType) void,
+    beginDebugLabel: *const fn (label_name: []const u8, color: [4]f32) void,
+    endDebugLabel: *const fn () void,
+    insertDebugLabel: *const fn (label_name: []const u8, color: [4]f32) void,
 };
 
 // *********************************************************************************************
@@ -201,6 +204,9 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .bindCombinedSampler = noop.bindCombinedSampler,
                 .draw = noop.draw,
                 .drawIndexed = noop.drawIndexed,
+                .beginDebugLabel = noop.beginDebugLabel,
+                .endDebugLabel = noop.endDebugLabel,
+                .insertDebugLabel = noop.insertDebugLabel,
             };
         },
         RendererType.vulkan => {
@@ -235,6 +241,9 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .bindCombinedSampler = vulkan.bindCombinedSampler,
                 .draw = vulkan.draw,
                 .drawIndexed = vulkan.drawIndexed,
+                .beginDebugLabel = vulkan.beginDebugLabel,
+                .endDebugLabel = vulkan.endDebugLabel,
+                .insertDebugLabel = vulkan.insertDebugLabel,
             };
         },
     }
@@ -481,4 +490,22 @@ pub inline fn drawIndexed(
         first_instance,
         index_type,
     );
+}
+
+pub inline fn beginDebugLabel(
+    label_name: []const u8,
+    color: [4]f32,
+) void {
+    v_tab.beginDebugLabel(label_name, color);
+}
+
+pub inline fn endDebugLabel() void {
+    v_tab.endDebugLabel();
+}
+
+pub inline fn insertDebugLabel(
+    label_name: []const u8,
+    color: [4]f32,
+) void {
+    v_tab.insertDebugLabel(label_name, color);
 }

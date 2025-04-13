@@ -58,3 +58,6 @@ pub fn bindUniformBuffer(_: gfx.UniformHandle, _: gfx.BufferHandle, _: u32) void
 pub fn bindCombinedSampler(_: gfx.UniformHandle, _: gfx.TextureHandle) void {}
 pub fn draw(_: u32, _: u32, _: u32, _: u32) void {}
 pub fn drawIndexed(_: u32, _: u32, _: u32, _: i32, _: u32, _: types.IndexType) void {}
+pub fn beginDebugLabel(_: []const u8, _: [4]f32) void {}
+pub fn endDebugLabel() void {}
+pub fn insertDebugLabel(_: []const u8, _: [4]f32) void {}

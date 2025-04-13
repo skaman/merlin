@@ -27,6 +27,9 @@ const DebugExtDispatch = struct {
     CreateDebugUtilsMessengerEXT: std.meta.Child(c.PFN_vkCreateDebugUtilsMessengerEXT) = undefined,
     DestroyDebugUtilsMessengerEXT: std.meta.Child(c.PFN_vkDestroyDebugUtilsMessengerEXT) = undefined,
     SetDebugUtilsObjectNameEXT: std.meta.Child(c.PFN_vkSetDebugUtilsObjectNameEXT) = undefined,
+    CmdBeginDebugUtilsLabelEXT: std.meta.Child(c.PFN_vkCmdBeginDebugUtilsLabelEXT) = undefined,
+    CmdEndDebugUtilsLabelEXT: std.meta.Child(c.PFN_vkCmdEndDebugUtilsLabelEXT) = undefined,
+    CmdInsertDebugUtilsLabelEXT: std.meta.Child(c.PFN_vkCmdInsertDebugUtilsLabelEXT) = undefined,
 };
 
 // *********************************************************************************************
@@ -593,5 +596,35 @@ pub inline fn setDebugUtilsObjectNameEXT(
             device,
             name_info,
         ),
+    );
+}
+
+pub inline fn cmdBeginDebugUtilsLabelEXT(
+    command_buffer: c.VkCommandBuffer,
+    label_info: *const c.VkDebugUtilsLabelEXT,
+) void {
+    std.debug.assert(debug_dispatch != null);
+
+    debug_dispatch.?.CmdBeginDebugUtilsLabelEXT(
+        command_buffer,
+        label_info,
+    );
+}
+
+pub inline fn cmdEndDebugUtilsLabelEXT(command_buffer: c.VkCommandBuffer) void {
+    std.debug.assert(debug_dispatch != null);
+
+    debug_dispatch.?.CmdEndDebugUtilsLabelEXT(command_buffer);
+}
+
+pub inline fn cmdInsertDebugUtilsLabelEXT(
+    command_buffer: c.VkCommandBuffer,
+    label_info: *const c.VkDebugUtilsLabelEXT,
+) void {
+    std.debug.assert(debug_dispatch != null);
+
+    debug_dispatch.?.CmdInsertDebugUtilsLabelEXT(
+        command_buffer,
+        label_info,
     );
 }

@@ -590,3 +590,34 @@ pub fn drawIndexed(
         first_instance,
     );
 }
+
+pub fn beginDebugLabel(
+    handle: gfx.CommandBufferHandle,
+    label_name: []const u8,
+    color: [4]f32,
+) void {
+    const command_buffer = command_buffers.valuePtr(handle);
+    vk.debug.beginCommandBufferLabel(
+        command_buffer.handle,
+        label_name,
+        color,
+    );
+}
+
+pub fn endDebugLabel(handle: gfx.CommandBufferHandle) void {
+    const command_buffer = command_buffers.valuePtr(handle);
+    vk.debug.endCommandBufferLabel(command_buffer.handle);
+}
+
+pub fn insertDebugLabel(
+    handle: gfx.CommandBufferHandle,
+    label_name: []const u8,
+    color: [4]f32,
+) void {
+    const command_buffer = command_buffers.valuePtr(handle);
+    vk.debug.insertCommandBufferLabel(
+        command_buffer.handle,
+        label_name,
+        color,
+    );
+}

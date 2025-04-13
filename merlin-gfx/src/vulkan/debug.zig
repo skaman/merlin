@@ -52,9 +52,6 @@ pub fn setObjectName(object_type: c.VkObjectType, object_handle: anytype, name: 
         return;
     }
 
-    //const name_cstr = std.mem.zeroInit(u8, name.len + 1);
-    //std.mem.copy(u8, name_cstr[0..name.len], name);
-
     const object_name_info = std.mem.zeroInit(
         c.VkDebugUtilsObjectNameInfoEXT,
         .{
@@ -66,6 +63,66 @@ pub fn setObjectName(object_type: c.VkObjectType, object_handle: anytype, name: 
     );
 
     try vk.instance.setDebugUtilsObjectNameEXT(vk.device.handle, &object_name_info);
+}
+
+pub fn beginCommandBufferLabel(
+    command_buffer: c.VkCommandBuffer,
+    label_name: []const u8,
+    color: [4]f32,
+) void {
+    if (debug_messenger == null) {
+        return;
+    }
+
+    const label_name_z = vk.arena.dupeZ(u8, label_name) catch |err| {
+        vk.log.err("Failed to dupe label name: {}", .{err});
+        return;
+    };
+
+    const label_info = std.mem.zeroInit(
+        c.VkDebugUtilsLabelEXT,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+            .pLabelName = label_name_z,
+            .color = color,
+        },
+    );
+
+    vk.instance.cmdBeginDebugUtilsLabelEXT(command_buffer, &label_info);
+}
+
+pub fn endCommandBufferLabel(command_buffer: c.VkCommandBuffer) void {
+    if (debug_messenger == null) {
+        return;
+    }
+
+    vk.instance.cmdEndDebugUtilsLabelEXT(command_buffer);
+}
+
+pub fn insertCommandBufferLabel(
+    command_buffer: c.VkCommandBuffer,
+    label_name: []const u8,
+    color: [4]f32,
+) void {
+    if (debug_messenger == null) {
+        return;
+    }
+
+    const label_name_z = vk.arena.dupeZ(u8, label_name) catch |err| {
+        vk.log.err("Failed to dupe label name: {}", .{err});
+        return;
+    };
+
+    const label_info = std.mem.zeroInit(
+        c.VkDebugUtilsLabelEXT,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT,
+            .pLabelName = label_name_z,
+            .color = color,
+        },
+    );
+
+    vk.instance.cmdInsertDebugUtilsLabelEXT(command_buffer, &label_info);
 }
 
 pub fn debugCallback(

@@ -18,6 +18,7 @@ const ModelViewProj = struct {
 };
 
 const MeshInstance = struct {
+    name: []const u8,
     mesh: assets.MeshHandle,
     material: assets.MaterialHandle,
 };
@@ -146,6 +147,7 @@ pub fn init(gpa_allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator
     //try meshes.append(try assets.loadMesh("flight-helmet.4.mesh"));
     //try meshes.append(try assets.loadMesh("flight-helmet.5.mesh"));
     const mesh_0 = MeshInstance{
+        .name = "BoxTextured",
         .mesh = try assets.loadMesh("box-textured.0.mesh"),
         .material = try assets.loadMaterial("BoxTextured/material.0.mat"),
     };
@@ -204,6 +206,9 @@ pub fn update(context: *Context, time: f32) void {
         std.log.err("Failed to update MVP uniform buffer: {}", .{err});
     };
 
+    gfx.beginDebugLabel("Render geometries", gfx_types.Colors.DarkGreen);
+    defer gfx.endDebugLabel();
+
     gfx.setViewport(.{ 0, 0 }, swapchain_size);
     gfx.setScissor(.{ 0, 0 }, swapchain_size);
 
@@ -217,6 +222,11 @@ pub fn update(context: *Context, time: f32) void {
     for (context.meshes.items) |mesh_instance| {
         const mesh = assets.mesh(mesh_instance.mesh);
         const material = assets.material(mesh_instance.material);
+
+        gfx.insertDebugLabel(
+            mesh_instance.name,
+            gfx_types.Colors.LightGray,
+        );
 
         switch (material.pbr) {
             .pbr_metallic_roughness => |pbr| {
@@ -316,6 +326,9 @@ pub fn main() !void {
             continue;
         };
         if (!result) continue;
+
+        gfx.beginDebugLabel("Frame", gfx_types.Colors.Red);
+        defer gfx.endDebugLabel();
 
         const time = @as(f32, @floatFromInt(current_time - start_time)) / 1_000_000.0;
 
