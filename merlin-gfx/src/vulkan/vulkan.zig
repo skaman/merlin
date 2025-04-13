@@ -493,8 +493,18 @@ pub fn updateBuffer(
     );
 }
 
-pub fn createTexture(reader: std.io.AnyReader, size: u32) !gfx.TextureHandle {
+pub fn createTexture(reader: std.io.AnyReader, size: u32, options: gfx.TextureOptions) !gfx.TextureHandle {
     return textures.create(
+        transfer_command_pool,
+        transfer_queue,
+        reader,
+        size,
+        options,
+    );
+}
+
+pub fn createTextureFromKTX(reader: std.io.AnyReader, size: u32) !gfx.TextureHandle {
+    return textures.createFromKTX(
         transfer_command_pool,
         transfer_queue,
         reader,

@@ -34,7 +34,10 @@ pub fn createBuffer(_: u32, _: gfx.BufferUsage, _: gfx.BufferLocation) !gfx.Buff
 }
 pub fn destroyBuffer(_: gfx.BufferHandle) void {}
 pub fn updateBuffer(_: gfx.BufferHandle, _: std.io.AnyReader, _: u32, _: u32) !void {}
-pub fn createTexture(_: std.io.AnyReader, _: u32) !gfx.TextureHandle {
+pub fn createTexture(_: std.io.AnyReader, _: u32, _: gfx.TextureOptions) !gfx.TextureHandle {
+    return @enumFromInt(0);
+}
+pub fn createTextureFromKTX(_: std.io.AnyReader, _: u32) !gfx.TextureHandle {
     return @enumFromInt(0);
 }
 pub fn destroyTexture(_: gfx.TextureHandle) void {}

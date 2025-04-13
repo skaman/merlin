@@ -20,25 +20,37 @@ pub const Mesh = struct {
     indices_count: u32,
 };
 
-pub const Material = struct {
-    // PBR Metallic Roughness
-    base_color_texture_handle: ?gfx.TextureHandle,
+pub const MaterialPbrMetallicRoughness = struct {
+    base_color_texture_handle: gfx.TextureHandle,
     base_color_factor: [4]f32,
-    metallic_roughness_texture_handle: ?gfx.TextureHandle,
+    metallic_roughness_texture_handle: gfx.TextureHandle,
     metallic_factor: f32,
     roughness_factor: f32,
+};
 
-    // PBR Specular Glossiness
-    diffuse_texture_handle: ?gfx.TextureHandle,
+pub const MaterialPbrSpecularGlossiness = struct {
+    diffuse_texture_handle: gfx.TextureHandle,
     diffuse_factor: [4]f32,
-    specular_glossiness_texture_handle: ?gfx.TextureHandle,
+    specular_glossiness_texture_handle: gfx.TextureHandle,
     specular_factor: [3]f32,
     glossiness_factor: f32,
+};
 
-    // Common
-    normal_texture_handle: ?gfx.TextureHandle,
-    occlusion_texture_handle: ?gfx.TextureHandle,
-    emissive_texture_handle: ?gfx.TextureHandle,
+pub const MaterialType = enum {
+    pbr_metallic_roughness,
+    pbr_specular_glossiness,
+};
+
+pub const MaterialPbr = union(MaterialType) {
+    pbr_metallic_roughness: MaterialPbrMetallicRoughness,
+    pbr_specular_glossiness: MaterialPbrSpecularGlossiness,
+};
+
+pub const Material = struct {
+    pbr: MaterialPbr,
+    normal_texture_handle: gfx.TextureHandle,
+    occlusion_texture_handle: gfx.TextureHandle,
+    emissive_texture_handle: gfx.TextureHandle,
     emissive_factor: [3]f32,
     alpha_mode: gfx_types.AlphaMode,
     alpha_cutoff: f32,
@@ -83,6 +95,8 @@ var material_handles: utils.HandlePool(
     MaxMaterialHandles,
 ) = undefined;
 
+var default_texture_handle: gfx.TextureHandle = undefined;
+
 // *********************************************************************************************
 // Private API
 // *********************************************************************************************
@@ -105,7 +119,7 @@ fn loadMaterialTexture(
     dirname: []const u8,
     basename: []const u8,
     texture_index: ?u8,
-) !?gfx.TextureHandle {
+) !gfx.TextureHandle {
     if (texture_index) |index| {
         const base_color_texture_filename = try std.fmt.allocPrint(
             arena,
@@ -134,21 +148,78 @@ fn loadMaterialTexture(
         const stats = try texture_file.stat();
         const texture_reader = texture_file.reader().any();
 
-        return try gfx.createTexture(
+        return try gfx.createTextureFromKTX(
             texture_reader,
             @intCast(stats.size),
         );
     }
 
-    return null;
+    return default_texture_handle;
 }
 
 fn destroyMaterialTexture(
     texture_handle: ?gfx.TextureHandle,
 ) void {
     if (texture_handle) |handle| {
-        gfx.destroyTexture(handle);
+        if (handle != default_texture_handle)
+            gfx.destroyTexture(handle);
     }
+}
+
+fn loadPbrMetallicRoughnessMaterial(
+    pbr: asset_types.MaterialPbrMetallicRoughness,
+    dir: []const u8,
+    basename: []const u8,
+) !MaterialPbrMetallicRoughness {
+    const base_color_texture_handle = try loadMaterialTexture(
+        dir,
+        basename,
+        pbr.base_color_texture_index,
+    );
+    errdefer destroyMaterialTexture(base_color_texture_handle);
+
+    const metallic_roughness_texture_handle = try loadMaterialTexture(
+        dir,
+        basename,
+        pbr.metallic_roughness_texture_index,
+    );
+    errdefer destroyMaterialTexture(metallic_roughness_texture_handle);
+
+    return .{
+        .base_color_texture_handle = base_color_texture_handle,
+        .base_color_factor = pbr.base_color_factor,
+        .metallic_roughness_texture_handle = metallic_roughness_texture_handle,
+        .metallic_factor = pbr.metallic_factor,
+        .roughness_factor = pbr.roughness_factor,
+    };
+}
+
+fn loadPbrSpecularGlossinessMaterial(
+    pbr: asset_types.MaterialPbrSpecularGlossiness,
+    dir: []const u8,
+    basename: []const u8,
+) !MaterialPbrSpecularGlossiness {
+    const diffuse_texture_handle = try loadMaterialTexture(
+        dir,
+        basename,
+        pbr.diffuse_texture_index,
+    );
+    errdefer destroyMaterialTexture(diffuse_texture_handle);
+
+    const specular_glossiness_texture_handle = try loadMaterialTexture(
+        dir,
+        basename,
+        pbr.specular_glossiness_texture_index,
+    );
+    errdefer destroyMaterialTexture(specular_glossiness_texture_handle);
+
+    return .{
+        .diffuse_texture_handle = diffuse_texture_handle,
+        .diffuse_factor = pbr.diffuse_factor,
+        .specular_glossiness_texture_handle = specular_glossiness_texture_handle,
+        .specular_factor = pbr.specular_factor,
+        .glossiness_factor = pbr.glossiness_factor,
+    };
 }
 
 // *********************************************************************************************
@@ -174,10 +245,21 @@ pub fn init(allocator: std.mem.Allocator) !void {
     errdefer allocator.free(assets_path);
 
     _ = arena_impl.reset(.retain_capacity);
+
+    default_texture_handle = try gfx.createTextureFromMemory(
+        &[_]u8{ 0xff, 0xff, 0xff, 0xff },
+        .{
+            .format = .rgba8,
+            .width = 1,
+            .height = 1,
+        },
+    );
 }
 
 pub fn deinit() void {
     log.debug("Deinitializing assets", .{});
+
+    gfx.destroyTexture(default_texture_handle);
 
     gpa.free(assets_path);
     material_handles.deinit();
@@ -282,6 +364,9 @@ pub fn loadMaterial(filename: []const u8) !MaterialHandle {
     var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
+    const dir = std.fs.path.dirname(filename) orelse ".";
+    const basename = std.fs.path.stem(filename);
+
     const reader = file.reader().any();
 
     const handle = material_handles.create();
@@ -289,48 +374,26 @@ pub fn loadMaterial(filename: []const u8) !MaterialHandle {
 
     const material_data = try readMaterial(arena, reader);
 
-    const base_color_texture_index = if (material_data.pbr_metallic_roughness) |value| value.base_color_texture_index else null;
-    const base_color_factor = if (material_data.pbr_metallic_roughness) |value| value.base_color_factor else [4]f32{ 1.0, 1.0, 1.0, 1.0 };
-    const metallic_roughness_texture_index = if (material_data.pbr_metallic_roughness) |value| value.metallic_roughness_texture_index else null;
-    const metallic_factor = if (material_data.pbr_metallic_roughness) |value| value.metallic_factor else 0.0;
-    const roughness_factor = if (material_data.pbr_metallic_roughness) |value| value.roughness_factor else 1.0;
-
-    const diffuse_texture_index = if (material_data.pbr_specular_glossiness) |value| value.diffuse_texture_index else null;
-    const diffuse_factor = if (material_data.pbr_specular_glossiness) |value| value.diffuse_factor else [4]f32{ 1.0, 1.0, 1.0, 1.0 };
-    const specular_glossiness_texture_index = if (material_data.pbr_specular_glossiness) |value| value.specular_glossiness_texture_index else null;
-    const specular_factor = if (material_data.pbr_specular_glossiness) |value| value.specular_factor else [3]f32{ 1.0, 1.0, 1.0 };
-    const glossiness_factor = if (material_data.pbr_specular_glossiness) |value| value.glossiness_factor else 1.0;
-
-    const dir = std.fs.path.dirname(filename) orelse ".";
-    const basename = std.fs.path.stem(filename);
-
-    const base_color_texture_handle = try loadMaterialTexture(
-        dir,
-        basename,
-        base_color_texture_index,
-    );
-    errdefer destroyMaterialTexture(base_color_texture_handle);
-
-    const metallic_roughness_texture_handle = try loadMaterialTexture(
-        dir,
-        basename,
-        metallic_roughness_texture_index,
-    );
-    errdefer destroyMaterialTexture(metallic_roughness_texture_handle);
-
-    const diffuse_texture_handle = try loadMaterialTexture(
-        dir,
-        basename,
-        diffuse_texture_index,
-    );
-    errdefer destroyMaterialTexture(diffuse_texture_handle);
-
-    const specular_glossiness_texture_handle = try loadMaterialTexture(
-        dir,
-        basename,
-        specular_glossiness_texture_index,
-    );
-    errdefer destroyMaterialTexture(specular_glossiness_texture_handle);
+    var pbr: MaterialPbr = undefined;
+    if (material_data.pbr_metallic_roughness) |value| {
+        pbr = .{
+            .pbr_metallic_roughness = try loadPbrMetallicRoughnessMaterial(
+                value,
+                dir,
+                basename,
+            ),
+        };
+    } else if (material_data.pbr_specular_glossiness) |value| {
+        pbr = .{
+            .pbr_specular_glossiness = try loadPbrSpecularGlossinessMaterial(
+                value,
+                dir,
+                basename,
+            ),
+        };
+    } else {
+        return error.InvalidMaterial;
+    }
 
     const normal_texture_handle = try loadMaterialTexture(
         dir,
@@ -354,18 +417,7 @@ pub fn loadMaterial(filename: []const u8) !MaterialHandle {
     errdefer destroyMaterialTexture(emissive_texture_handle);
 
     materials.setValue(handle, .{
-        .base_color_texture_handle = base_color_texture_handle,
-        .base_color_factor = base_color_factor,
-        .metallic_roughness_texture_handle = metallic_roughness_texture_handle,
-        .metallic_factor = metallic_factor,
-        .roughness_factor = roughness_factor,
-
-        .diffuse_texture_handle = diffuse_texture_handle,
-        .diffuse_factor = diffuse_factor,
-        .specular_glossiness_texture_handle = specular_glossiness_texture_handle,
-        .specular_factor = specular_factor,
-        .glossiness_factor = glossiness_factor,
-
+        .pbr = pbr,
         .normal_texture_handle = normal_texture_handle,
         .occlusion_texture_handle = occlusion_texture_handle,
         .emissive_texture_handle = emissive_texture_handle,
@@ -376,30 +428,38 @@ pub fn loadMaterial(filename: []const u8) !MaterialHandle {
     });
 
     log.debug("Loaded material: {s}", .{filename});
-    log.debug("  - Base color texture handle: {any}", .{base_color_texture_handle});
-    log.debug("  - Base color factor: [{d}, {d}, {d}, {d}]", .{
-        base_color_factor[0],
-        base_color_factor[1],
-        base_color_factor[2],
-        base_color_factor[3],
-    });
-    log.debug("  - Metallic/Roughness texture handle: {any}", .{metallic_roughness_texture_handle});
-    log.debug("  - Metallic factor: {d}", .{metallic_factor});
-    log.debug("  - Roughness factor: {d}", .{roughness_factor});
-    log.debug("  - Diffuse texture handle: {any}", .{diffuse_texture_handle});
-    log.debug("  - Diffuse factor: [{d}, {d}, {d}, {d}]", .{
-        diffuse_factor[0],
-        diffuse_factor[1],
-        diffuse_factor[2],
-        diffuse_factor[3],
-    });
-    log.debug("  - Specular/Glossiness texture handle: {any}", .{specular_glossiness_texture_handle});
-    log.debug("  - Specular factor: [{d}, {d}, {d}]", .{
-        specular_factor[0],
-        specular_factor[1],
-        specular_factor[2],
-    });
-    log.debug("  - Glossiness factor: {d}", .{glossiness_factor});
+    switch (pbr) {
+        .pbr_metallic_roughness => |pbr_value| {
+            log.debug("  - Material type: PBR Metallic/Roughness", .{});
+            log.debug("  - Base color texture handle: {any}", .{pbr_value.base_color_texture_handle});
+            log.debug("  - Base color factor: [{d}, {d}, {d}, {d}]", .{
+                pbr_value.base_color_factor[1],
+                pbr_value.base_color_factor[0],
+                pbr_value.base_color_factor[2],
+                pbr_value.base_color_factor[3],
+            });
+            log.debug("  - Metallic/Roughness texture handle: {any}", .{pbr_value.metallic_roughness_texture_handle});
+            log.debug("  - Metallic factor: {d}", .{pbr_value.metallic_factor});
+            log.debug("  - Roughness factor: {d}", .{pbr_value.roughness_factor});
+        },
+        .pbr_specular_glossiness => |pbr_value| {
+            log.debug("  - Material type: PBR Specular/Glossiness", .{});
+            log.debug("  - Diffuse texture handle: {any}", .{pbr_value.diffuse_texture_handle});
+            log.debug("  - Diffuse factor: [{d}, {d}, {d}, {d}]", .{
+                pbr_value.diffuse_factor[0],
+                pbr_value.diffuse_factor[1],
+                pbr_value.diffuse_factor[2],
+                pbr_value.diffuse_factor[3],
+            });
+            log.debug("  - Specular/Glossiness texture handle: {any}", .{pbr_value.specular_glossiness_texture_handle});
+            log.debug("  - Specular factor: [{d}, {d}, {d}]", .{
+                pbr_value.specular_factor[0],
+                pbr_value.specular_factor[1],
+                pbr_value.specular_factor[2],
+            });
+            log.debug("  - Glossiness factor: {d}", .{pbr_value.glossiness_factor});
+        },
+    }
     log.debug("  - Normal texture handle: {any}", .{normal_texture_handle});
     log.debug("  - Occlusion texture handle: {any}", .{occlusion_texture_handle});
     log.debug("  - Emissive texture handle: {any}", .{emissive_texture_handle});
@@ -417,10 +477,16 @@ pub fn loadMaterial(filename: []const u8) !MaterialHandle {
 
 pub fn destroyMaterial(handle: MaterialHandle) void {
     const material_value = materials.valuePtr(handle);
-    destroyMaterialTexture(material_value.base_color_texture_handle);
-    destroyMaterialTexture(material_value.metallic_roughness_texture_handle);
-    destroyMaterialTexture(material_value.diffuse_texture_handle);
-    destroyMaterialTexture(material_value.specular_glossiness_texture_handle);
+    switch (material_value.pbr) {
+        .pbr_metallic_roughness => |pbr_value| {
+            destroyMaterialTexture(pbr_value.base_color_texture_handle);
+            destroyMaterialTexture(pbr_value.metallic_roughness_texture_handle);
+        },
+        .pbr_specular_glossiness => |pbr_value| {
+            destroyMaterialTexture(pbr_value.diffuse_texture_handle);
+            destroyMaterialTexture(pbr_value.specular_glossiness_texture_handle);
+        },
+    }
     destroyMaterialTexture(material_value.normal_texture_handle);
     destroyMaterialTexture(material_value.occlusion_texture_handle);
     destroyMaterialTexture(material_value.emissive_texture_handle);

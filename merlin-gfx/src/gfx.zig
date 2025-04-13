@@ -63,6 +63,48 @@ pub const BufferLocation = enum(u8) {
     }
 };
 
+pub const ImageFormat = enum(u8) {
+    rgba8,
+    rgba8_srgb,
+    rg8,
+    r8,
+    rgba16f,
+
+    pub fn name(self: ImageFormat) []const u8 {
+        return switch (self) {
+            .rgba8 => "rgba8",
+            .rgba8_srgb => "rgba8_srgb",
+            .rg8 => "rg8",
+            .r8 => "r8",
+            .rgba16f => "rgba16f",
+        };
+    }
+};
+
+pub const TextureTiling = enum(u8) {
+    linear,
+    optimal,
+
+    pub fn name(self: TextureTiling) []const u8 {
+        return switch (self) {
+            .linear => "linear",
+            .optimal => "optimal",
+        };
+    }
+};
+
+pub const TextureOptions = packed struct {
+    format: ImageFormat,
+    width: u32,
+    height: u32,
+    depth: u32 = 1,
+    array_layers: u32 = 1,
+    tiling: TextureTiling = .optimal,
+    is_cubemap: bool = false,
+    is_array: bool = false,
+    generate_mipmaps: bool = false,
+};
+
 const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
@@ -78,7 +120,8 @@ const VTab = struct {
     createBuffer: *const fn (size: u32, usage: BufferUsage, location: BufferLocation) anyerror!BufferHandle,
     destroyBuffer: *const fn (handle: BufferHandle) void,
     updateBuffer: *const fn (handle: BufferHandle, reader: std.io.AnyReader, offset: u32, size: u32) anyerror!void,
-    createTexture: *const fn (reader: std.io.AnyReader, size: u32) anyerror!TextureHandle,
+    createTexture: *const fn (reader: std.io.AnyReader, size: u32, options: TextureOptions) anyerror!TextureHandle,
+    createTextureFromKTX: *const fn (reader: std.io.AnyReader, size: u32) anyerror!TextureHandle,
     destroyTexture: *const fn (handle: TextureHandle) void,
     registerUniformName: *const fn (name: []const u8) anyerror!UniformHandle,
     beginFrame: *const fn () anyerror!bool,
@@ -130,6 +173,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .destroyBuffer = noop.destroyBuffer,
                 .updateBuffer = noop.updateBuffer,
                 .createTexture = noop.createTexture,
+                .createTextureFromKTX = noop.createTextureFromKTX,
                 .destroyTexture = noop.destroyTexture,
                 .registerUniformName = noop.registerUniformName,
                 .beginFrame = noop.beginFrame,
@@ -163,6 +207,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .destroyBuffer = vulkan.destroyBuffer,
                 .updateBuffer = vulkan.updateBuffer,
                 .createTexture = vulkan.createTexture,
+                .createTextureFromKTX = vulkan.createTextureFromKTX,
                 .destroyTexture = vulkan.destroyTexture,
                 .registerUniformName = vulkan.registerUniformName,
                 .beginFrame = vulkan.beginFrame,
@@ -308,8 +353,21 @@ pub inline fn updateBufferFromMemory(
 }
 
 /// Creates a texture from a loader.
-pub inline fn createTexture(reader: std.io.AnyReader, size: u32) !TextureHandle {
-    return try v_tab.createTexture(reader, size);
+pub inline fn createTexture(reader: std.io.AnyReader, size: u32, options: TextureOptions) !TextureHandle {
+    return try v_tab.createTexture(reader, size, options);
+}
+
+pub inline fn createTextureFromMemory(
+    data: []const u8,
+    options: TextureOptions,
+) !TextureHandle {
+    var stream = std.io.fixedBufferStream(data);
+    return try v_tab.createTexture(stream.reader().any(), data.len, options);
+}
+
+/// Creates a KTX texture from a loader.
+pub inline fn createTextureFromKTX(reader: std.io.AnyReader, size: u32) !TextureHandle {
+    return try v_tab.createTextureFromKTX(reader, size);
 }
 
 /// Destroys a texture.

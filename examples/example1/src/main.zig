@@ -69,7 +69,7 @@ fn loadTexture(allocator: std.mem.Allocator, filename: []const u8) !gfx.TextureH
 
     const stat = try file.stat();
 
-    return try gfx.createTexture(file.reader().any(), @intCast(stat.size));
+    return try gfx.createTextureFromKTX(file.reader().any(), @intCast(stat.size));
 }
 
 fn destroyMeshes(meshes: *std.ArrayList(MeshInstance)) void {
@@ -207,11 +207,20 @@ pub fn update(context: *Context, time: f32) void {
         const mesh = assets.mesh(mesh_instance.mesh);
         const material = assets.material(mesh_instance.material);
 
-        if (material.base_color_texture_handle) |base_color_texture_handle| {
-            gfx.bindCombinedSampler(
-                context.tex_sampler_uniform_handle,
-                base_color_texture_handle,
-            );
+        switch (material.pbr) {
+            .pbr_metallic_roughness => |pbr| {
+                gfx.bindCombinedSampler(
+                    context.tex_sampler_uniform_handle,
+                    pbr.base_color_texture_handle,
+                );
+            },
+            .pbr_specular_glossiness => |pbr| {
+                _ = pbr;
+                //gfx.bindCombinedSampler(
+                //    context.tex_sampler_uniform_handle,
+                //    pbr.diffuse_texture_handle,
+                //);
+            },
         }
 
         gfx.bindPipelineLayout(mesh.pipeline_handle);

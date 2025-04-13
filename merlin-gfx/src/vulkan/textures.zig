@@ -44,6 +44,36 @@ const UserCallbackDataLinear = struct {
     dest: [*c]u8,
 };
 
+const TextureParams = struct {
+    tiling: c.VkImageTiling,
+    format: c.VkFormat,
+    width: u32,
+    height: u32,
+    depth: u32,
+    num_image_levels: u32,
+    num_image_layers: u32,
+    usage_flags: c.VkImageUsageFlags,
+    blit_filter: c.VkFilter,
+    final_layout: c.VkImageLayout,
+    view_type: c.VkImageViewType,
+};
+
+const PrepareTextureParams = struct {
+    format: c.VkFormat,
+    width: u32,
+    height: u32,
+    depth: u32,
+    usage_flags: c.VkImageUsageFlags = c.VK_IMAGE_USAGE_SAMPLED_BIT,
+    tiling: c.VkImageTiling = c.VK_IMAGE_TILING_OPTIMAL,
+    final_layout: c.VkImageLayout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+    num_image_layers: u32 = 1,
+    num_image_levels: u32 = 1,
+    num_dimensions: u32 = 2,
+    is_cubemap: bool = false,
+    is_array: bool = false,
+    generate_mipmaps: bool = false,
+};
+
 // *********************************************************************************************
 // Globals
 // *********************************************************************************************
@@ -165,10 +195,10 @@ fn linearTilingCallback(
 ) callconv(.c) c.KTX_error_code {
     var ud: *UserCallbackDataLinear = @ptrCast(@alignCast(user_data));
 
-    const sub_res = std.mem.zeroInit(c.VkImageSubresource, .{
+    var sub_res = std.mem.zeroInit(c.VkImageSubresource, .{
         .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
-        .mipLevel = mip_level,
-        .baseArrayLayer = face,
+        .mipLevel = @as(u32, @intCast(mip_level)),
+        .arrayLayer = @as(u32, @intCast(face)),
     });
 
     // Get sub resources layout. Includes row pitch, size, offsets, etc.
@@ -270,6 +300,223 @@ fn generateMipmaps(
     }
 }
 
+fn prepareTextureParams(args: PrepareTextureParams) !TextureParams {
+    var create_flags: c.VkImageCreateFlags = 0;
+    var num_image_layers = args.num_image_layers;
+    if (args.is_cubemap) {
+        num_image_layers *= 6;
+        create_flags = c.VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    }
+
+    var image_type: c.VkImageType = undefined;
+    var view_type: c.VkImageViewType = undefined;
+    switch (args.num_dimensions) {
+        1 => {
+            image_type = c.VK_IMAGE_TYPE_1D;
+            view_type = if (args.is_array) c.VK_IMAGE_VIEW_TYPE_1D_ARRAY else c.VK_IMAGE_VIEW_TYPE_1D;
+        },
+        2 => {
+            image_type = c.VK_IMAGE_TYPE_2D;
+            if (args.is_cubemap) {
+                view_type = if (args.is_array) c.VK_IMAGE_VIEW_TYPE_CUBE_ARRAY else c.VK_IMAGE_VIEW_TYPE_CUBE;
+            } else {
+                view_type = if (args.is_array) c.VK_IMAGE_VIEW_TYPE_2D_ARRAY else c.VK_IMAGE_VIEW_TYPE_2D;
+            }
+        },
+        3 => {
+            image_type = c.VK_IMAGE_TYPE_3D;
+            view_type = c.VK_IMAGE_VIEW_TYPE_3D;
+        },
+        else => {
+            vk.log.err("Unsupported texture dimensions: {d}", .{args.num_dimensions});
+            return error.TextureDimensionsError;
+        },
+    }
+
+    const format = args.format;
+    if (format == c.VK_FORMAT_UNDEFINED) {
+        vk.log.err("Texture has undefined format", .{});
+        return error.TextureFormatError;
+    }
+
+    var usage_flags = args.usage_flags;
+    if (args.tiling == c.VK_IMAGE_TILING_OPTIMAL) {
+        usage_flags |= c.VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    }
+
+    if (args.generate_mipmaps) {
+        usage_flags |= c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    }
+
+    var image_format_properties: c.VkImageFormatProperties = undefined;
+    try vk.instance.getPhysicalDeviceImageFormatProperties(
+        vk.device.physical_device,
+        format,
+        image_type,
+        args.tiling,
+        @intCast(usage_flags),
+        create_flags,
+        &image_format_properties,
+    );
+
+    if (args.num_image_layers > image_format_properties.maxArrayLayers) {
+        vk.log.err("Texture has too many layers: {d}", .{args.num_image_layers});
+        return error.TextureLayersError;
+    }
+
+    var num_image_levels: u32 = undefined;
+    var blit_filter: c.VkFilter = c.VK_FILTER_LINEAR;
+    if (args.generate_mipmaps) {
+        const needed_features: c.VkFormatFeatureFlags = c.VK_FORMAT_FEATURE_BLIT_DST_BIT | c.VK_FORMAT_FEATURE_BLIT_SRC_BIT;
+        var format_properties: c.VkFormatProperties = undefined;
+        vk.instance.getPhysicalDeviceFormatProperties(
+            vk.device.physical_device,
+            format,
+            &format_properties,
+        );
+
+        var format_features_flags: c.VkFormatFeatureFlags = 0;
+        if (args.tiling == c.VK_IMAGE_TILING_OPTIMAL) {
+            format_features_flags = format_properties.optimalTilingFeatures;
+        } else {
+            format_features_flags = format_properties.linearTilingFeatures;
+        }
+
+        if ((format_features_flags & needed_features) != needed_features) {
+            vk.log.err("Texture format does not support blitting", .{});
+            return error.TextureFormatError;
+        }
+
+        if ((format_features_flags & c.VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0) {
+            blit_filter = c.VK_FILTER_LINEAR;
+        } else {
+            blit_filter = c.VK_FILTER_NEAREST; // XXX INVALID_OP?
+        }
+
+        const max_dim = @max(@max(args.width, args.height), args.depth);
+        num_image_levels = @intFromFloat(@floor(@as(f32, @floatFromInt(std.math.log2(max_dim)))) + 1);
+    } else {
+        num_image_levels = args.num_image_levels;
+    }
+
+    if (num_image_levels > image_format_properties.maxMipLevels) {
+        vk.log.err("Texture has too many mip levels: {d}", .{num_image_levels});
+        return error.TextureMipLevelsError;
+    }
+
+    return .{
+        .tiling = args.tiling,
+        .format = args.format,
+        .width = args.width,
+        .height = args.height,
+        .depth = args.depth,
+        .num_image_levels = num_image_levels,
+        .num_image_layers = num_image_layers,
+        .usage_flags = usage_flags,
+        .blit_filter = blit_filter,
+        .final_layout = args.final_layout,
+        .view_type = view_type,
+    };
+}
+
+fn formatFromGfxTextureFormat(format: gfx.ImageFormat) c.VkFormat {
+    switch (format) {
+        .rgba8 => return c.VK_FORMAT_R8G8B8A8_UNORM,
+        .rgba8_srgb => return c.VK_FORMAT_R8G8B8A8_SRGB,
+        .rg8 => return c.VK_FORMAT_R8G8_UNORM,
+        .r8 => return c.VK_FORMAT_R8_UNORM,
+        .rgba16f => return c.VK_FORMAT_R16G16B16A16_SFLOAT,
+    }
+}
+
+fn tilingFromGfxTextureTiling(tiling: gfx.TextureTiling) c.VkImageTiling {
+    switch (tiling) {
+        .optimal => return c.VK_IMAGE_TILING_OPTIMAL,
+        .linear => return c.VK_IMAGE_TILING_LINEAR,
+    }
+}
+
+fn createTexture(image: vk.image.Image, params: TextureParams) !gfx.TextureHandle {
+    const texture_image_view = try vk.image.createView(
+        image.image,
+        params.format,
+        params.view_type,
+        c.VK_IMAGE_ASPECT_COLOR_BIT,
+        params.num_image_levels,
+        params.num_image_layers,
+    );
+    errdefer vk.image.destroyView(texture_image_view);
+
+    var sampler_info = c.VkSamplerCreateInfo{
+        .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        .magFilter = c.VK_FILTER_LINEAR,
+        .minFilter = c.VK_FILTER_LINEAR,
+        .addressModeU = c.VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeV = c.VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_REPEAT,
+        .borderColor = c.VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+        .unnormalizedCoordinates = c.VK_FALSE,
+        .compareEnable = c.VK_FALSE,
+        .compareOp = c.VK_COMPARE_OP_ALWAYS,
+        .mipmapMode = c.VK_SAMPLER_MIPMAP_MODE_LINEAR,
+        .mipLodBias = 0.0,
+        .minLod = 0.0,
+        .maxLod = @floatFromInt(params.num_image_levels),
+    };
+
+    if (vk.device.features.features.samplerAnisotropy == c.VK_TRUE) {
+        sampler_info.anisotropyEnable = c.VK_TRUE;
+        sampler_info.maxAnisotropy = vk.device.properties.limits.maxSamplerAnisotropy;
+    }
+
+    var sampler: c.VkSampler = undefined;
+    try vk.device.createSampler(&sampler_info, &sampler);
+    errdefer vk.device.destroySampler(sampler);
+
+    vk.log.debug("Created sampler:", .{});
+    vk.log.debug("  - Mag filter: {s}", .{c.string_VkFilter(sampler_info.magFilter)});
+    vk.log.debug("  - Min filter: {s}", .{c.string_VkFilter(sampler_info.minFilter)});
+    vk.log.debug("  - Address mode U: {s}", .{c.string_VkSamplerAddressMode(sampler_info.addressModeU)});
+    vk.log.debug("  - Address mode V: {s}", .{c.string_VkSamplerAddressMode(sampler_info.addressModeV)});
+    vk.log.debug("  - Address mode W: {s}", .{c.string_VkSamplerAddressMode(sampler_info.addressModeW)});
+    vk.log.debug("  - Border color: {s}", .{c.string_VkBorderColor(sampler_info.borderColor)});
+    vk.log.debug("  - Unnormalized coordinates: {}", .{sampler_info.unnormalizedCoordinates == c.VK_TRUE});
+    vk.log.debug("  - Compare enable: {}", .{sampler_info.compareEnable == c.VK_TRUE});
+    vk.log.debug("  - Compare op: {s}", .{c.string_VkCompareOp(sampler_info.compareOp)});
+    vk.log.debug("  - Mipmap mode: {s}", .{c.string_VkSamplerMipmapMode(sampler_info.mipmapMode)});
+    vk.log.debug("  - Mip lod bias: {d}", .{sampler_info.mipLodBias});
+    vk.log.debug("  - Min lod: {d}", .{sampler_info.minLod});
+    vk.log.debug("  - Max lod: {d}", .{sampler_info.maxLod});
+    vk.log.debug("  - Anisotropy enable: {}", .{sampler_info.anisotropyEnable == c.VK_TRUE});
+    vk.log.debug("  - Max anisotropy: {d}", .{sampler_info.maxAnisotropy});
+
+    const handle = texture_handles.create();
+    errdefer texture_handles.destroy(handle);
+
+    textures.setValue(
+        handle,
+        .{
+            .image = image,
+            .image_layout = params.final_layout,
+            .image_view = texture_image_view,
+            .sampler = sampler,
+        },
+    );
+
+    vk.log.debug("Created texture:", .{});
+    vk.log.debug("  - Handle: {d}", .{handle});
+    vk.log.debug("  - Width: {d}", .{params.width});
+    vk.log.debug("  - Height: {d}", .{params.height});
+    vk.log.debug("  - Depth: {d}", .{params.depth});
+    vk.log.debug("  - Level count: {d}", .{params.num_image_levels});
+    vk.log.debug("  - Layer count: {d}", .{params.num_image_layers});
+    vk.log.debug("  - Format: {s}", .{c.string_VkFormat(params.format)});
+    vk.log.debug("  - Image layout: {s}", .{c.string_VkImageLayout(params.final_layout)});
+    vk.log.debug("  - View type: {s}", .{c.string_VkImageViewType(params.view_type)});
+
+    return handle;
+}
+
 // *********************************************************************************************
 // Public API
 // *********************************************************************************************
@@ -288,11 +535,209 @@ pub fn create(
     transfer_queue: c.VkQueue,
     reader: std.io.AnyReader,
     size: u32,
+    options: gfx.TextureOptions,
 ) !gfx.TextureHandle {
-    var usage_flags = c.VK_IMAGE_USAGE_SAMPLED_BIT; // TODO: parameters?
-    const tiling = c.VK_IMAGE_TILING_OPTIMAL; // TODO: parameters?
-    const final_layout = c.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // TODO: parameters?
+    const params = try prepareTextureParams(.{
+        .format = formatFromGfxTextureFormat(options.format),
+        .width = options.width,
+        .height = options.height,
+        .depth = options.depth,
+        .num_image_layers = options.array_layers,
+        .tiling = tilingFromGfxTextureTiling(options.tiling),
+        .is_cubemap = options.is_cubemap,
+        .is_array = options.is_array,
+        .generate_mipmaps = options.generate_mipmaps,
+    });
 
+    var image: vk.image.Image = undefined;
+    if (params.tiling == c.VK_IMAGE_TILING_OPTIMAL) {
+        var staging_buffer = try vk.buffers.createBuffer(
+            size,
+            c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+            c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        );
+        defer vk.buffers.destroyBuffer(&staging_buffer);
+
+        var mapped_staging_buffer: [*c]u8 = undefined;
+        try vk.device.mapMemory(
+            staging_buffer.memory,
+            0,
+            size,
+            0,
+            @ptrCast(&mapped_staging_buffer),
+        );
+        defer vk.device.unmapMemory(staging_buffer.memory);
+
+        if (try reader.readAll(mapped_staging_buffer[0..size]) != size) {
+            vk.log.err("Failed to read texture data", .{});
+            return error.TextureDataError;
+        }
+
+        image = try vk.image.create(
+            options.width,
+            options.height,
+            options.depth,
+            params.format,
+            params.num_image_levels,
+            params.num_image_layers,
+            c.VK_IMAGE_TILING_OPTIMAL,
+            @intCast(params.usage_flags),
+            c.VK_IMAGE_LAYOUT_UNDEFINED,
+            c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        );
+        errdefer vk.image.destroy(image);
+
+        const command_buffer =
+            try vk.command_buffers.beginSingleTimeCommands(command_pool);
+        defer vk.command_buffers.endSingleTimeCommands(
+            command_pool,
+            command_buffer,
+            transfer_queue,
+        );
+
+        var region = std.mem.zeroes(c.VkBufferImageCopy);
+        region.bufferOffset = 0;
+        region.bufferRowLength = 0;
+        region.bufferImageHeight = 0;
+        region.imageSubresource.aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = params.num_image_layers;
+        region.imageOffset.x = 0;
+        region.imageOffset.y = 0;
+        region.imageOffset.z = 0;
+        region.imageExtent.width = options.width;
+        region.imageExtent.height = options.height;
+        region.imageExtent.depth = options.depth;
+
+        const subresource_range = c.VkImageSubresourceRange{
+            .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+            .baseMipLevel = 0,
+            .levelCount = params.num_image_levels,
+            .baseArrayLayer = 0,
+            .layerCount = params.num_image_layers,
+        };
+
+        try vk.image.setImageLayout(
+            command_buffer,
+            image.image,
+            c.VK_IMAGE_LAYOUT_UNDEFINED,
+            c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            subresource_range,
+        );
+
+        vk.device.cmdCopyBufferToImage(
+            command_buffer,
+            staging_buffer.handle,
+            image.image,
+            c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1,
+            &region,
+        );
+
+        if (options.generate_mipmaps) {
+            try generateMipmaps(
+                command_buffer,
+                image.image,
+                options.width,
+                options.height,
+                options.depth,
+                params.num_image_layers,
+                params.num_image_levels,
+                params.blit_filter,
+                c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            );
+        } else {
+            // Transition image layout to finalLayout after all mip levels
+            // have been copied.
+            // In this case numImageLevels == This->numLevels
+            //subresourceRange.levelCount = numImageLevels;
+            try vk.image.setImageLayout(
+                command_buffer,
+                image.image,
+                c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                params.final_layout,
+                subresource_range,
+            );
+        }
+    } else {
+        image = try vk.image.create(
+            options.width,
+            options.height,
+            options.depth,
+            params.format,
+            params.num_image_levels,
+            params.num_image_layers,
+            c.VK_IMAGE_TILING_LINEAR,
+            @intCast(params.usage_flags),
+            c.VK_IMAGE_LAYOUT_UNDEFINED,
+            c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        );
+        errdefer vk.image.destroy(image);
+
+        var mapped_data: [*c]u8 = undefined;
+        try vk.device.mapMemory(
+            image.memory,
+            0,
+            image.size,
+            0,
+            @ptrCast(&mapped_data),
+        );
+        defer vk.device.unmapMemory(image.memory);
+
+        if (try reader.readAll(mapped_data[0..size]) != size) {
+            vk.log.err("Failed to read texture data", .{});
+            return error.TextureDataError;
+        }
+        const command_buffer =
+            try vk.command_buffers.beginSingleTimeCommands(command_pool);
+        defer vk.command_buffers.endSingleTimeCommands(
+            command_pool,
+            command_buffer,
+            transfer_queue,
+        );
+
+        if (options.generate_mipmaps) {
+            try generateMipmaps(
+                command_buffer,
+                image.image,
+                options.width,
+                options.height,
+                options.depth,
+                params.num_image_layers,
+                params.num_image_levels,
+                params.blit_filter,
+                c.VK_IMAGE_LAYOUT_PREINITIALIZED,
+            );
+        } else {
+            const subresource_range = c.VkImageSubresourceRange{
+                .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = params.num_image_levels,
+                .baseArrayLayer = 0,
+                .layerCount = params.num_image_layers,
+            };
+
+            try vk.image.setImageLayout(
+                command_buffer,
+                image.image,
+                c.VK_IMAGE_LAYOUT_PREINITIALIZED,
+                params.final_layout,
+                subresource_range,
+            );
+        }
+    }
+    errdefer vk.image.destroy(image);
+
+    return try createTexture(image, params);
+}
+
+pub fn createFromKTX(
+    command_pool: c.VkCommandPool,
+    transfer_queue: c.VkQueue,
+    reader: std.io.AnyReader,
+    size: u32,
+) !gfx.TextureHandle {
     // TODO: use a specialized arena?
     // TODO: Optimize this without using a temporary buffer?
     const data = try vk.arena.alloc(u8, size);
@@ -321,113 +766,21 @@ pub fn create(
         );
     }
 
-    var create_flags: c.VkImageCreateFlags = 0;
-    var num_image_layers = ktx_texture.numLayers;
-    if (ktx_texture.isCubemap) {
-        num_image_layers *= 6;
-        create_flags = c.VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-    }
-
-    var image_type: c.VkImageType = undefined;
-    var view_type: c.VkImageViewType = undefined;
-    switch (ktx_texture.numDimensions) {
-        1 => {
-            image_type = c.VK_IMAGE_TYPE_1D;
-            view_type = if (ktx_texture.isArray) c.VK_IMAGE_VIEW_TYPE_1D_ARRAY else c.VK_IMAGE_VIEW_TYPE_1D;
-        },
-        2 => {
-            image_type = c.VK_IMAGE_TYPE_2D;
-            if (ktx_texture.isCubemap) {
-                view_type = if (ktx_texture.isArray) c.VK_IMAGE_VIEW_TYPE_CUBE_ARRAY else c.VK_IMAGE_VIEW_TYPE_CUBE;
-            } else {
-                view_type = if (ktx_texture.isArray) c.VK_IMAGE_VIEW_TYPE_2D_ARRAY else c.VK_IMAGE_VIEW_TYPE_2D;
-            }
-        },
-        3 => {
-            image_type = c.VK_IMAGE_TYPE_3D;
-            view_type = c.VK_IMAGE_VIEW_TYPE_3D;
-        },
-        else => {
-            vk.log.err("Unsupported KTX texture dimensions: {d}", .{ktx_texture.numDimensions});
-            return error.KTXError;
-        },
-    }
-
-    const format = ktx_texture.vkFormat;
-    if (format == c.VK_FORMAT_UNDEFINED) {
-        vk.log.err("KTX texture has undefined format", .{});
-        return error.KTXError;
-    }
-
-    if (tiling == c.VK_IMAGE_TILING_OPTIMAL) {
-        usage_flags |= c.VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-    }
-
-    if (ktx_texture.generateMipmaps) {
-        usage_flags |= c.VK_IMAGE_USAGE_TRANSFER_DST_BIT | c.VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-    }
-
-    var image_format_properties: c.VkImageFormatProperties = undefined;
-    try vk.instance.getPhysicalDeviceImageFormatProperties(
-        vk.device.physical_device,
-        format,
-        image_type,
-        tiling,
-        @intCast(usage_flags),
-        create_flags,
-        &image_format_properties,
-    );
-
-    if (ktx_texture.numLayers > image_format_properties.maxArrayLayers) {
-        vk.log.err("KTX texture has too many layers: {d}", .{ktx_texture.numLayers});
-        return error.KTXError;
-    }
-
-    var num_image_levels: u32 = undefined;
-    var blit_filter: c.VkFilter = c.VK_FILTER_LINEAR;
-    if (ktx_texture.generateMipmaps) {
-        const needed_features: c.VkFormatFeatureFlags = c.VK_FORMAT_FEATURE_BLIT_DST_BIT | c.VK_FORMAT_FEATURE_BLIT_SRC_BIT;
-        var format_properties: c.VkFormatProperties = undefined;
-        vk.instance.getPhysicalDeviceFormatProperties(
-            vk.device.physical_device,
-            format,
-            &format_properties,
-        );
-
-        var format_features_flags: c.VkFormatFeatureFlags = 0;
-        if (tiling == c.VK_IMAGE_TILING_OPTIMAL) {
-            format_features_flags = format_properties.optimalTilingFeatures;
-        } else {
-            format_features_flags = format_properties.linearTilingFeatures;
-        }
-
-        if ((format_features_flags & needed_features) != needed_features) {
-            vk.log.err("KTX texture format does not support blitting", .{});
-            return error.KTXError;
-        }
-
-        if ((format_features_flags & c.VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) != 0) {
-            blit_filter = c.VK_FILTER_LINEAR;
-        } else {
-            blit_filter = c.VK_FILTER_NEAREST; // XXX INVALID_OP?
-        }
-
-        const max_dim = @max(
-            @max(ktx_texture.baseWidth, ktx_texture.baseHeight),
-            ktx_texture.baseDepth,
-        );
-        num_image_levels = @intFromFloat(@floor(@as(f32, @floatFromInt(std.math.log2(max_dim)))) + 1);
-    } else {
-        num_image_levels = ktx_texture.numLevels;
-    }
-
-    if (num_image_levels > image_format_properties.maxMipLevels) {
-        vk.log.err("KTX texture has too many mip levels: {d}", .{num_image_levels});
-        return error.KTXError;
-    }
+    const params = try prepareTextureParams(.{
+        .format = ktx_texture.vkFormat,
+        .width = ktx_texture.baseWidth,
+        .height = ktx_texture.baseHeight,
+        .depth = ktx_texture.baseDepth,
+        .num_image_layers = ktx_texture.numLayers,
+        .num_image_levels = ktx_texture.numLevels,
+        .num_dimensions = ktx_texture.numDimensions,
+        .is_cubemap = ktx_texture.isCubemap,
+        .is_array = ktx_texture.isArray,
+        .generate_mipmaps = ktx_texture.generateMipmaps,
+    });
 
     var image: vk.image.Image = undefined;
-    if (tiling == c.VK_IMAGE_TILING_OPTIMAL) {
+    if (params.tiling == c.VK_IMAGE_TILING_OPTIMAL) {
         const num_copy_regions = ktx_texture.numLevels;
         const texture_size = ktxTexture2_GetDataSizeUncompressed(ktx_texture);
 
@@ -476,11 +829,11 @@ pub fn create(
             ktx_texture.baseWidth,
             ktx_texture.baseHeight,
             ktx_texture.baseDepth,
-            format,
-            num_image_levels,
-            num_image_layers,
+            params.format,
+            params.num_image_levels,
+            params.num_image_layers,
             c.VK_IMAGE_TILING_OPTIMAL,
-            @intCast(usage_flags),
+            @intCast(params.usage_flags),
             c.VK_IMAGE_LAYOUT_UNDEFINED,
             c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         );
@@ -497,9 +850,9 @@ pub fn create(
         const subresource_range = c.VkImageSubresourceRange{
             .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
             .baseMipLevel = 0,
-            .levelCount = num_image_levels,
+            .levelCount = params.num_image_levels,
             .baseArrayLayer = 0,
-            .layerCount = num_image_layers,
+            .layerCount = params.num_image_layers,
         };
 
         try vk.image.setImageLayout(
@@ -526,9 +879,9 @@ pub fn create(
                 ktx_texture.baseWidth,
                 ktx_texture.baseHeight,
                 ktx_texture.baseDepth,
-                num_image_layers,
-                num_image_levels,
-                blit_filter,
+                params.num_image_layers,
+                params.num_image_levels,
+                params.blit_filter,
                 c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             );
         } else {
@@ -540,7 +893,7 @@ pub fn create(
                 command_buffer,
                 image.image,
                 c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                final_layout,
+                params.final_layout,
                 subresource_range,
             );
         }
@@ -549,11 +902,11 @@ pub fn create(
             ktx_texture.baseWidth,
             ktx_texture.baseHeight,
             ktx_texture.baseDepth,
-            format,
-            num_image_levels,
-            num_image_layers,
+            params.format,
+            params.num_image_levels,
+            params.num_image_layers,
             c.VK_IMAGE_TILING_LINEAR,
-            @intCast(usage_flags),
+            @intCast(params.usage_flags),
             c.VK_IMAGE_LAYOUT_UNDEFINED,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         );
@@ -576,7 +929,7 @@ pub fn create(
         try checkKtxError(
             "Failed to iterate KTX texture levels",
             c.ktxTexture_IterateLevelFaces(
-                ktx_texture,
+                @ptrCast(ktx_texture),
                 &linearTilingCallback,
                 @ptrCast(&user_data),
             ),
@@ -597,111 +950,32 @@ pub fn create(
                 ktx_texture.baseWidth,
                 ktx_texture.baseHeight,
                 ktx_texture.baseDepth,
-                num_image_layers,
-                num_image_levels,
-                blit_filter,
+                params.num_image_layers,
+                params.num_image_levels,
+                params.blit_filter,
                 c.VK_IMAGE_LAYOUT_PREINITIALIZED,
             );
         } else {
             const subresource_range = c.VkImageSubresourceRange{
                 .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
                 .baseMipLevel = 0,
-                .levelCount = num_image_levels,
+                .levelCount = params.num_image_levels,
                 .baseArrayLayer = 0,
-                .layerCount = num_image_layers,
+                .layerCount = params.num_image_layers,
             };
 
             try vk.image.setImageLayout(
                 command_buffer,
                 image.image,
                 c.VK_IMAGE_LAYOUT_PREINITIALIZED,
-                final_layout,
+                params.final_layout,
                 subresource_range,
             );
         }
     }
     errdefer vk.image.destroy(image);
 
-    vk.log.debug("KTX texture uploaded:", .{});
-    vk.log.debug("  - Width: {d}", .{ktx_texture.baseWidth});
-    vk.log.debug("  - Height: {d}", .{ktx_texture.baseHeight});
-    vk.log.debug("  - Depth: {d}", .{ktx_texture.baseDepth});
-    vk.log.debug("  - Level count: {d}", .{num_image_levels});
-    vk.log.debug("  - Layer count: {d}", .{num_image_layers});
-    vk.log.debug("  - Format: {s}", .{c.string_VkFormat(format)});
-    vk.log.debug("  - Image layout: {s}", .{c.string_VkImageLayout(final_layout)});
-    vk.log.debug("  - View type: {s}", .{c.string_VkImageViewType(view_type)});
-
-    const texture_image_view = try vk.image.createView(
-        image.image,
-        format,
-        view_type,
-        c.VK_IMAGE_ASPECT_COLOR_BIT,
-        num_image_levels,
-        num_image_layers,
-    );
-    errdefer vk.image.destroyView(texture_image_view);
-
-    var sampler_info = c.VkSamplerCreateInfo{
-        .sType = c.VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
-        .magFilter = c.VK_FILTER_LINEAR,
-        .minFilter = c.VK_FILTER_LINEAR,
-        .addressModeU = c.VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeV = c.VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .addressModeW = c.VK_SAMPLER_ADDRESS_MODE_REPEAT,
-        .borderColor = c.VK_BORDER_COLOR_INT_OPAQUE_BLACK,
-        .unnormalizedCoordinates = c.VK_FALSE,
-        .compareEnable = c.VK_FALSE,
-        .compareOp = c.VK_COMPARE_OP_ALWAYS,
-        .mipmapMode = c.VK_SAMPLER_MIPMAP_MODE_LINEAR,
-        .mipLodBias = 0.0,
-        .minLod = 0.0,
-        .maxLod = @floatFromInt(num_image_levels),
-    };
-
-    if (vk.device.features.features.samplerAnisotropy == c.VK_TRUE) {
-        sampler_info.anisotropyEnable = c.VK_TRUE;
-        sampler_info.maxAnisotropy = vk.device.properties.limits.maxSamplerAnisotropy;
-    }
-
-    var sampler: c.VkSampler = undefined;
-    try vk.device.createSampler(&sampler_info, &sampler);
-    errdefer vk.device.destroySampler(sampler);
-
-    vk.log.debug("Created sampler:", .{});
-    vk.log.debug("  - Mag filter: {s}", .{c.string_VkFilter(sampler_info.magFilter)});
-    vk.log.debug("  - Min filter: {s}", .{c.string_VkFilter(sampler_info.minFilter)});
-    vk.log.debug("  - Address mode U: {s}", .{c.string_VkSamplerAddressMode(sampler_info.addressModeU)});
-    vk.log.debug("  - Address mode V: {s}", .{c.string_VkSamplerAddressMode(sampler_info.addressModeV)});
-    vk.log.debug("  - Address mode W: {s}", .{c.string_VkSamplerAddressMode(sampler_info.addressModeW)});
-    vk.log.debug("  - Border color: {s}", .{c.string_VkBorderColor(sampler_info.borderColor)});
-    vk.log.debug("  - Unnormalized coordinates: {}", .{sampler_info.unnormalizedCoordinates == c.VK_TRUE});
-    vk.log.debug("  - Compare enable: {}", .{sampler_info.compareEnable == c.VK_TRUE});
-    vk.log.debug("  - Compare op: {s}", .{c.string_VkCompareOp(sampler_info.compareOp)});
-    vk.log.debug("  - Mipmap mode: {s}", .{c.string_VkSamplerMipmapMode(sampler_info.mipmapMode)});
-    vk.log.debug("  - Mip lod bias: {d}", .{sampler_info.mipLodBias});
-    vk.log.debug("  - Min lod: {d}", .{sampler_info.minLod});
-    vk.log.debug("  - Max lod: {d}", .{sampler_info.maxLod});
-    vk.log.debug("  - Anisotropy enable: {}", .{sampler_info.anisotropyEnable == c.VK_TRUE});
-    vk.log.debug("  - Max anisotropy: {d}", .{sampler_info.maxAnisotropy});
-
-    const handle = texture_handles.create();
-    errdefer texture_handles.destroy(handle);
-
-    textures.setValue(
-        handle,
-        .{
-            .image = image,
-            .image_layout = final_layout,
-            .image_view = texture_image_view,
-            .sampler = sampler,
-        },
-    );
-
-    vk.log.debug("Created texture:", .{});
-    vk.log.debug("  - Handle: {d}", .{handle});
-
-    return handle;
+    return try createTexture(image, params);
 }
 
 pub fn destroy(handle: gfx.TextureHandle) void {
