@@ -57,7 +57,9 @@ fn loadShader(allocator: std.mem.Allocator, filename: []const u8) !gfx.ShaderHan
     var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
-    return try gfx.createShader(file.reader().any());
+    return try gfx.createShader(file.reader().any(), .{
+        .debug_name = filename,
+    });
 }
 
 fn loadTexture(allocator: std.mem.Allocator, filename: []const u8) !gfx.TextureHandle {
@@ -69,7 +71,13 @@ fn loadTexture(allocator: std.mem.Allocator, filename: []const u8) !gfx.TextureH
 
     const stat = try file.stat();
 
-    return try gfx.createTextureFromKTX(file.reader().any(), @intCast(stat.size));
+    return try gfx.createTextureFromKTX(
+        file.reader().any(),
+        @intCast(stat.size),
+        .{
+            .debug_name = filename,
+        },
+    );
 }
 
 fn destroyMeshes(meshes: *std.ArrayList(MeshInstance)) void {
@@ -114,6 +122,9 @@ pub fn init(gpa_allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator
         @sizeOf(ModelViewProj) * max_frames_in_flight,
         .{ .uniform = true },
         .host,
+        .{
+            .debug_name = "MVP Uniform Buffer",
+        },
     );
     errdefer gfx.destroyBuffer(mvp_uniform_buffer_handle);
 
