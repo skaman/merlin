@@ -118,10 +118,72 @@ pub const BufferOptions = struct {
     debug_name: ?[]const u8 = null,
 };
 
+pub fn UniformArray(comptime THandle: type) type {
+    return struct {
+        const Self = @This();
+        handle: BufferHandle,
+
+        pub fn init(
+            size: u32,
+            usage: BufferUsage,
+            location: BufferLocation,
+            options: BufferOptions,
+        ) !Self {
+            return .{
+                .handle = try createBuffer(
+                    stride() * size,
+                    usage,
+                    location,
+                    options,
+                ),
+            };
+        }
+
+        pub fn deinit(self: *Self) void {
+            destroyBuffer(self.handle);
+        }
+
+        pub fn update(
+            self: *Self,
+            index: u32,
+            reader: std.io.AnyReader,
+        ) !void {
+            try updateBuffer(
+                self.handle,
+                reader,
+                offset(index),
+                @sizeOf(THandle),
+            );
+        }
+
+        pub fn updateFromMemory(
+            self: *Self,
+            index: u32,
+            data: []const u8,
+        ) !void {
+            try updateBufferFromMemory(
+                self.handle,
+                data,
+                self.offset(index),
+            );
+        }
+
+        pub fn offset(_: *Self, index: u32) u32 {
+            return index * stride();
+        }
+
+        fn stride() u32 {
+            const alignment = uniformAlignment();
+            return ((@sizeOf(THandle) + alignment - 1) / alignment) * alignment;
+        }
+    };
+}
+
 const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
     swapchainSize: *const fn () [2]u32,
+    uniformAlignment: *const fn () u32,
     maxFramesInFlight: *const fn () u32,
     currentFrameInFlight: *const fn () u32,
     createShader: *const fn (reader: std.io.AnyReader, options: ShaderOptions) anyerror!ShaderHandle,
@@ -177,6 +239,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .init = noop.init,
                 .deinit = noop.deinit,
                 .swapchainSize = noop.swapchainSize,
+                .uniformAlignment = noop.uniformAlignment,
                 .maxFramesInFlight = noop.maxFramesInFlight,
                 .currentFrameInFlight = noop.currentFrameInFlight,
                 .createShader = noop.createShader,
@@ -214,6 +277,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .init = vulkan.init,
                 .deinit = vulkan.deinit,
                 .swapchainSize = vulkan.swapchainSize,
+                .uniformAlignment = vulkan.uniformAlignment,
                 .maxFramesInFlight = vulkan.maxFramesInFlight,
                 .currentFrameInFlight = vulkan.currentFrameInFlight,
                 .createShader = vulkan.createShader,
@@ -285,6 +349,11 @@ pub fn deinit() void {
 /// Returns the size of the swapchain.
 pub inline fn swapchainSize() [2]u32 {
     return v_tab.swapchainSize();
+}
+
+/// Returns the stride of a uniform buffer.
+pub inline fn uniformAlignment() u32 {
+    return v_tab.uniformAlignment();
 }
 
 /// Returns the maximum number of frames in flight.

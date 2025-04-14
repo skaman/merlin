@@ -397,6 +397,10 @@ pub fn swapchainSize() [2]u32 {
     };
 }
 
+pub fn uniformAlignment() u32 {
+    return @intCast(device.properties.limits.minUniformBufferOffsetAlignment);
+}
+
 pub fn maxFramesInFlight() u32 {
     return MaxFramesInFlight;
 }

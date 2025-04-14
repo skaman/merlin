@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) !void {
     });
     const ktx_software = b.dependency("ktx_software", .{
         .target = target,
-        .optimize = optimize,
+        .optimize = .ReleaseFast, // we always optimize this lib otherwise is too slow
     });
 
     const merlin_gfx_mod = b.addModule("merlin_gfx", .{

@@ -149,6 +149,8 @@ fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.
     const pipeline_layout = vk.programs.pipelineLayout(program_handle);
     const layout_count = vk.programs.layoutCount(program_handle);
     var write_descriptor_sets = vk.programs.writeDescriptorSets(program_handle);
+    var buffer_infos: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorBufferInfo = undefined;
+    var image_infos: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorImageInfo = undefined;
 
     for (0..layout_count) |binding_index| {
         const uniform_handle = vk.programs.uniformHandle(program_handle, @intCast(binding_index));
@@ -160,20 +162,22 @@ fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.
                 std.debug.assert(uniform_binding.* == .uniform_buffer);
                 const buffer = vk.buffers.buffer(uniform_binding.uniform_buffer.buffer_handle);
                 const uniform_size = vk.programs.uniformSize(program_handle, @intCast(binding_index));
-                write_descriptor_sets[binding_index].pBufferInfo = &.{
+                buffer_infos[binding_index] = .{
                     .buffer = buffer,
                     .offset = uniform_binding.uniform_buffer.offset,
                     .range = uniform_size,
                 };
+                write_descriptor_sets[binding_index].pBufferInfo = &buffer_infos[binding_index];
             },
             c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
                 std.debug.assert(uniform_binding.* == .combined_sampler);
                 const texture_handle = uniform_binding.combined_sampler.texture_handle;
-                write_descriptor_sets[binding_index].pImageInfo = &.{
+                image_infos[binding_index] = .{
                     .imageLayout = vk.textures.getImageLayout(texture_handle),
                     .imageView = vk.textures.getImageView(texture_handle),
                     .sampler = vk.textures.getSampler(texture_handle),
                 };
+                write_descriptor_sets[binding_index].pImageInfo = &image_infos[binding_index];
             },
             else => {
                 vk.log.err(

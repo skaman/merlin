@@ -146,12 +146,48 @@ pub fn init(gpa_allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator
     //try meshes.append(try assets.loadMesh("flight-helmet.3.mesh"));
     //try meshes.append(try assets.loadMesh("flight-helmet.4.mesh"));
     //try meshes.append(try assets.loadMesh("flight-helmet.5.mesh"));
-    const mesh_0 = MeshInstance{
-        .name = "BoxTextured",
-        .mesh = try assets.loadMesh("box-textured.0.mesh"),
-        .material = try assets.loadMaterial("BoxTextured/material.0.mat"),
-    };
-    try meshes.append(mesh_0);
+
+    try meshes.append(.{
+        .name = "FlightHelmet (0)",
+        .mesh = try assets.loadMesh("flight-helmet.0.mesh"),
+        .material = try assets.loadMaterial("FlightHelmet/material.0.mat"),
+    });
+
+    try meshes.append(.{
+        .name = "FlightHelmet (1)",
+        .mesh = try assets.loadMesh("flight-helmet.1.mesh"),
+        .material = try assets.loadMaterial("FlightHelmet/material.1.mat"),
+    });
+
+    try meshes.append(.{
+        .name = "FlightHelmet (2)",
+        .mesh = try assets.loadMesh("flight-helmet.2.mesh"),
+        .material = try assets.loadMaterial("FlightHelmet/material.2.mat"),
+    });
+
+    try meshes.append(.{
+        .name = "FlightHelmet (3)",
+        .mesh = try assets.loadMesh("flight-helmet.3.mesh"),
+        .material = try assets.loadMaterial("FlightHelmet/material.3.mat"),
+    });
+
+    try meshes.append(.{
+        .name = "FlightHelmet (4)",
+        .mesh = try assets.loadMesh("flight-helmet.4.mesh"),
+        .material = try assets.loadMaterial("FlightHelmet/material.4.mat"),
+    });
+
+    try meshes.append(.{
+        .name = "FlightHelmet (5)",
+        .mesh = try assets.loadMesh("flight-helmet.5.mesh"),
+        .material = try assets.loadMaterial("FlightHelmet/material.5.mat"),
+    });
+
+    //try meshes.append(.{
+    //    .name = "BoxTextured",
+    //    .mesh = try assets.loadMesh("box-textured.0.mesh"),
+    //    .material = try assets.loadMaterial("BoxTextured/material.0.mat"),
+    //});
 
     return Context{
         .gpa_allocator = gpa_allocator,
@@ -184,7 +220,7 @@ pub fn update(context: *Context, time: f32) void {
     const mvp = ModelViewProj{
         .model = zm.rotationY(std.math.rad_per_deg * 90.0 * time),
         .view = zm.lookAtLh(
-            zm.f32x4(2.0, 2.0, 2.0, 1.0),
+            zm.f32x4(1.0, 1.0, 1.0, 1.0),
             zm.f32x4(0.0, 0.3, 0.0, 1.0),
             zm.f32x4(0.0, -1.0, 0.0, 0.0),
         ),
@@ -226,6 +262,12 @@ pub fn update(context: *Context, time: f32) void {
         gfx.insertDebugLabel(
             mesh_instance.name,
             gfx_types.Colors.LightGray,
+        );
+
+        gfx.bindUniformBuffer(
+            assets.materialUniformHandle(),
+            assets.materialUniformBufferHandle(),
+            assets.materialUniformBufferOffset(mesh_instance.material),
         );
 
         switch (material.pbr) {

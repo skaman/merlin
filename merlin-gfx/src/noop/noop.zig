@@ -10,6 +10,9 @@ pub fn deinit() void {}
 pub fn swapchainSize() [2]u32 {
     return .{ 0, 0 };
 }
+pub fn uniformAlignment() u32 {
+    return 0;
+}
 pub fn maxFramesInFlight() u32 {
     return 0;
 }

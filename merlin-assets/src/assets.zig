@@ -57,6 +57,16 @@ pub const Material = struct {
     double_sided: bool,
 };
 
+const MaterialUniform = struct {
+    base_color_factor: [4]f32,
+    metallic_factor: f32,
+    roughness_factor: f32,
+    diffuse_factor: [4]f32,
+    specular_factor: [3]f32,
+    glossiness_factor: f32,
+    emissive_factor: [3]f32,
+};
+
 pub const MeshHandle = enum(u16) { _ };
 pub const MaterialHandle = enum(u16) { _ };
 
@@ -95,6 +105,8 @@ var material_handles: utils.HandlePool(
     MaxMaterialHandles,
 ) = undefined;
 
+var material_uniform_handle: gfx.UniformHandle = undefined;
+var material_uniform_buffer: gfx.UniformArray(MaterialUniform) = undefined;
 var default_texture_handle: gfx.TextureHandle = undefined;
 
 // *********************************************************************************************
@@ -220,6 +232,28 @@ fn loadPbrSpecularGlossinessMaterial(
     };
 }
 
+fn updateMaterialUniformBuffer(handle: MaterialHandle) !void {
+    const material_data = materials.valuePtr(handle);
+    var uniform_data: MaterialUniform = undefined;
+    switch (material_data.pbr) {
+        .pbr_metallic_roughness => |pbr_value| {
+            uniform_data.base_color_factor = pbr_value.base_color_factor;
+            uniform_data.metallic_factor = pbr_value.metallic_factor;
+            uniform_data.roughness_factor = pbr_value.roughness_factor;
+        },
+        .pbr_specular_glossiness => |pbr_value| {
+            uniform_data.diffuse_factor = pbr_value.diffuse_factor;
+            uniform_data.specular_factor = pbr_value.specular_factor;
+            uniform_data.glossiness_factor = pbr_value.glossiness_factor;
+        },
+    }
+    uniform_data.emissive_factor = material_data.emissive_factor;
+
+    const ptr: [*]const u8 = @ptrCast(&uniform_data);
+    const index = @intFromEnum(handle);
+    try material_uniform_buffer.updateFromMemory(index, ptr[0..@sizeOf(MaterialUniform)]);
+}
+
 // *********************************************************************************************
 // Public API
 // *********************************************************************************************
@@ -231,6 +265,8 @@ pub fn init(allocator: std.mem.Allocator) !void {
 
     arena_impl = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     errdefer arena_impl.deinit();
+    defer _ = arena_impl.reset(.retain_capacity);
+
     arena = arena_impl.allocator();
 
     mesh_handles = .init();
@@ -242,7 +278,17 @@ pub fn init(allocator: std.mem.Allocator) !void {
     assets_path = try getAssetsPath(gpa);
     errdefer allocator.free(assets_path);
 
-    _ = arena_impl.reset(.retain_capacity);
+    material_uniform_handle = try gfx.registerUniformName("u_material");
+
+    material_uniform_buffer = try .init(
+        MaxMaterialHandles,
+        .{ .uniform = true },
+        .host,
+        .{
+            .debug_name = "Materials uniform buffer",
+        },
+    );
+    errdefer material_uniform_buffer.deinit();
 
     default_texture_handle = try gfx.createTextureFromMemory(
         &[_]u8{ 0xff, 0xff, 0xff, 0xff },
@@ -259,6 +305,7 @@ pub fn deinit() void {
     log.debug("Deinitializing assets", .{});
 
     gfx.destroyTexture(default_texture_handle);
+    material_uniform_buffer.deinit();
 
     gpa.free(assets_path);
     material_handles.deinit();
@@ -429,6 +476,8 @@ pub fn loadMaterial(filename: []const u8) !MaterialHandle {
         .double_sided = material_data.double_sided,
     });
 
+    try updateMaterialUniformBuffer(handle);
+
     log.debug("Loaded material: {s}", .{filename});
     switch (pbr) {
         .pbr_metallic_roughness => |pbr_value| {
@@ -497,4 +546,16 @@ pub fn destroyMaterial(handle: MaterialHandle) void {
 
 pub inline fn material(handle: MaterialHandle) *Material {
     return materials.valuePtr(handle);
+}
+
+pub inline fn materialUniformHandle() gfx.UniformHandle {
+    return material_uniform_handle;
+}
+
+pub inline fn materialUniformBufferHandle() gfx.BufferHandle {
+    return material_uniform_buffer.handle;
+}
+
+pub inline fn materialUniformBufferOffset(handle: MaterialHandle) u32 {
+    return material_uniform_buffer.offset(@intFromEnum(handle));
 }
