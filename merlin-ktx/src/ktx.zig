@@ -66,7 +66,8 @@ pub const Texture = struct {
         } else if (source.channels == 2) {
             switch (source.channel_size) {
                 .u8 => {
-                    create_info.glInternalformat = if (source.srgb) c.GL_SRG8_EXT else c.GL_RG8;
+                    // TODO: 0x8FBE should be GL_SRG8_EXT, but it's not defined in the header file on windows.
+                    create_info.glInternalformat = if (source.srgb) 0x8FBE else c.GL_RG8;
                     create_info.vkFormat = if (source.srgb) c.VK_FORMAT_R8G8_SRGB else c.VK_FORMAT_R8G8_UNORM;
                 },
                 .u16 => {

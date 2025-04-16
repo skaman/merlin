@@ -120,19 +120,35 @@ fn createXcbSurface() !c.VkSurfaceKHR {
     return surface;
 }
 
+// Something is wront with HWND alignment, so we need to use a pointer and bypass the c includes
+pub const struct_VkWin32SurfaceCreateInfoKHR = extern struct {
+    sType: c.VkStructureType = @import("std").mem.zeroes(c.VkStructureType),
+    pNext: ?*const anyopaque = @import("std").mem.zeroes(?*const anyopaque),
+    flags: c.VkWin32SurfaceCreateFlagsKHR = @import("std").mem.zeroes(c.VkWin32SurfaceCreateFlagsKHR),
+    hinstance: ?*anyopaque,
+    hwnd: ?*anyopaque,
+};
+
+pub const PFN_vkCreateWin32SurfaceKHR = ?*const fn (
+    c.VkInstance,
+    [*c]const struct_VkWin32SurfaceCreateInfoKHR,
+    [*c]const c.VkAllocationCallbacks,
+    [*c]c.VkSurfaceKHR,
+) callconv(.c) c.VkResult;
+
 fn createWin32Surface() !c.VkSurfaceKHR {
     const createWin32SurfaceKHR = try vk.library.get_proc(
-        c.PFN_vkCreateWin32SurfaceKHR,
+        PFN_vkCreateWin32SurfaceKHR,
         vk.instance.handle,
         "vkCreateWin32SurfaceKHR",
     );
 
     vk.log.debug("Creating Win32 surface", .{});
 
-    const create_info = std.mem.zeroInit(c.VkWin32SurfaceCreateInfoKHR, .{
+    const window_handle = platform.getNativeDefaultWindowHandle();
+    const create_info = std.mem.zeroInit(struct_VkWin32SurfaceCreateInfoKHR, .{
         .sType = c.VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
-        .hwnd = @as(c.HWND, @ptrCast(platform.getNativeDefaultWindowHandle())),
-        .hinstance = @as(c.HINSTANCE, @ptrCast(platform.getNativeDisplayHandle())),
+        .hwnd = window_handle,
     });
     var surface: c.VkSurfaceKHR = undefined;
     try vk.checkVulkanError(
