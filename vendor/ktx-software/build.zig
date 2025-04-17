@@ -85,6 +85,7 @@ pub fn build(b: *std.Build) void {
             "-DBASISU_SUPPORT_OPENCL=0",
             //"-msse4.1",
             "-DKHRONOS_STATIC",
+            "-fno-sanitize=shift",
         },
     });
 
