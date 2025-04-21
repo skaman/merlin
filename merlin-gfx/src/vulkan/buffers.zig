@@ -12,7 +12,7 @@ const vk = @import("vulkan.zig");
 // *********************************************************************************************
 
 pub const Buffer = struct {
-    handle: c.VkBuffer,
+    buffer: c.VkBuffer,
     memory: c.VkDeviceMemory,
     property_flags: c.VkMemoryPropertyFlags,
     mapped_data: [*c]u8,
@@ -24,19 +24,7 @@ pub const Buffer = struct {
 // Globals
 // *********************************************************************************************
 
-var buffers: utils.HandleArray(
-    gfx.BufferHandle,
-    Buffer,
-    gfx.MaxBufferHandles,
-) = undefined;
-
-var buffer_handles: utils.HandlePool(
-    gfx.BufferHandle,
-    gfx.MaxBufferHandles,
-) = undefined;
-
-var buffers_to_destroy: [gfx.MaxBufferHandles]Buffer = undefined;
-var buffers_to_destroy_count: u32 = 0;
+var _buffers_to_destroy: std.ArrayList(*Buffer) = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -127,12 +115,12 @@ fn copyBuffer(
 // *********************************************************************************************
 
 pub fn init() void {
-    buffer_handles = .init();
-    buffers_to_destroy_count = 0;
+    _buffers_to_destroy = .init(vk.gpa);
+    errdefer _buffers_to_destroy.deinit();
 }
 
 pub fn deinit() void {
-    buffer_handles.deinit();
+    _buffers_to_destroy.deinit();
 }
 
 pub fn create(
@@ -146,52 +134,46 @@ pub fn create(
     if (usage.index) buffer_usage_flags |= c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     if (usage.uniform) buffer_usage_flags |= c.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 
-    const handle = buffer_handles.create();
-    errdefer buffer_handles.destroy(handle);
+    const buffer = try vk.gpa.create(Buffer);
+    errdefer vk.gpa.destroy(buffer);
 
-    var result_buffer: Buffer = undefined;
     switch (location) {
         .device => {
-            result_buffer = try createBuffer(
+            buffer.* = try createBuffer(
                 @intCast(size),
                 buffer_usage_flags | c.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
                 options.debug_name,
             );
-            errdefer destroyBuffer(&result_buffer);
-
-            buffers.setValue(handle, result_buffer);
+            errdefer destroyBuffer(buffer);
         },
         .host => {
-            result_buffer = try createBuffer(
+            buffer.* = try createBuffer(
                 @intCast(size),
                 buffer_usage_flags,
                 c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
                 options.debug_name,
             );
-            errdefer destroyBuffer(&result_buffer);
+            errdefer destroyBuffer(buffer);
 
             var mapped_data: [*c]u8 = undefined;
             try vk.device.mapMemory(
-                result_buffer.memory,
+                buffer.memory,
                 0,
                 size,
                 0,
                 @ptrCast(&mapped_data),
             );
-            errdefer vk.device.unmapMemory(result_buffer.memory);
+            errdefer vk.device.unmapMemory(buffer.memory);
 
-            result_buffer.mapped_data = mapped_data;
-            result_buffer.mapped_data_size = size;
-
-            buffers.setValue(handle, result_buffer);
+            buffer.mapped_data = mapped_data;
+            buffer.mapped_data_size = size;
         },
     }
 
     vk.log.debug("Created buffer:", .{});
-    vk.log.debug("  - Handle: {d}", .{handle});
     if (options.debug_name) |name| {
-        try vk.debug.setObjectName(c.VK_OBJECT_TYPE_BUFFER, result_buffer.handle, name);
+        try vk.debug.setObjectName(c.VK_OBJECT_TYPE_BUFFER, buffer.buffer, name);
         vk.log.debug("  - Name: {s}", .{name});
     }
     vk.log.debug("  - Size: {s}", .{std.fmt.fmtIntSizeDec(size)});
@@ -200,31 +182,37 @@ pub fn create(
     vk.log.debug("  - Usage index: {}", .{usage.index});
     vk.log.debug("  - Location: {s}", .{location.name()});
 
-    return handle;
+    return .{ .handle = @ptrCast(buffer) };
 }
 
 pub fn destroy(handle: gfx.BufferHandle) void {
-    buffers_to_destroy[buffers_to_destroy_count] = buffers.value(handle);
-    buffers_to_destroy_count += 1;
+    const buffer = bufferFromHandle(handle);
+    _buffers_to_destroy.append(buffer) catch |err| {
+        vk.log.err("Failed to append buffer to destroy list: {any}", .{err});
+        return;
+    };
 
-    buffer_handles.destroy(handle);
-
-    vk.log.debug("Destroyed buffer with handle {d}", .{handle});
+    if (buffer.debug_name) |name| {
+        vk.log.debug("Buffer '{s}' queued for destruction", .{name});
+    }
 }
 
 pub fn destroyPendingResources() void {
-    for (0..buffers_to_destroy_count) |i| {
-        if (buffers_to_destroy[i].property_flags & c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT != 0) {
-            vk.device.unmapMemory(buffers_to_destroy[i].memory);
+    for (_buffers_to_destroy.items) |buffer| {
+        if (buffer.property_flags & c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT != 0) {
+            vk.device.unmapMemory(buffer.memory);
         }
-        destroyBuffer(&buffers_to_destroy[i]);
+        if (buffer.debug_name) |name| {
+            vk.log.debug("Buffer '{s}' destroyed", .{name});
+        }
+        destroyBuffer(buffer);
+
+        vk.gpa.destroy(buffer);
     }
-    buffers_to_destroy_count = 0;
 }
 
-pub inline fn buffer(handle: gfx.BufferHandle) c.VkBuffer {
-    const buf = buffers.valuePtr(handle);
-    return buf.handle;
+pub inline fn bufferFromHandle(handle: gfx.BufferHandle) *Buffer {
+    return @ptrCast(@alignCast(handle.handle));
 }
 
 pub fn update(
@@ -235,15 +223,15 @@ pub fn update(
     offset: u32,
     size: u32,
 ) !void {
-    const buf = buffers.valuePtr(handle);
-    if (buf.property_flags & c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT != 0) {
-        _ = try reader.readAll(buf.mapped_data[offset .. size + offset]);
+    const buffer = bufferFromHandle(handle);
+    if (buffer.property_flags & c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT != 0) {
+        _ = try reader.readAll(buffer.mapped_data[offset .. size + offset]);
     } else {
         var staging_buffer = try createBuffer(
             @intCast(size),
             c.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            buf.debug_name,
+            buffer.debug_name,
         );
         defer destroyBuffer(&staging_buffer);
 
@@ -262,12 +250,12 @@ pub fn update(
         try copyBuffer(
             command_pool,
             queue,
-            staging_buffer.handle,
-            buf.handle,
+            staging_buffer.buffer,
+            buffer.buffer,
             @intCast(size),
             0,
             offset,
-            buf.debug_name,
+            buffer.debug_name,
         );
     }
 }
@@ -288,15 +276,15 @@ pub fn createBuffer(
         },
     );
 
-    var handle: c.VkBuffer = undefined;
+    var buffer: c.VkBuffer = undefined;
     try vk.device.createBuffer(
         &buffer_info,
-        &handle,
+        &buffer,
     );
-    errdefer vk.device.destroyBuffer(handle);
+    errdefer vk.device.destroyBuffer(buffer);
 
     var requirements: c.VkMemoryRequirements = undefined;
-    vk.device.getBufferMemoryRequirements(handle, &requirements);
+    vk.device.getBufferMemoryRequirements(buffer, &requirements);
 
     const memory = try allocateMemory(
         &requirements,
@@ -304,10 +292,10 @@ pub fn createBuffer(
     );
     errdefer vk.device.freeMemory(memory);
 
-    try vk.device.bindBufferMemory(handle, memory, 0);
+    try vk.device.bindBufferMemory(buffer, memory, 0);
 
     return Buffer{
-        .handle = handle,
+        .buffer = buffer,
         .memory = memory,
         .property_flags = property_flags,
         .mapped_data = null,
@@ -316,7 +304,7 @@ pub fn createBuffer(
     };
 }
 
-pub fn destroyBuffer(buf: *Buffer) void {
-    vk.device.destroyBuffer(buf.handle);
-    vk.device.freeMemory(buf.memory);
+pub fn destroyBuffer(buffer: *Buffer) void {
+    vk.device.destroyBuffer(buffer.buffer);
+    vk.device.freeMemory(buffer.memory);
 }

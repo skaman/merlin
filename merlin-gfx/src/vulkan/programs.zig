@@ -208,6 +208,7 @@ pub fn create(
     }
 
     const program = try vk.gpa.create(Program);
+    errdefer vk.gpa.destroy(program);
     program.* = .{
         .pipeline_layout = pipeline_layout,
         .vertex_shader = vertex_shader,

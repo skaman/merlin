@@ -33,7 +33,7 @@ pub fn createProgram(_: gfx.ShaderHandle, _: gfx.ShaderHandle, _: gfx.ProgramOpt
 }
 pub fn destroyProgram(_: gfx.ProgramHandle) void {}
 pub fn createBuffer(_: u32, _: gfx.BufferUsage, _: gfx.BufferLocation, _: gfx.BufferOptions) !gfx.BufferHandle {
-    return @enumFromInt(0);
+    return .{ .handle = undefined };
 }
 pub fn destroyBuffer(_: gfx.BufferHandle) void {}
 pub fn updateBuffer(_: gfx.BufferHandle, _: std.io.AnyReader, _: u32, _: u32) !void {}

@@ -66,6 +66,8 @@ pub fn create(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderH
     try vk.device.createShaderModule(&create_info, &module);
 
     const shader = try vk.gpa.create(Shader);
+    errdefer vk.gpa.destroy(shader);
+
     shader.* = .{
         .module = module,
         .input_attributes = undefined,

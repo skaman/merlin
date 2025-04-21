@@ -123,7 +123,7 @@ fn handleBindVertexBuffer(handle: gfx.CommandBufferHandle) !void {
         command_buffer.handle,
         0,
         1,
-        &vk.buffers.buffer(vertex_buffer),
+        &vk.buffers.bufferFromHandle(vertex_buffer).buffer,
         @ptrCast(&offsets),
     );
 
@@ -143,7 +143,7 @@ fn handleBindIndexBuffer(handle: gfx.CommandBufferHandle, index_type: types.Inde
 
     vk.device.cmdBindIndexBuffer(
         command_buffer.handle,
-        vk.buffers.buffer(index_buffer),
+        vk.buffers.bufferFromHandle(index_buffer).buffer,
         index_buffer_offset,
         switch (index_type) {
             .u8 => c.VK_INDEX_TYPE_UINT8_EXT,
@@ -173,7 +173,7 @@ fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.
         switch (descriptor_type) {
             c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
                 std.debug.assert(uniform_binding.* == .uniform_buffer);
-                const buffer = vk.buffers.buffer(uniform_binding.uniform_buffer.buffer_handle);
+                const buffer = vk.buffers.bufferFromHandle(uniform_binding.uniform_buffer.buffer_handle).buffer;
                 const uniform_size = program.uninform_sizes[binding_index];
                 buffer_infos[binding_index] = .{
                     .buffer = buffer,

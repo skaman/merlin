@@ -642,7 +642,7 @@ pub fn create(
 
         vk.device.cmdCopyBufferToImage(
             command_buffer,
-            staging_buffer.handle,
+            staging_buffer.buffer,
             image.image,
             c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             1,
@@ -897,7 +897,7 @@ pub fn createFromKTX(
 
         vk.device.cmdCopyBufferToImage(
             command_buffer,
-            staging_buffer.handle,
+            staging_buffer.buffer,
             image.image,
             c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             @intCast(num_copy_regions),
