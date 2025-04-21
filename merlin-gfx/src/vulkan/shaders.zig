@@ -11,43 +11,32 @@ const vk = @import("vulkan.zig");
 // Structs
 // *********************************************************************************************
 
-const Shader = struct {
-    handle: c.VkShaderModule,
+pub const Shader = struct {
+    module: c.VkShaderModule,
     input_attributes: [vk.pipeline.MaxVertexAttributes]types.ShaderInputAttribute,
     input_attribute_count: u8,
     descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]types.DescriptorSet,
     descriptor_set_count: u8,
+    debug_name: ?[]const u8 = null,
 };
 
 // *********************************************************************************************
 // Globals
 // *********************************************************************************************
 
-var shaders: utils.HandleArray(
-    gfx.ShaderHandle,
-    Shader,
-    gfx.MaxShaderHandles,
-) = undefined;
-
-var shader_handles: utils.HandlePool(
-    gfx.ShaderHandle,
-    gfx.MaxShaderHandles,
-) = undefined;
-
-var shaders_to_destroy: [gfx.MaxShaderHandles]Shader = undefined;
-var shaders_to_destroy_count: u32 = 0;
+var _shaders_to_destroy: std.ArrayList(*Shader) = undefined;
 
 // *********************************************************************************************
 // Public API
 // *********************************************************************************************
 
 pub fn init() void {
-    shader_handles = .init();
-    shaders_to_destroy_count = 0;
+    _shaders_to_destroy = .init(vk.gpa);
+    errdefer _shaders_to_destroy.deinit();
 }
 
 pub fn deinit() void {
-    shader_handles.deinit();
+    _shaders_to_destroy.deinit();
 }
 
 pub fn create(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderHandle {
@@ -76,21 +65,16 @@ pub fn create(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderH
     };
     try vk.device.createShaderModule(&create_info, &module);
 
-    const handle = shader_handles.create();
-    errdefer shader_handles.destroy(handle);
+    const shader = try vk.gpa.create(Shader);
+    shader.* = .{
+        .module = module,
+        .input_attributes = undefined,
+        .input_attribute_count = @intCast(data.input_attributes.len),
+        .descriptor_sets = undefined,
+        .descriptor_set_count = @intCast(data.descriptor_sets.len),
+        .debug_name = null,
+    };
 
-    shaders.setValue(
-        handle,
-        .{
-            .handle = module,
-            .input_attributes = undefined,
-            .input_attribute_count = @intCast(data.input_attributes.len),
-            .descriptor_sets = undefined,
-            .descriptor_set_count = @intCast(data.descriptor_sets.len),
-        },
-    );
-
-    const shader = shaders.valuePtr(handle);
     @memcpy(shader.input_attributes[0..data.input_attributes.len], data.input_attributes);
     @memcpy(shader.descriptor_sets[0..data.descriptor_sets.len], data.descriptor_sets);
 
@@ -98,8 +82,9 @@ pub fn create(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderH
         .vertex => "vertex",
         .fragment => "fragment",
     }});
-    vk.log.debug("  - Handle: {d}", .{handle});
+
     if (options.debug_name) |name| {
+        shader.debug_name = try vk.gpa.dupe(u8, name);
         try vk.debug.setObjectName(c.VK_OBJECT_TYPE_SHADER_MODULE, module, name);
         vk.log.debug("  - Name: {s}", .{name});
     }
@@ -115,36 +100,33 @@ pub fn create(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderH
         }
     }
 
-    return handle;
+    return .{ .handle = @ptrCast(shader) };
 }
 
 pub fn destroy(handle: gfx.ShaderHandle) void {
-    shaders_to_destroy[shaders_to_destroy_count] = shaders.value(handle);
-    shaders_to_destroy_count += 1;
+    const shader = shaderFromHandle(handle);
+    _shaders_to_destroy.append(shader) catch |err| {
+        vk.log.err("Failed to append shader to destroy list: {any}", .{err});
+        return;
+    };
 
-    shader_handles.destroy(handle);
-
-    vk.log.debug("Destroyed shader with handle {d}", .{handle});
+    if (shader.debug_name) |name| {
+        vk.log.debug("Shader '{s}' queued for destruction", .{name});
+    }
 }
 
 pub fn destroyPendingResources() void {
-    for (0..shaders_to_destroy_count) |i| {
-        vk.device.destroyShaderModule(shaders_to_destroy[i].handle);
+    for (_shaders_to_destroy.items) |shader| {
+        vk.device.destroyShaderModule(shader.module);
+        if (shader.debug_name) |name| {
+            vk.log.debug("Shader '{s}' destroyed", .{name});
+            vk.gpa.free(name);
+        }
+        vk.gpa.destroy(shader);
     }
-    shaders_to_destroy_count = 0;
+    _shaders_to_destroy.clearRetainingCapacity();
 }
 
-pub inline fn getShaderModule(handle: gfx.ShaderHandle) c.VkShaderModule {
-    const shader = shaders.valuePtr(handle);
-    return shader.handle;
-}
-
-pub inline fn getInputAttributes(handle: gfx.ShaderHandle) []types.ShaderInputAttribute {
-    const shader = shaders.valuePtr(handle);
-    return shader.input_attributes[0..shader.input_attribute_count];
-}
-
-pub inline fn getDescriptorSets(handle: gfx.ShaderHandle) []types.DescriptorSet {
-    const shader = shaders.valuePtr(handle);
-    return shader.descriptor_sets[0..shader.descriptor_set_count];
+pub inline fn shaderFromHandle(handle: gfx.ShaderHandle) *Shader {
+    return @ptrCast(@alignCast(handle.handle));
 }

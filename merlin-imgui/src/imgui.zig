@@ -598,6 +598,7 @@ pub fn init(options: Options) !void {
     program_handle = try gfx.createProgram(
         vert_shader_handle,
         frag_shader_handle,
+        .{ .debug_name = "ImGui Program" },
     );
     errdefer gfx.destroyProgram(program_handle);
 

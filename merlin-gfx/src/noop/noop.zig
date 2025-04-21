@@ -20,7 +20,7 @@ pub fn currentFrameInFlight() u32 {
     return 0;
 }
 pub fn createShader(_: std.io.AnyReader, _: gfx.ShaderOptions) !gfx.ShaderHandle {
-    return @enumFromInt(0);
+    return .{ .handle = undefined };
 }
 pub fn destroyShader(_: gfx.ShaderHandle) void {}
 pub fn createPipelineLayout(_: types.VertexLayout) !gfx.PipelineLayoutHandle {
@@ -28,8 +28,8 @@ pub fn createPipelineLayout(_: types.VertexLayout) !gfx.PipelineLayoutHandle {
 }
 
 pub fn destroyPipelineLayout(_: gfx.PipelineLayoutHandle) void {}
-pub fn createProgram(_: gfx.ShaderHandle, _: gfx.ShaderHandle) !gfx.ProgramHandle {
-    return @enumFromInt(0);
+pub fn createProgram(_: gfx.ShaderHandle, _: gfx.ShaderHandle, _: gfx.ProgramOptions) !gfx.ProgramHandle {
+    return .{ .handle = undefined };
 }
 pub fn destroyProgram(_: gfx.ProgramHandle) void {}
 pub fn createBuffer(_: u32, _: gfx.BufferUsage, _: gfx.BufferLocation, _: gfx.BufferOptions) !gfx.BufferHandle {

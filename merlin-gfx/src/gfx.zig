@@ -13,16 +13,17 @@ const vulkan = @import("vulkan/vulkan.zig");
 
 pub const log = std.log.scoped(.gfx);
 
-pub const ShaderHandle = enum(u16) { _ };
-pub const ProgramHandle = enum(u16) { _ };
+pub const ShaderHandle = packed struct { handle: *anyopaque };
+pub const ProgramHandle = packed struct { handle: *anyopaque };
+
 pub const BufferHandle = enum(u16) { _ };
 pub const UniformHandle = enum(u16) { _ };
 pub const TextureHandle = enum(u16) { _ };
 pub const CommandBufferHandle = enum(u16) { _ };
 pub const PipelineLayoutHandle = enum(u16) { _ };
 
-pub const MaxShaderHandles = 512;
-pub const MaxProgramHandles = 512;
+//pub const MaxShaderHandles = 512;
+//pub const MaxProgramHandles = 512;
 pub const MaxBufferHandles = 512;
 pub const MaxUniformHandles = 512;
 pub const MaxTextureHandles = 512;
@@ -95,6 +96,10 @@ pub const TextureTiling = enum(u8) {
 };
 
 pub const ShaderOptions = struct {
+    debug_name: ?[]const u8 = null,
+};
+
+pub const ProgramOptions = struct {
     debug_name: ?[]const u8 = null,
 };
 
@@ -294,7 +299,7 @@ const VTab = struct {
     destroyShader: *const fn (handle: ShaderHandle) void,
     createPipelineLayout: *const fn (vertex_layout: types.VertexLayout) anyerror!PipelineLayoutHandle,
     destroyPipelineLayout: *const fn (handle: PipelineLayoutHandle) void,
-    createProgram: *const fn (vertex_shader: ShaderHandle, fragment_shader: ShaderHandle) anyerror!ProgramHandle,
+    createProgram: *const fn (vertex_shader: ShaderHandle, fragment_shader: ShaderHandle, options: ProgramOptions) anyerror!ProgramHandle,
     destroyProgram: *const fn (handle: ProgramHandle) void,
     createBuffer: *const fn (size: u32, usage: BufferUsage, location: BufferLocation, options: BufferOptions) anyerror!BufferHandle,
     destroyBuffer: *const fn (handle: BufferHandle) void,
@@ -499,10 +504,12 @@ pub inline fn destroyShader(handle: ShaderHandle) void {
 pub inline fn createProgram(
     vertex_shader: ShaderHandle,
     fragment_shader: ShaderHandle,
+    options: ProgramOptions,
 ) !ProgramHandle {
     return try v_tab.createProgram(
         vertex_shader,
         fragment_shader,
+        options,
     );
 }
 

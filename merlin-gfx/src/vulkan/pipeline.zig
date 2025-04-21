@@ -111,7 +111,7 @@ fn blendOpToVulkan(blend_op: gfx.BlendOp) c.VkBlendOp {
 }
 
 fn create(
-    program: gfx.ProgramHandle,
+    program_handle: gfx.ProgramHandle,
     render_pass: c.VkRenderPass,
     vertex_layout: types.VertexLayout,
     debug_options: gfx.DebugOptions,
@@ -126,12 +126,15 @@ fn create(
         },
     );
 
-    const vertex_shader = vk.programs.vertexShader(program);
-    const fragment_shader = vk.programs.fragmentShader(program);
+    const program = vk.programs.programFromHandle(program_handle);
+    const vertex_shader = program.vertex_shader;
+    const fragment_shader = program.fragment_shader;
+
+    const vertex_shader_input_attributes = vertex_shader.input_attributes[0..vertex_shader.input_attribute_count];
 
     var attribute_descriptions: [MaxVertexAttributes]c.VkVertexInputAttributeDescription = undefined;
     var attribute_count: u32 = 0;
-    for (vk.shaders.getInputAttributes(vertex_shader)) |input_attribute| {
+    for (vertex_shader_input_attributes) |input_attribute| {
         const attribute_data = vertex_layout.attributes[@intFromEnum(input_attribute.attribute)];
         if (attribute_data.num == 0) {
             vk.log.warn("Attribute {s} not found in vertex layout", .{input_attribute.attribute.name()});
@@ -285,13 +288,13 @@ fn create(
         c.VkPipelineShaderStageCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = c.VK_SHADER_STAGE_VERTEX_BIT,
-            .module = vk.shaders.getShaderModule(vertex_shader),
+            .module = vertex_shader.module,
             .pName = "main",
         },
         c.VkPipelineShaderStageCreateInfo{
             .sType = c.VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
             .stage = c.VK_SHADER_STAGE_FRAGMENT_BIT,
-            .module = vk.shaders.getShaderModule(fragment_shader),
+            .module = fragment_shader.module,
             .pName = "main",
         },
     };
@@ -310,7 +313,7 @@ fn create(
             .pDepthStencilState = &depth_stencil,
             .pColorBlendState = &color_blending,
             .pDynamicState = &dynamic_state,
-            .layout = vk.programs.pipelineLayout(program),
+            .layout = program.pipeline_layout,
             .renderPass = render_pass,
             .subpass = 0,
             //.basePipelineHandle = c.VK_NULL_HANDLE,

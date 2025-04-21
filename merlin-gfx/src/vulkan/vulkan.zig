@@ -434,11 +434,13 @@ pub fn destroyPipelineLayout(handle: gfx.PipelineLayoutHandle) void {
 pub fn createProgram(
     vertex_shader: gfx.ShaderHandle,
     fragment_shader: gfx.ShaderHandle,
+    options: gfx.ProgramOptions,
 ) !gfx.ProgramHandle {
     return programs.create(
         vertex_shader,
         fragment_shader,
         main_descriptor_pool,
+        options,
     );
 }
 

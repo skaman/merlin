@@ -11,10 +11,10 @@ const vk = @import("vulkan.zig");
 // Structs
 // *********************************************************************************************
 
-const Program = struct {
+pub const Program = struct {
     pipeline_layout: c.VkPipelineLayout,
-    vertex_shader: gfx.ShaderHandle,
-    fragment_shader: gfx.ShaderHandle,
+    vertex_shader: *vk.shaders.Shader,
+    fragment_shader: *vk.shaders.Shader,
     descriptor_pool: c.VkDescriptorPool,
     descriptor_set_layout: c.VkDescriptorSetLayout,
 
@@ -24,25 +24,15 @@ const Program = struct {
     uninform_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32,
 
     layout_count: u32,
+
+    debug_name: ?[]const u8 = null,
 };
 
 // *********************************************************************************************
 // Globals
 // *********************************************************************************************
 
-var programs: utils.HandleArray(
-    gfx.ProgramHandle,
-    Program,
-    gfx.MaxProgramHandles,
-) = undefined;
-
-var program_handles: utils.HandlePool(
-    gfx.ProgramHandle,
-    gfx.MaxProgramHandles,
-) = undefined;
-
-var programs_to_destroy: [gfx.MaxProgramHandles]Program = undefined;
-var programs_to_destroy_count: u32 = 0;
+var _programs_to_destroy: std.ArrayList(*Program) = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -70,25 +60,29 @@ fn convertDescriptorSetLayoutBinding(binding: types.DescriptorBinding) c.VkDescr
 // *********************************************************************************************
 
 pub fn init() void {
-    program_handles = .init();
-    programs_to_destroy_count = 0;
+    _programs_to_destroy = .init(vk.gpa);
+    errdefer _programs_to_destroy.deinit();
 }
 
 pub fn deinit() void {
-    program_handles.deinit();
+    _programs_to_destroy.deinit();
 }
 
 pub fn create(
-    vertex_shader: gfx.ShaderHandle,
-    fragment_shader: gfx.ShaderHandle,
+    vertex_shader_handle: gfx.ShaderHandle,
+    fragment_shader_handle: gfx.ShaderHandle,
     descriptor_pool: c.VkDescriptorPool,
+    options: gfx.ProgramOptions,
 ) !gfx.ProgramHandle {
     var layouts: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorSetLayoutBinding = undefined;
     var layout_names: [vk.pipeline.MaxDescriptorSetBindings][]const u8 = undefined;
     var layout_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32 = undefined;
     var layout_count: u32 = 0;
 
-    const vertex_shader_descriptor_sets = vk.shaders.getDescriptorSets(vertex_shader);
+    const vertex_shader = vk.shaders.shaderFromHandle(vertex_shader_handle);
+    const fragment_shader = vk.shaders.shaderFromHandle(fragment_shader_handle);
+
+    const vertex_shader_descriptor_sets = vertex_shader.descriptor_sets[0..vertex_shader.descriptor_set_count];
     for (vertex_shader_descriptor_sets) |descriptor_set| {
         if (descriptor_set.set != 0) {
             vk.log.err("Vertex shader descriptor set index must be 0", .{});
@@ -104,7 +98,7 @@ pub fn create(
         }
     }
 
-    const fragment_shader_descriptor_sets = vk.shaders.getDescriptorSets(fragment_shader);
+    const fragment_shader_descriptor_sets = fragment_shader.descriptor_sets[0..fragment_shader.descriptor_set_count];
     for (fragment_shader_descriptor_sets) |descriptor_set| {
         for (descriptor_set.bindings) |binding| {
             if (descriptor_set.set != 0) {
@@ -213,89 +207,62 @@ pub fn create(
         );
     }
 
-    const handle = program_handles.create();
-    errdefer program_handles.destroy(handle);
-
-    programs.setValue(
-        handle,
-        .{
-            .pipeline_layout = pipeline_layout,
-            .vertex_shader = vertex_shader,
-            .fragment_shader = fragment_shader,
-            .descriptor_pool = descriptor_pool,
-            .descriptor_set_layout = descriptor_set_layout,
-            .uniform_handles = uniform_handles,
-            .write_descriptor_sets = write_descriptor_sets,
-            .descriptor_types = descriptor_types,
-            .uninform_sizes = uniform_sizes,
-            .layout_count = layout_count,
-        },
-    );
+    const program = try vk.gpa.create(Program);
+    program.* = .{
+        .pipeline_layout = pipeline_layout,
+        .vertex_shader = vertex_shader,
+        .fragment_shader = fragment_shader,
+        .descriptor_pool = descriptor_pool,
+        .descriptor_set_layout = descriptor_set_layout,
+        .uniform_handles = uniform_handles,
+        .write_descriptor_sets = write_descriptor_sets,
+        .descriptor_types = descriptor_types,
+        .uninform_sizes = uniform_sizes,
+        .layout_count = layout_count,
+        .debug_name = null,
+    };
 
     vk.log.debug("Created program:", .{});
-    vk.log.debug("  - Handle: {d}", .{handle});
-    vk.log.debug("  - Vertex shader handle: {d}", .{vertex_shader});
-    vk.log.debug("  - Fragment shader handle: {d}", .{fragment_shader});
+    if (options.debug_name) |name| {
+        program.debug_name = try vk.gpa.dupe(u8, name);
+        vk.log.debug("  - Name: {s}", .{name});
+    }
+    if (vertex_shader.debug_name) |name| {
+        vk.log.debug("  - Vertex shader name: {s}", .{name});
+    }
+    if (fragment_shader.debug_name) |name| {
+        vk.log.debug("  - Fragment shader name: {s}", .{name});
+    }
 
-    return handle;
+    return .{ .handle = @ptrCast(program) };
 }
 
 pub fn destroy(handle: gfx.ProgramHandle) void {
-    programs_to_destroy[programs_to_destroy_count] = programs.value(handle);
-    programs_to_destroy_count += 1;
+    const program = programFromHandle(handle);
+    _programs_to_destroy.append(program) catch |err| {
+        vk.log.err("Failed to append program to destroy list: {any}", .{err});
+        return;
+    };
 
-    program_handles.destroy(handle);
-
-    vk.log.debug("Destroyed program with handle {d}", .{handle});
+    if (program.debug_name) |name| {
+        vk.log.debug("Program '{s}' queued for destruction", .{name});
+    }
 }
 
 pub fn destroyPendingResources() void {
-    for (0..programs_to_destroy_count) |i| {
-        const program = &programs_to_destroy[i];
+    for (_programs_to_destroy.items) |program| {
         vk.device.destroyPipelineLayout(program.pipeline_layout);
         if (program.descriptor_set_layout) |descriptor_set_layout_value| {
             vk.device.destroyDescriptorSetLayout(descriptor_set_layout_value);
         }
+        if (program.debug_name) |name| {
+            vk.log.debug("Program '{s}' destroyed", .{name});
+            vk.gpa.free(name);
+        }
+        vk.gpa.destroy(program);
     }
-    programs_to_destroy_count = 0;
 }
 
-pub inline fn vertexShader(handle: gfx.ProgramHandle) gfx.ShaderHandle {
-    const program = programs.valuePtr(handle);
-    return program.vertex_shader;
-}
-
-pub inline fn fragmentShader(handle: gfx.ProgramHandle) gfx.ShaderHandle {
-    const program = programs.valuePtr(handle);
-    return program.fragment_shader;
-}
-
-pub inline fn pipelineLayout(handle: gfx.ProgramHandle) c.VkPipelineLayout {
-    const program = programs.valuePtr(handle);
-    return program.pipeline_layout;
-}
-
-pub inline fn layoutCount(handle: gfx.ProgramHandle) u32 {
-    const program = programs.valuePtr(handle);
-    return program.layout_count;
-}
-
-pub inline fn writeDescriptorSets(handle: gfx.ProgramHandle) [*]c.VkWriteDescriptorSet {
-    const program = programs.valuePtr(handle);
-    return &program.write_descriptor_sets;
-}
-
-pub inline fn uniformHandle(handle: gfx.ProgramHandle, binding_index: u32) gfx.UniformHandle {
-    const program = programs.valuePtr(handle);
-    return program.uniform_handles[binding_index];
-}
-
-pub inline fn uniformSize(handle: gfx.ProgramHandle, binding_index: u32) u32 {
-    const program = programs.valuePtr(handle);
-    return program.uninform_sizes[binding_index];
-}
-
-pub inline fn descriptorType(handle: gfx.ProgramHandle, binding_index: u32) c.VkDescriptorType {
-    const program = programs.valuePtr(handle);
-    return program.descriptor_types[binding_index];
+pub inline fn programFromHandle(handle: gfx.ProgramHandle) *Program {
+    return @ptrCast(@alignCast(handle.handle));
 }

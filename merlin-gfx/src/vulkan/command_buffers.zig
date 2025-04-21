@@ -158,22 +158,23 @@ fn handleBindIndexBuffer(handle: gfx.CommandBufferHandle, index_type: types.Inde
 
 fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.ProgramHandle) !void {
     const command_buffer = command_buffers.valuePtr(handle);
-    const pipeline_layout = vk.programs.pipelineLayout(program_handle);
-    const layout_count = vk.programs.layoutCount(program_handle);
-    var write_descriptor_sets = vk.programs.writeDescriptorSets(program_handle);
+    const program = vk.programs.programFromHandle(program_handle);
+    const pipeline_layout = program.pipeline_layout;
+    const layout_count = program.layout_count;
+    var write_descriptor_sets = &program.write_descriptor_sets;
     var buffer_infos: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorBufferInfo = undefined;
     var image_infos: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorImageInfo = undefined;
 
     for (0..layout_count) |binding_index| {
-        const uniform_handle = vk.programs.uniformHandle(program_handle, @intCast(binding_index));
-        const descriptor_type = vk.programs.descriptorType(program_handle, @intCast(binding_index));
+        const uniform_handle = program.uniform_handles[binding_index];
+        const descriptor_type = program.descriptor_types[binding_index];
         const uniform_binding = command_buffer.current_uniform_bindings.valuePtr(uniform_handle);
 
         switch (descriptor_type) {
             c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
                 std.debug.assert(uniform_binding.* == .uniform_buffer);
                 const buffer = vk.buffers.buffer(uniform_binding.uniform_buffer.buffer_handle);
-                const uniform_size = vk.programs.uniformSize(program_handle, @intCast(binding_index));
+                const uniform_size = program.uninform_sizes[binding_index];
                 buffer_infos[binding_index] = .{
                     .buffer = buffer,
                     .offset = uniform_binding.uniform_buffer.offset,
@@ -551,7 +552,7 @@ pub fn draw(
         current_debug_options,
         current_render_options,
     ) catch {
-        vk.log.err("Failed to bind Vulkan program: {d}", .{current_program.?});
+        vk.log.err("Failed to bind Vulkan program", .{});
         return;
     };
 
@@ -596,7 +597,7 @@ pub fn drawIndexed(
         current_debug_options,
         current_render_options,
     ) catch {
-        vk.log.err("Failed to bind Vulkan program: {d}", .{current_program.?});
+        vk.log.err("Failed to bind Vulkan program", .{});
         return;
     };
 
