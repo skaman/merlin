@@ -18,12 +18,8 @@ pub const ProgramHandle = packed struct { handle: *anyopaque };
 pub const BufferHandle = packed struct { handle: *anyopaque };
 pub const UniformHandle = packed struct { handle: *anyopaque };
 pub const TextureHandle = packed struct { handle: *anyopaque };
-
-pub const CommandBufferHandle = enum(u16) { _ };
-pub const PipelineLayoutHandle = enum(u16) { _ };
-
-pub const MaxCommandBufferHandles = 512;
-pub const MaxPipelineLayoutHandles = 512;
+pub const PipelineLayoutHandle = packed struct { handle: *anyopaque };
+pub const CommandBufferHandle = packed struct { handle: *anyopaque };
 
 // *********************************************************************************************
 // Structs and Enums

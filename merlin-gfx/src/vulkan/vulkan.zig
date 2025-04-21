@@ -547,6 +547,7 @@ pub fn endFrame() !void {
     const wait_stages = [_]c.VkPipelineStageFlags{c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     const wait_semaphores = [_]c.VkSemaphore{image_available_semaphores[current_frame_in_flight]};
     const signal_semaphores = [_]c.VkSemaphore{render_finished_semaphores[current_frame_in_flight]};
+    const command_buffer = command_buffers.commandBufferFromHandle(main_command_buffers[current_frame_in_flight]);
     const submit_info = std.mem.zeroInit(
         c.VkSubmitInfo,
         .{
@@ -555,7 +556,7 @@ pub fn endFrame() !void {
             .pWaitSemaphores = &wait_semaphores,
             .pWaitDstStageMask = &wait_stages,
             .commandBufferCount = 1,
-            .pCommandBuffers = &command_buffers.commandBuffer(main_command_buffers[current_frame_in_flight]),
+            .pCommandBuffers = &command_buffer.handle,
             .signalSemaphoreCount = 1,
             .pSignalSemaphores = &signal_semaphores,
         },

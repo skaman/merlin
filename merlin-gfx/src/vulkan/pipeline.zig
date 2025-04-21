@@ -388,11 +388,11 @@ pub fn pipeline(
         return pipeline_value.?;
     }
 
-    const vertex_layout = vk.pipeline_layouts.layout(layout_handle);
+    const pipeline_layout = vk.pipeline_layouts.pipelineLayoutFromHandle(layout_handle);
     pipeline_value = try create(
         program_handle,
         vk.main_render_pass,
-        vertex_layout.*,
+        pipeline_layout.layout,
         debug_options,
         render_options,
     );

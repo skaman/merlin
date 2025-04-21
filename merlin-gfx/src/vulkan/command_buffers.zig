@@ -50,21 +50,6 @@ pub const CommandBuffer = struct {
 };
 
 // *********************************************************************************************
-// Globals
-// *********************************************************************************************
-
-var command_buffers: utils.HandleArray(
-    gfx.CommandBufferHandle,
-    CommandBuffer,
-    gfx.MaxCommandBufferHandles,
-) = undefined;
-
-var command_buffer_handles: utils.HandlePool(
-    gfx.CommandBufferHandle,
-    gfx.MaxCommandBufferHandles,
-) = undefined;
-
-// *********************************************************************************************
 // Private API
 // *********************************************************************************************
 
@@ -75,7 +60,7 @@ fn handleBindPipeline(
     debug_options: gfx.DebugOptions,
     render_options: gfx.RenderOptions,
 ) !void {
-    var command_buffer = command_buffers.valuePtr(handle);
+    var command_buffer = commandBufferFromHandle(handle);
     if (command_buffer.last_pipeline_program == program_handle and
         command_buffer.last_pipeline_layout == layout_handle and
         command_buffer.last_pipeline_debug_options == debug_options and
@@ -104,7 +89,7 @@ fn handleBindPipeline(
 }
 
 fn handleBindVertexBuffer(handle: gfx.CommandBufferHandle) !void {
-    var command_buffer = command_buffers.valuePtr(handle);
+    var command_buffer = commandBufferFromHandle(handle);
     const vertex_buffer = command_buffer.current_vertex_buffer.?;
     const vertex_buffer_offset = command_buffer.current_vertex_buffer_offset;
     if (command_buffer.last_vertex_buffer == vertex_buffer and
@@ -128,7 +113,7 @@ fn handleBindVertexBuffer(handle: gfx.CommandBufferHandle) !void {
 }
 
 fn handleBindIndexBuffer(handle: gfx.CommandBufferHandle, index_type: types.IndexType) !void {
-    var command_buffer = command_buffers.valuePtr(handle);
+    var command_buffer = commandBufferFromHandle(handle);
     const index_buffer = command_buffer.current_index_buffer.?;
     const index_buffer_offset = command_buffer.current_index_buffer_offset;
     if (command_buffer.last_index_buffer == index_buffer and
@@ -153,7 +138,7 @@ fn handleBindIndexBuffer(handle: gfx.CommandBufferHandle, index_type: types.Inde
 }
 
 fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.ProgramHandle) !void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    var command_buffer = commandBufferFromHandle(handle);
     const program = vk.programs.programFromHandle(program_handle);
     const pipeline_layout = program.pipeline_layout;
     const layout_count = program.layout_count;
@@ -216,13 +201,9 @@ fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.
 // Public API
 // *********************************************************************************************
 
-pub fn init() void {
-    command_buffer_handles = .init();
-}
+pub fn init() void {}
 
-pub fn deinit() void {
-    command_buffer_handles.deinit();
-}
+pub fn deinit() void {}
 
 pub fn create(command_pool: c.VkCommandPool) !gfx.CommandBufferHandle {
     var command_buffer: c.VkCommandBuffer = undefined;
@@ -246,35 +227,31 @@ pub fn create(command_pool: c.VkCommandPool) !gfx.CommandBufferHandle {
         &command_buffer,
     );
 
-    const handle = command_buffer_handles.create();
-    errdefer command_buffer_handles.destroy(handle);
+    const command_buffer_ptr = try vk.gpa.create(CommandBuffer);
+    errdefer vk.gpa.destroy(command_buffer_ptr);
 
-    command_buffers.setValue(handle, .{
+    command_buffer_ptr.* = .{
         .command_pool = command_pool,
         .handle = command_buffer,
         .current_uniform_bindings = .init(vk.gpa),
-    });
+    };
 
     vk.log.debug("Created command buffer", .{});
-    //vk.log.debug("  - Handle: {d}", .{handle});
 
-    return handle;
+    return .{ .handle = @ptrCast(command_buffer_ptr) };
 }
 
 pub fn destroy(handle: gfx.CommandBufferHandle) void {
-    const command_buffer = command_buffers.valuePtr(handle);
-
+    const command_buffer = commandBufferFromHandle(handle);
     command_buffer.current_uniform_bindings.deinit();
-
     vk.device.freeCommandBuffers(
         command_buffer.command_pool,
         1,
         &command_buffer.handle,
     );
+    vk.gpa.destroy(command_buffer);
 
-    command_buffer_handles.destroy(handle);
-
-    vk.log.debug("Destroyed command buffer with handle {d}", .{handle});
+    vk.log.debug("Destroyed command buffer", .{});
 }
 
 pub fn beginSingleTimeCommands(command_pool: c.VkCommandPool) !c.VkCommandBuffer {
@@ -348,13 +325,12 @@ pub fn endSingleTimeCommands(
     };
 }
 
-pub fn commandBuffer(handle: gfx.CommandBufferHandle) c.VkCommandBuffer {
-    const command_buffer = command_buffers.valuePtr(handle);
-    return command_buffer.handle;
+pub inline fn commandBufferFromHandle(handle: gfx.CommandBufferHandle) *CommandBuffer {
+    return @ptrCast(@alignCast(handle.handle));
 }
 
 pub fn reset(handle: gfx.CommandBufferHandle) !void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
 
     try vk.device.resetCommandBuffer(command_buffer.handle, 0);
 
@@ -374,7 +350,7 @@ pub fn reset(handle: gfx.CommandBufferHandle) !void {
 }
 
 pub fn begin(handle: gfx.CommandBufferHandle) !void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     const begin_info = std.mem.zeroInit(
         c.VkCommandBufferBeginInfo,
         .{
@@ -386,7 +362,7 @@ pub fn begin(handle: gfx.CommandBufferHandle) !void {
 }
 
 pub fn end(handle: gfx.CommandBufferHandle) !void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     try vk.device.endCommandBuffer(command_buffer.handle);
 }
 
@@ -427,7 +403,7 @@ pub fn beginRenderPass(
             .pClearValues = &clear_values,
         },
     );
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
 
     try vk.device.cmdBeginRenderPass(
         command_buffer.handle,
@@ -437,12 +413,12 @@ pub fn beginRenderPass(
 }
 
 pub fn endRenderPass(handle: gfx.CommandBufferHandle) void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     vk.device.cmdEndRenderPass(command_buffer.handle);
 }
 
 pub fn setViewport(handle: gfx.CommandBufferHandle, viewport: *const c.VkViewport) void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     vk.device.cmdSetViewport(
         command_buffer.handle,
         0,
@@ -452,7 +428,7 @@ pub fn setViewport(handle: gfx.CommandBufferHandle, viewport: *const c.VkViewpor
 }
 
 pub fn setScissor(handle: gfx.CommandBufferHandle, scissor: *const c.VkRect2D) void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     vk.device.cmdSetScissor(
         command_buffer.handle,
         0,
@@ -462,12 +438,12 @@ pub fn setScissor(handle: gfx.CommandBufferHandle, scissor: *const c.VkRect2D) v
 }
 
 pub fn setDebug(handle: gfx.CommandBufferHandle, debug_options: gfx.DebugOptions) void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     command_buffer.current_debug_options = debug_options;
 }
 
 pub fn setRender(handle: gfx.CommandBufferHandle, render_options: gfx.RenderOptions) void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     command_buffer.current_render_options = render_options;
 }
 
@@ -475,7 +451,7 @@ pub fn bindPipelineLayout(
     handle: gfx.CommandBufferHandle,
     pipeline_layout: gfx.PipelineLayoutHandle,
 ) void {
-    var command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     command_buffer.current_pipeline_layout = pipeline_layout;
 }
 
@@ -483,7 +459,7 @@ pub fn bindProgram(
     handle: gfx.CommandBufferHandle,
     program: gfx.ProgramHandle,
 ) void {
-    var command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     command_buffer.current_program = program;
 }
 
@@ -492,7 +468,7 @@ pub fn bindVertexBuffer(
     vertex_buffer: gfx.BufferHandle,
     offset: u32,
 ) void {
-    var command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     command_buffer.current_vertex_buffer = vertex_buffer;
     command_buffer.current_vertex_buffer_offset = offset;
 }
@@ -502,7 +478,7 @@ pub fn bindIndexBuffer(
     index_buffer: gfx.BufferHandle,
     offset: u32,
 ) void {
-    var command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     command_buffer.current_index_buffer = index_buffer;
     command_buffer.current_index_buffer_offset = offset;
 }
@@ -513,7 +489,7 @@ pub fn bindUniformBuffer(
     buffer: gfx.BufferHandle,
     offset: u32,
 ) void {
-    var command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     command_buffer.current_uniform_bindings.put(uniform, .{
         .uniform_buffer = .{
             .buffer_handle = buffer,
@@ -523,12 +499,6 @@ pub fn bindUniformBuffer(
         vk.log.err("Failed to bind uniform buffer", .{});
         return;
     };
-    //command_buffer.current_uniform_bindings.setValue(uniform, .{
-    //    .uniform_buffer = .{
-    //        .buffer_handle = buffer,
-    //        .offset = offset,
-    //    },
-    //});
 }
 
 pub fn bindCombinedSampler(
@@ -536,7 +506,7 @@ pub fn bindCombinedSampler(
     uniform: gfx.UniformHandle,
     texture: gfx.TextureHandle,
 ) void {
-    var command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     command_buffer.current_uniform_bindings.put(uniform, .{
         .combined_sampler = .{
             .texture_handle = texture,
@@ -545,11 +515,6 @@ pub fn bindCombinedSampler(
         vk.log.err("Failed to bind uniform buffer", .{});
         return;
     };
-    //command_buffer.current_uniform_bindings.setValue(uniform, .{
-    //    .combined_sampler = .{
-    //        .texture_handle = texture,
-    //    },
-    //});
 }
 
 pub fn draw(
@@ -559,7 +524,7 @@ pub fn draw(
     first_vertex: u32,
     first_instance: u32,
 ) void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     const current_layout = command_buffer.current_pipeline_layout;
     const current_program = command_buffer.current_program;
     const current_debug_options = command_buffer.current_debug_options;
@@ -604,7 +569,7 @@ pub fn drawIndexed(
     first_instance: u32,
     index_type: types.IndexType,
 ) void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     const current_layout = command_buffer.current_pipeline_layout;
     const current_program = command_buffer.current_program;
     const current_debug_options = command_buffer.current_debug_options;
@@ -651,7 +616,7 @@ pub fn beginDebugLabel(
     label_name: []const u8,
     color: [4]f32,
 ) void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     vk.debug.beginCommandBufferLabel(
         command_buffer.handle,
         label_name,
@@ -660,7 +625,7 @@ pub fn beginDebugLabel(
 }
 
 pub fn endDebugLabel(handle: gfx.CommandBufferHandle) void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     vk.debug.endCommandBufferLabel(command_buffer.handle);
 }
 
@@ -669,7 +634,7 @@ pub fn insertDebugLabel(
     label_name: []const u8,
     color: [4]f32,
 ) void {
-    const command_buffer = command_buffers.valuePtr(handle);
+    const command_buffer = commandBufferFromHandle(handle);
     vk.debug.insertCommandBufferLabel(
         command_buffer.handle,
         label_name,

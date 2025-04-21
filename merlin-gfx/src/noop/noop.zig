@@ -24,7 +24,7 @@ pub fn createShader(_: std.io.AnyReader, _: gfx.ShaderOptions) !gfx.ShaderHandle
 }
 pub fn destroyShader(_: gfx.ShaderHandle) void {}
 pub fn createPipelineLayout(_: types.VertexLayout) !gfx.PipelineLayoutHandle {
-    return @enumFromInt(0);
+    return .{ .handle = undefined };
 }
 
 pub fn destroyPipelineLayout(_: gfx.PipelineLayoutHandle) void {}
