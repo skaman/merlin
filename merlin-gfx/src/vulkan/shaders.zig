@@ -17,7 +17,7 @@ pub const Shader = struct {
     input_attribute_count: u8,
     descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]types.DescriptorSet,
     descriptor_set_count: u8,
-    debug_name: ?[]const u8 = null,
+    debug_name: ?[]const u8,
 };
 
 // *********************************************************************************************

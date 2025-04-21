@@ -25,7 +25,7 @@ pub const Program = struct {
 
     layout_count: u32,
 
-    debug_name: ?[]const u8 = null,
+    debug_name: ?[]const u8,
 };
 
 // *********************************************************************************************
@@ -262,6 +262,7 @@ pub fn destroyPendingResources() void {
         }
         vk.gpa.destroy(program);
     }
+    _programs_to_destroy.clearRetainingCapacity();
 }
 
 pub inline fn programFromHandle(handle: gfx.ProgramHandle) *Program {

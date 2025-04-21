@@ -30,6 +30,7 @@ pub const Texture = struct {
     image_layout: c.VkImageLayout,
     image_view: c.VkImageView,
     sampler: c.VkSampler,
+    debug_name: ?[]const u8,
 };
 
 const UserCallbackDataOptimal = struct {
@@ -79,19 +80,7 @@ const PrepareTextureParams = struct {
 // Globals
 // *********************************************************************************************
 
-var textures: utils.HandleArray(
-    gfx.TextureHandle,
-    Texture,
-    gfx.MaxTextureHandles,
-) = undefined;
-
-var texture_handles: utils.HandlePool(
-    gfx.TextureHandle,
-    gfx.MaxTextureHandles,
-) = undefined;
-
-var textures_to_destroy: [gfx.MaxTextureHandles]Texture = undefined;
-var textures_to_destroy_count: u32 = 0;
+var _textures_to_destroy: std.ArrayList(*Texture) = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -452,11 +441,7 @@ fn createTexture(
     );
     errdefer vk.image.destroyView(texture_image_view);
 
-    const handle = texture_handles.create();
-    errdefer texture_handles.destroy(handle);
-
     vk.log.debug("Created texture:", .{});
-    vk.log.debug("  - Handle: {d}", .{handle});
     if (debug_name) |name| {
         try vk.debug.setObjectName(c.VK_OBJECT_TYPE_IMAGE, image.image, name);
         vk.log.debug("  - Name: {s}", .{name});
@@ -517,17 +502,21 @@ fn createTexture(
     vk.log.debug("  - Anisotropy enable: {}", .{sampler_info.anisotropyEnable == c.VK_TRUE});
     vk.log.debug("  - Max anisotropy: {d}", .{sampler_info.maxAnisotropy});
 
-    textures.setValue(
-        handle,
-        .{
-            .image = image,
-            .image_layout = params.final_layout,
-            .image_view = texture_image_view,
-            .sampler = sampler,
-        },
-    );
+    const texture = try vk.gpa.create(Texture);
+    errdefer vk.gpa.destroy(texture);
 
-    return handle;
+    texture.* = .{
+        .image = image,
+        .image_layout = params.final_layout,
+        .image_view = texture_image_view,
+        .sampler = sampler,
+        .debug_name = if (debug_name) |name|
+            try vk.gpa.dupe(u8, name)
+        else
+            null,
+    };
+
+    return .{ .handle = @ptrCast(texture) };
 }
 
 // *********************************************************************************************
@@ -535,12 +524,12 @@ fn createTexture(
 // *********************************************************************************************
 
 pub fn init() void {
-    texture_handles = .init();
-    textures_to_destroy_count = 0;
+    _textures_to_destroy = .init(vk.gpa);
+    errdefer _textures_to_destroy.deinit();
 }
 
 pub fn deinit() void {
-    texture_handles.deinit();
+    _textures_to_destroy.deinit();
 }
 
 pub fn create(
@@ -1027,35 +1016,30 @@ pub fn createFromKTX(
 }
 
 pub fn destroy(handle: gfx.TextureHandle) void {
-    textures_to_destroy[textures_to_destroy_count] = textures.value(handle);
-    textures_to_destroy_count += 1;
+    const texture = textureFromHandle(handle);
+    _textures_to_destroy.append(texture) catch |err| {
+        vk.log.err("Failed to append texture to destroy list: {any}", .{err});
+        return;
+    };
 
-    texture_handles.destroy(handle);
-
-    vk.log.debug("Destroyed texture with handle {d}", .{handle});
+    if (texture.debug_name) |name| {
+        vk.log.debug("Texture '{s}' queued for destruction", .{name});
+    }
 }
 
 pub fn destroyPendingResources() void {
-    for (0..textures_to_destroy_count) |i| {
-        const texture = &textures_to_destroy[i];
+    for (_textures_to_destroy.items) |texture| {
         vk.device.destroySampler(texture.sampler);
         vk.image.destroyView(texture.image_view);
         vk.image.destroy(texture.image);
+        if (texture.debug_name) |name| {
+            vk.log.debug("Texture '{s}' destroyed", .{name});
+            vk.gpa.free(name);
+        }
+        vk.gpa.destroy(texture);
     }
-    textures_to_destroy_count = 0;
 }
 
-pub inline fn getImageLayout(handle: gfx.TextureHandle) c.VkImageLayout {
-    const texture = textures.valuePtr(handle);
-    return texture.image_layout;
-}
-
-pub inline fn getImageView(handle: gfx.TextureHandle) c.VkImageView {
-    const texture = textures.valuePtr(handle);
-    return texture.image_view;
-}
-
-pub inline fn getSampler(handle: gfx.TextureHandle) c.VkSampler {
-    const texture = textures.valuePtr(handle);
-    return texture.sampler;
+pub inline fn textureFromHandle(handle: gfx.TextureHandle) *Texture {
+    return @ptrCast(@alignCast(handle.handle));
 }

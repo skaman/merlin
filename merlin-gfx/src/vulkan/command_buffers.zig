@@ -37,11 +37,7 @@ pub const CommandBuffer = struct {
     current_vertex_buffer_offset: u32 = 0,
     current_index_buffer: ?gfx.BufferHandle = null,
     current_index_buffer_offset: u32 = 0,
-    current_uniform_bindings: utils.HandleArray(
-        gfx.UniformHandle,
-        UniformBinding,
-        gfx.MaxUniformHandles,
-    ) = undefined,
+    current_uniform_bindings: std.AutoHashMap(gfx.UniformHandle, UniformBinding) = undefined,
 
     last_pipeline_layout: ?gfx.PipelineLayoutHandle = null,
     last_pipeline_program: ?gfx.ProgramHandle = null,
@@ -168,11 +164,14 @@ fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.
     for (0..layout_count) |binding_index| {
         const uniform_handle = program.uniform_handles[binding_index];
         const descriptor_type = program.descriptor_types[binding_index];
-        const uniform_binding = command_buffer.current_uniform_bindings.valuePtr(uniform_handle);
+        const uniform_binding = command_buffer.current_uniform_bindings.get(uniform_handle) orelse {
+            vk.log.err("Failed to find uniform binding for handle", .{});
+            return error.UniformBindingNotFound;
+        };
 
         switch (descriptor_type) {
             c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
-                std.debug.assert(uniform_binding.* == .uniform_buffer);
+                std.debug.assert(uniform_binding == .uniform_buffer);
                 const buffer = vk.buffers.bufferFromHandle(uniform_binding.uniform_buffer.buffer_handle).buffer;
                 const uniform_size = program.uninform_sizes[binding_index];
                 buffer_infos[binding_index] = .{
@@ -183,12 +182,13 @@ fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.
                 write_descriptor_sets[binding_index].pBufferInfo = &buffer_infos[binding_index];
             },
             c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
-                std.debug.assert(uniform_binding.* == .combined_sampler);
+                std.debug.assert(uniform_binding == .combined_sampler);
                 const texture_handle = uniform_binding.combined_sampler.texture_handle;
+                const texture = vk.textures.textureFromHandle(texture_handle);
                 image_infos[binding_index] = .{
-                    .imageLayout = vk.textures.getImageLayout(texture_handle),
-                    .imageView = vk.textures.getImageView(texture_handle),
-                    .sampler = vk.textures.getSampler(texture_handle),
+                    .imageLayout = texture.image_layout,
+                    .imageView = texture.image_view,
+                    .sampler = texture.sampler,
                 };
                 write_descriptor_sets[binding_index].pImageInfo = &image_infos[binding_index];
             },
@@ -252,16 +252,19 @@ pub fn create(command_pool: c.VkCommandPool) !gfx.CommandBufferHandle {
     command_buffers.setValue(handle, .{
         .command_pool = command_pool,
         .handle = command_buffer,
+        .current_uniform_bindings = .init(vk.gpa),
     });
 
-    vk.log.debug("Created command buffer:", .{});
-    vk.log.debug("  - Handle: {d}", .{handle});
+    vk.log.debug("Created command buffer", .{});
+    //vk.log.debug("  - Handle: {d}", .{handle});
 
     return handle;
 }
 
 pub fn destroy(handle: gfx.CommandBufferHandle) void {
     const command_buffer = command_buffers.valuePtr(handle);
+
+    command_buffer.current_uniform_bindings.deinit();
 
     vk.device.freeCommandBuffers(
         command_buffer.command_pool,
@@ -511,12 +514,21 @@ pub fn bindUniformBuffer(
     offset: u32,
 ) void {
     var command_buffer = command_buffers.valuePtr(handle);
-    command_buffer.current_uniform_bindings.setValue(uniform, .{
+    command_buffer.current_uniform_bindings.put(uniform, .{
         .uniform_buffer = .{
             .buffer_handle = buffer,
             .offset = offset,
         },
-    });
+    }) catch {
+        vk.log.err("Failed to bind uniform buffer", .{});
+        return;
+    };
+    //command_buffer.current_uniform_bindings.setValue(uniform, .{
+    //    .uniform_buffer = .{
+    //        .buffer_handle = buffer,
+    //        .offset = offset,
+    //    },
+    //});
 }
 
 pub fn bindCombinedSampler(
@@ -525,11 +537,19 @@ pub fn bindCombinedSampler(
     texture: gfx.TextureHandle,
 ) void {
     var command_buffer = command_buffers.valuePtr(handle);
-    command_buffer.current_uniform_bindings.setValue(uniform, .{
+    command_buffer.current_uniform_bindings.put(uniform, .{
         .combined_sampler = .{
             .texture_handle = texture,
         },
-    });
+    }) catch {
+        vk.log.err("Failed to bind uniform buffer", .{});
+        return;
+    };
+    //command_buffer.current_uniform_bindings.setValue(uniform, .{
+    //    .combined_sampler = .{
+    //        .texture_handle = texture,
+    //    },
+    //});
 }
 
 pub fn draw(

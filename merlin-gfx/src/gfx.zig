@@ -15,18 +15,13 @@ pub const log = std.log.scoped(.gfx);
 
 pub const ShaderHandle = packed struct { handle: *anyopaque };
 pub const ProgramHandle = packed struct { handle: *anyopaque };
+pub const BufferHandle = packed struct { handle: *anyopaque };
+pub const UniformHandle = packed struct { handle: *anyopaque };
+pub const TextureHandle = packed struct { handle: *anyopaque };
 
-pub const BufferHandle = enum(u16) { _ };
-pub const UniformHandle = enum(u16) { _ };
-pub const TextureHandle = enum(u16) { _ };
 pub const CommandBufferHandle = enum(u16) { _ };
 pub const PipelineLayoutHandle = enum(u16) { _ };
 
-//pub const MaxShaderHandles = 512;
-//pub const MaxProgramHandles = 512;
-pub const MaxBufferHandles = 512;
-pub const MaxUniformHandles = 512;
-pub const MaxTextureHandles = 512;
 pub const MaxCommandBufferHandles = 512;
 pub const MaxPipelineLayoutHandles = 512;
 

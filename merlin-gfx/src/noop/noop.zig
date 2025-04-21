@@ -38,14 +38,14 @@ pub fn createBuffer(_: u32, _: gfx.BufferUsage, _: gfx.BufferLocation, _: gfx.Bu
 pub fn destroyBuffer(_: gfx.BufferHandle) void {}
 pub fn updateBuffer(_: gfx.BufferHandle, _: std.io.AnyReader, _: u32, _: u32) !void {}
 pub fn createTexture(_: std.io.AnyReader, _: u32, _: gfx.TextureOptions) !gfx.TextureHandle {
-    return @enumFromInt(0);
+    return .{ .handle = undefined };
 }
 pub fn createTextureFromKTX(_: std.io.AnyReader, _: u32, _: gfx.TextureKTXOptions) !gfx.TextureHandle {
-    return @enumFromInt(0);
+    return .{ .handle = undefined };
 }
 pub fn destroyTexture(_: gfx.TextureHandle) void {}
 pub fn registerUniformName(_: []const u8) !gfx.UniformHandle {
-    return @enumFromInt(0);
+    return .{ .handle = undefined };
 }
 pub fn beginFrame() !bool {
     return true;

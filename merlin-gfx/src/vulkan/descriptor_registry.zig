@@ -11,32 +11,27 @@ const vk = @import("vulkan.zig");
 // Globals
 // *********************************************************************************************
 
-var name_map: std.StringHashMap(gfx.UniformHandle) = undefined;
-var handles: utils.HandlePool(gfx.UniformHandle, gfx.MaxUniformHandles) = undefined;
+var _name_map: std.StringHashMap(gfx.UniformHandle) = undefined;
 
 // *********************************************************************************************
 // Public API
 // *********************************************************************************************
 
 pub fn init() !void {
-    name_map = .init(vk.gpa);
-    handles = .init();
+    _name_map = .init(vk.gpa);
 }
 
 pub fn deinit() void {
-    var name_map_it = name_map.iterator();
+    var name_map_it = _name_map.iterator();
     while (name_map_it.next()) |entry| {
         vk.gpa.free(entry.key_ptr.*);
     }
 
-    handles.clear();
-
-    name_map.deinit();
-    handles.deinit();
+    _name_map.deinit();
 }
 
 pub fn registerName(name: []const u8) !gfx.UniformHandle {
-    const existing_handle = name_map.get(name);
+    const existing_handle = _name_map.get(name);
     if (existing_handle) |value| {
         return value;
     }
@@ -44,11 +39,11 @@ pub fn registerName(name: []const u8) !gfx.UniformHandle {
     const name_copy = try vk.gpa.dupe(u8, name);
     errdefer vk.gpa.free(name_copy);
 
-    const handle = handles.create();
-    errdefer handles.destroy(handle);
+    const handle = gfx.UniformHandle{
+        .handle = @ptrCast(name_copy.ptr),
+    };
 
-    try name_map.put(name_copy, handle);
-    errdefer _ = name_map.remove(name_copy);
+    try _name_map.put(name_copy, handle);
 
     return handle;
 }

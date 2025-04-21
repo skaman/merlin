@@ -209,6 +209,7 @@ pub fn destroyPendingResources() void {
 
         vk.gpa.destroy(buffer);
     }
+    _buffers_to_destroy.clearRetainingCapacity();
 }
 
 pub inline fn bufferFromHandle(handle: gfx.BufferHandle) *Buffer {
