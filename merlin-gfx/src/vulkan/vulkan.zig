@@ -39,6 +39,8 @@ pub var gpa: std.mem.Allocator = undefined;
 var arena_impl: std.heap.ArenaAllocator = undefined;
 pub var arena: std.mem.Allocator = undefined;
 
+pub var main_window_handle: platform.WindowHandle = undefined;
+
 var graphics_queue: c.VkQueue = undefined;
 var present_queue: c.VkQueue = undefined;
 var transfer_queue: c.VkQueue = undefined;
@@ -74,7 +76,7 @@ fn destroyPendingResources() void {
 }
 
 fn recreateSwapChain() !void {
-    const framebuffer_size = platform.getDefaultWindowFramebufferSize();
+    const framebuffer_size = platform.windowFramebufferSize(main_window_handle);
     const framebuffer_width = framebuffer_size[0];
     const framebuffer_height = framebuffer_size[1];
 
@@ -200,6 +202,8 @@ pub fn init(
     errdefer arena_impl.deinit();
     arena = arena_impl.allocator();
 
+    main_window_handle = options.window_handle;
+
     try library.init();
     errdefer library.deinit();
 
@@ -233,7 +237,7 @@ pub fn init(
         &transfer_queue,
     );
 
-    const framebuffer_size = platform.getDefaultWindowFramebufferSize();
+    const framebuffer_size = platform.windowFramebufferSize(main_window_handle);
     const framebuffer_width = framebuffer_size[0];
     const framebuffer_height = framebuffer_size[1];
 
@@ -574,7 +578,7 @@ pub fn endFrame() !void {
         },
     );
 
-    const framebuffer_size = platform.getDefaultWindowFramebufferSize();
+    const framebuffer_size = platform.windowFramebufferSize(main_window_handle);
     if (main_swap_chain.extent.width != framebuffer_size[0] or main_swap_chain.extent.height != framebuffer_size[1]) {
         framebuffer_invalidated = true;
     }
@@ -626,6 +630,20 @@ pub fn setScissor(position: [2]u32, size: [2]u32) void {
     command_buffers.setScissor(
         main_command_buffers[current_frame_in_flight],
         &vk_scissor,
+    );
+}
+
+pub fn setDebug(debug_options: gfx.DebugOptions) void {
+    command_buffers.setDebug(
+        main_command_buffers[current_frame_in_flight],
+        debug_options,
+    );
+}
+
+pub fn setRender(render_options: gfx.RenderOptions) void {
+    command_buffers.setRender(
+        main_command_buffers[current_frame_in_flight],
+        render_options,
     );
 }
 

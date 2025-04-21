@@ -120,7 +120,7 @@ pub fn init(options: *const gfx.Options) !void {
             try extensions.append(c.VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
         },
         .linux => {
-            if (platform.getNativeWindowHandleType() == .wayland) {
+            if (platform.nativeWindowHandleType() == .wayland) {
                 try extensions.append(c.VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
             } else {
                 try extensions.append(c.VK_KHR_XCB_SURFACE_EXTENSION_NAME);

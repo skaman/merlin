@@ -71,6 +71,8 @@ const AttributeType = [@typeInfo(types.VertexComponentType).@"enum".fields.len][
 const PipelineKey = struct {
     program: gfx.ProgramHandle,
     layout: gfx.PipelineLayoutHandle,
+    debug_options: gfx.DebugOptions,
+    render_options: gfx.RenderOptions,
 };
 
 // *********************************************************************************************
@@ -83,10 +85,37 @@ var pipelines: std.AutoHashMap(PipelineKey, c.VkPipeline) = undefined;
 // Private API
 // *********************************************************************************************
 
-pub fn create(
+fn blendFactorToVulkan(blend_factor: gfx.BlendFactor) c.VkBlendFactor {
+    return switch (blend_factor) {
+        .zero => c.VK_BLEND_FACTOR_ZERO,
+        .one => c.VK_BLEND_FACTOR_ONE,
+        .src_color => c.VK_BLEND_FACTOR_SRC_COLOR,
+        .one_minus_src_color => c.VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
+        .dst_color => c.VK_BLEND_FACTOR_DST_COLOR,
+        .one_minus_dst_color => c.VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
+        .src_alpha => c.VK_BLEND_FACTOR_SRC_ALPHA,
+        .one_minus_src_alpha => c.VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        .dst_alpha => c.VK_BLEND_FACTOR_DST_ALPHA,
+        .one_minus_dst_alpha => c.VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA,
+    };
+}
+
+fn blendOpToVulkan(blend_op: gfx.BlendOp) c.VkBlendOp {
+    return switch (blend_op) {
+        .add => c.VK_BLEND_OP_ADD,
+        .subtract => c.VK_BLEND_OP_SUBTRACT,
+        .reverse_subtract => c.VK_BLEND_OP_REVERSE_SUBTRACT,
+        .min => c.VK_BLEND_OP_MIN,
+        .max => c.VK_BLEND_OP_MAX,
+    };
+}
+
+fn create(
     program: gfx.ProgramHandle,
     render_pass: c.VkRenderPass,
     vertex_layout: types.VertexLayout,
+    debug_options: gfx.DebugOptions,
+    render_options: gfx.RenderOptions,
 ) !c.VkPipeline {
     const binding_description = std.mem.zeroInit(
         c.VkVertexInputBindingDescription,
@@ -147,11 +176,21 @@ pub fn create(
         .{
             .sType = c.VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO,
             .viewportCount = 1,
-            //.pViewports = &viewport,
             .scissorCount = 1,
-            //.pScissors = &scissor,
         },
     );
+
+    const polygon_mode = if (debug_options.wireframe) c.VK_POLYGON_MODE_LINE else c.VK_POLYGON_MODE_FILL;
+    const cull_mode = switch (render_options.cull_mode) {
+        .none => c.VK_CULL_MODE_NONE,
+        .front => c.VK_CULL_MODE_FRONT_BIT,
+        .back => c.VK_CULL_MODE_BACK_BIT,
+        .front_and_back => c.VK_CULL_MODE_FRONT_AND_BACK,
+    };
+    const front_face = switch (render_options.front_face) {
+        .counter_clockwise => c.VK_FRONT_FACE_COUNTER_CLOCKWISE,
+        .clockwise => c.VK_FRONT_FACE_CLOCKWISE,
+    };
 
     const rasterizer = std.mem.zeroInit(
         c.VkPipelineRasterizationStateCreateInfo,
@@ -159,10 +198,10 @@ pub fn create(
             .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO,
             .depthClampEnable = c.VK_FALSE,
             .rasterizerDiscardEnable = c.VK_FALSE,
-            .polygonMode = c.VK_POLYGON_MODE_FILL,
+            .polygonMode = @as(c_uint, @intCast(polygon_mode)),
             .lineWidth = 1.0,
-            .cullMode = c.VK_CULL_MODE_BACK_BIT,
-            .frontFace = c.VK_FRONT_FACE_COUNTER_CLOCKWISE,
+            .cullMode = @as(u32, @intCast(cull_mode)),
+            .frontFace = @as(u32, @intCast(front_face)),
             .depthBiasEnable = c.VK_FALSE,
         },
     );
@@ -180,7 +219,7 @@ pub fn create(
         c.VkPipelineDepthStencilStateCreateInfo,
         .{
             .sType = c.VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            .depthTestEnable = c.VK_TRUE,
+            .depthTestEnable = c.VK_FALSE,
             .depthWriteEnable = c.VK_TRUE,
             .depthCompareOp = c.VK_COMPARE_OP_LESS,
             .depthBoundsTestEnable = c.VK_FALSE,
@@ -190,11 +229,30 @@ pub fn create(
         },
     );
 
+    const blend_enabled = if (render_options.blend.enabled) c.VK_TRUE else c.VK_FALSE;
+    const src_color_blend_factor = blendFactorToVulkan(render_options.blend.src_color_factor);
+    const dst_color_blend_factor = blendFactorToVulkan(render_options.blend.dst_color_factor);
+    const color_blend_op = blendOpToVulkan(render_options.blend.color_op);
+    const src_alpha_blend_factor = blendFactorToVulkan(render_options.blend.src_alpha_factor);
+    const dst_alpha_blend_factor = blendFactorToVulkan(render_options.blend.dst_alpha_factor);
+    const alpha_blend_op = blendOpToVulkan(render_options.blend.alpha_op);
+    var color_write_mask: c.VkColorComponentFlags = 0;
+    if (render_options.blend.write_mask.r) color_write_mask |= c.VK_COLOR_COMPONENT_R_BIT;
+    if (render_options.blend.write_mask.g) color_write_mask |= c.VK_COLOR_COMPONENT_G_BIT;
+    if (render_options.blend.write_mask.b) color_write_mask |= c.VK_COLOR_COMPONENT_B_BIT;
+    if (render_options.blend.write_mask.a) color_write_mask |= c.VK_COLOR_COMPONENT_A_BIT;
+
     const color_blend_attachment = std.mem.zeroInit(
         c.VkPipelineColorBlendAttachmentState,
         .{
-            .colorWriteMask = c.VK_COLOR_COMPONENT_R_BIT | c.VK_COLOR_COMPONENT_G_BIT | c.VK_COLOR_COMPONENT_B_BIT | c.VK_COLOR_COMPONENT_A_BIT,
-            .blendEnable = c.VK_FALSE,
+            .blendEnable = blend_enabled,
+            .srcColorBlendFactor = src_color_blend_factor,
+            .dstColorBlendFactor = dst_color_blend_factor,
+            .colorBlendOp = color_blend_op,
+            .srcAlphaBlendFactor = src_alpha_blend_factor,
+            .dstAlphaBlendFactor = dst_alpha_blend_factor,
+            .alphaBlendOp = alpha_blend_op,
+            .colorWriteMask = color_write_mask,
         },
     );
 
@@ -313,10 +371,14 @@ pub fn deinit() void {
 pub fn pipeline(
     program_handle: gfx.ProgramHandle,
     layout_handle: gfx.PipelineLayoutHandle,
+    debug_options: gfx.DebugOptions,
+    render_options: gfx.RenderOptions,
 ) !c.VkPipeline {
     const key = PipelineKey{
         .program = program_handle,
         .layout = layout_handle,
+        .debug_options = debug_options,
+        .render_options = render_options,
     };
     var pipeline_value = pipelines.get(key);
     if (pipeline_value != null) {
@@ -328,6 +390,8 @@ pub fn pipeline(
         program_handle,
         vk.main_render_pass,
         vertex_layout.*,
+        debug_options,
+        render_options,
     );
     try pipelines.put(key, pipeline_value.?);
     return pipeline_value.?;

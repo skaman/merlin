@@ -37,3 +37,6 @@
 [submodule "vendor/cgltf/upstream"]
 	path = vendor/cgltf/upstream
 	url = https://github.com/jkuhlmann/cgltf.git
+[submodule "vendor/cimgui/upstream"]
+	path = vendor/cimgui/upstream
+	url = https://github.com/cimgui/cimgui.git

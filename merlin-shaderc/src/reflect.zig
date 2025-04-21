@@ -157,7 +157,7 @@ pub const ShaderReflect = struct {
 
             result[i] = .{
                 .attribute = attribute.?,
-                .location = @intCast(i),
+                .location = @intCast(input.location),
             };
         }
 

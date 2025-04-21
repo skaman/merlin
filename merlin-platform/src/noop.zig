@@ -6,19 +6,58 @@ pub fn init(_: std.mem.Allocator) !void {}
 pub fn deinit() void {}
 pub fn createWindow(_: platform.WindowHandle, _: *const platform.WindowOptions) !void {}
 pub fn destroyWindow(_: platform.WindowHandle) void {}
-pub fn getWindowFramebufferSize(_: platform.WindowHandle) [2]u32 {
+pub fn windowPosition(_: platform.WindowHandle) [2]i32 {
     return .{ 0, 0 };
+}
+pub fn windowSize(_: platform.WindowHandle) [2]u32 {
+    return .{ 0, 0 };
+}
+pub fn windowFramebufferSize(_: platform.WindowHandle) [2]u32 {
+    return .{ 0, 0 };
+}
+pub fn windowFocused(_: platform.WindowHandle) bool {
+    return false;
+}
+pub fn windowHovered(_: platform.WindowHandle) bool {
+    return false;
 }
 pub fn shouldCloseWindow(_: platform.WindowHandle) bool {
     return true;
 }
+//pub fn cursor(_: platform.WindowHandle) platform.Cursor {
+//    return .arrow;
+//}
+pub fn cursorPosition(_: platform.WindowHandle) [2]f32 {
+    return .{ 0, 0 };
+}
+pub fn cursorMode(_: platform.WindowHandle) platform.CursorMode {
+    return .normal;
+}
+pub fn setCursor(_: platform.WindowHandle, _: platform.Cursor) void {}
+pub fn setCursorPosition(_: platform.WindowHandle, _: [2]f32) void {}
+pub fn setCursorMode(_: platform.WindowHandle, _: platform.CursorMode) void {}
+pub fn monitors() ![]platform.MonitorInfo {
+    return &[_]platform.MonitorInfo{};
+}
 pub fn pollEvents() void {}
-pub fn getNativeWindowHandleType() platform.NativeWindowHandleType {
+pub fn nativeWindowHandleType() platform.NativeWindowHandleType {
     return .default;
 }
-pub fn getNativeWindowHandle(_: platform.WindowHandle) ?*anyopaque {
+pub fn nativeWindowHandle(_: platform.WindowHandle) ?*anyopaque {
     return undefined;
 }
-pub fn getNativeDisplayHandle() ?*anyopaque {
+pub fn nativeDisplayHandle() ?*anyopaque {
     return null;
 }
+pub fn registerWindowFocusCallback(_: platform.WindowFocusCallback) anyerror!void {}
+pub fn unregisterWindowFocusCallback(_: platform.WindowFocusCallback) void {}
+pub fn registerCursorPositionCallback(_: platform.CursorPositionCallback) anyerror!void {}
+pub fn unregisterCursorPositionCallback(_: platform.CursorPositionCallback) void {}
+pub fn registerMouseButtonCallback(_: platform.MouseButtonCallback) anyerror!void {}
+pub fn unregisterMouseButtonCallback(_: platform.MouseButtonCallback) void {}
+pub fn registerMouseScrollCallback(_: platform.MouseScrollCallback) anyerror!void {}
+pub fn unregisterMouseScrollCallback(_: platform.MouseScrollCallback) void {}
+pub fn registerKeyCallback(_: platform.KeyCallback) anyerror!void {}
+pub fn unregisterKeyCallback(_: platform.KeyCallback) void {}
+pub fn registerCharCallback(_: platform.CharCallback) anyerror!void {}
+pub fn unregisterCharCallback(_: platform.CharCallback) void {}

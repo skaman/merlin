@@ -316,21 +316,22 @@ pub fn main() !void {
 
     try platform.init(
         gpa_allocator,
-        .{
-            .type = .glfw,
-            .window = .{
-                .width = 800,
-                .height = 600,
-                .title = "Example 1",
-            },
-        },
+        .{ .type = .glfw },
     );
     defer platform.deinit();
+
+    const window_handle = try platform.createWindow(.{
+        .width = 800,
+        .height = 600,
+        .title = "Example 1",
+    });
+    defer platform.destroyWindow(window_handle);
 
     try gfx.init(
         gpa_allocator,
         .{
             .renderer_type = .vulkan,
+            .window_handle = window_handle,
             .enable_vulkan_debug = true,
         },
     );
@@ -348,7 +349,7 @@ pub fn main() !void {
     var fps_counter: u32 = 0;
     var fps_timer: f32 = 0.0;
 
-    while (!platform.shouldCloseDefaultWindow()) {
+    while (!platform.shouldCloseWindow(window_handle)) {
         platform.pollEvents();
 
         const current_time = std.time.microTimestamp();

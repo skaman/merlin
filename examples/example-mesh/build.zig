@@ -148,15 +148,15 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    const example1_mod = b.createModule(.{
+    const example_mesh_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    const example1 = b.addExecutable(.{
-        .name = "example1",
-        .root_module = example1_mod,
+    const example_mesh = b.addExecutable(.{
+        .name = "example_mesh",
+        .root_module = example_mesh_mod,
     });
 
     try addShaders(b, &[_][]const u8{
@@ -221,14 +221,14 @@ pub fn build(b: *std.Build) !void {
         },
     });
 
-    b.installArtifact(example1);
-    example1.root_module.addImport("merlin_platform", merlin_platform.module("merlin_platform"));
-    example1.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
-    example1.root_module.addImport("merlin_gfx", merlin_gfx.module("merlin_gfx"));
-    example1.root_module.addImport("merlin_assets", merlin_assets.module("merlin_assets"));
-    example1.root_module.addImport("zmath", zmath.module("root"));
+    b.installArtifact(example_mesh);
+    example_mesh.root_module.addImport("merlin_platform", merlin_platform.module("merlin_platform"));
+    example_mesh.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
+    example_mesh.root_module.addImport("merlin_gfx", merlin_gfx.module("merlin_gfx"));
+    example_mesh.root_module.addImport("merlin_assets", merlin_assets.module("merlin_assets"));
+    example_mesh.root_module.addImport("zmath", zmath.module("root"));
 
-    const run_cmd = b.addRunArtifact(example1);
+    const run_cmd = b.addRunArtifact(example_mesh);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         run_cmd.addArgs(args);

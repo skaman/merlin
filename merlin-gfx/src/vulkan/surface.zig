@@ -32,8 +32,8 @@ fn createWaylandSurface() !c.VkSurfaceKHR {
 
     const create_info = std.mem.zeroInit(c.VkWaylandSurfaceCreateInfoKHR, .{
         .sType = c.VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
-        .surface = @as(?*c.struct_wl_surface, @ptrCast(platform.getNativeDefaultWindowHandle())),
-        .display = @as(?*c.struct_wl_display, @ptrCast(platform.getNativeDisplayHandle())),
+        .surface = @as(?*c.struct_wl_surface, @ptrCast(platform.nativeWindowHandle(vk.main_window_handle))),
+        .display = @as(?*c.struct_wl_display, @ptrCast(platform.nativeDisplayHandle())),
     });
     var surface: c.VkSurfaceKHR = undefined;
     try vk.checkVulkanError(
@@ -59,8 +59,8 @@ fn createXlibSurface() !c.VkSurfaceKHR {
 
     const create_info = std.mem.zeroInit(c.VkXlibSurfaceCreateInfoKHR, .{
         .sType = c.VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
-        .window = @as(c.Window, @intCast(@intFromPtr(platform.getNativeDefaultWindowHandle()))),
-        .dpy = @as(?*c.Display, @ptrCast(platform.getNativeDisplayHandle())),
+        .window = @as(c.Window, @intCast(@intFromPtr(platform.nativeWindowHandle(vk.main_window_handle)))),
+        .dpy = @as(?*c.Display, @ptrCast(platform.nativeDisplayHandle())),
     });
     var surface: c.VkSurfaceKHR = undefined;
     try vk.checkVulkanError(
@@ -96,7 +96,7 @@ fn createXcbSurface() !c.VkSurfaceKHR {
         return error.LoadLibraryFailed;
     };
 
-    const connection = get_xcb_connection(@ptrCast(platform.getNativeDisplayHandle()));
+    const connection = get_xcb_connection(@ptrCast(platform.nativeDisplayHandle()));
     if (connection == null) {
         vk.log.err("Failed to get XCB connection", .{});
         return error.GetProcAddressFailed;
@@ -105,7 +105,7 @@ fn createXcbSurface() !c.VkSurfaceKHR {
     const create_info = std.mem.zeroInit(c.VkXcbSurfaceCreateInfoKHR, .{
         .sType = c.VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
         .connection = connection,
-        .window = @as(c.xcb_window_t, @intCast(@intFromPtr(platform.getNativeDefaultWindowHandle()))),
+        .window = @as(c.xcb_window_t, @intCast(@intFromPtr(platform.nativeWindowHandle(vk.main_window_handle)))),
     });
     var surface: c.VkSurfaceKHR = undefined;
     try vk.checkVulkanError(
@@ -145,7 +145,7 @@ fn createWin32Surface() !c.VkSurfaceKHR {
 
     vk.log.debug("Creating Win32 surface", .{});
 
-    const window_handle = platform.getNativeDefaultWindowHandle();
+    const window_handle = platform.nativeWindowHandle(vk.main_window_handle);
     const create_info = std.mem.zeroInit(struct_VkWin32SurfaceCreateInfoKHR, .{
         .sType = c.VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
         .hwnd = window_handle,
@@ -174,7 +174,7 @@ fn createCocoaSurface() !c.VkSurfaceKHR {
 
     const create_info = std.mem.zeroInit(c.VkMacOSSurfaceCreateInfoMVK, .{
         .sType = c.VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK,
-        .pView = @as(?*c.id, @ptrCast(platform.getNativeDefaultWindowHandle())),
+        .pView = @as(?*c.id, @ptrCast(platform.nativeDefaultWindowHandle())),
     });
     var surface: c.VkSurfaceKHR = undefined;
     try vk.checkVulkanError(
@@ -204,7 +204,7 @@ pub fn create() !c.VkSurfaceKHR {
             surface = try createWin32Surface();
         },
         .linux => {
-            if (platform.getNativeWindowHandleType() == .wayland) {
+            if (platform.nativeWindowHandleType() == .wayland) {
                 surface = try createWaylandSurface();
             } else {
                 surface = createXcbSurface() catch

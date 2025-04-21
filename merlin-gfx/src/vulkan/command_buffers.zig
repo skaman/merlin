@@ -30,6 +30,8 @@ pub const CommandBuffer = struct {
     handle: c.VkCommandBuffer,
 
     current_pipeline_layout: ?gfx.PipelineLayoutHandle = null,
+    current_debug_options: gfx.DebugOptions = .{},
+    current_render_options: gfx.RenderOptions = .{},
     current_program: ?gfx.ProgramHandle = null,
     current_vertex_buffer: ?gfx.BufferHandle = null,
     current_vertex_buffer_offset: u32 = 0,
@@ -43,6 +45,8 @@ pub const CommandBuffer = struct {
 
     last_pipeline_layout: ?gfx.PipelineLayoutHandle = null,
     last_pipeline_program: ?gfx.ProgramHandle = null,
+    last_pipeline_debug_options: gfx.DebugOptions = .{},
+    last_pipeline_render_options: gfx.RenderOptions = .{},
     last_vertex_buffer: ?gfx.BufferHandle = null,
     last_vertex_buffer_offset: u32 = 0,
     last_index_buffer: ?gfx.BufferHandle = null,
@@ -72,10 +76,14 @@ fn handleBindPipeline(
     handle: gfx.CommandBufferHandle,
     program_handle: gfx.ProgramHandle,
     layout_handle: gfx.PipelineLayoutHandle,
+    debug_options: gfx.DebugOptions,
+    render_options: gfx.RenderOptions,
 ) !void {
     var command_buffer = command_buffers.valuePtr(handle);
     if (command_buffer.last_pipeline_program == program_handle and
-        command_buffer.last_pipeline_layout == layout_handle)
+        command_buffer.last_pipeline_layout == layout_handle and
+        command_buffer.last_pipeline_debug_options == debug_options and
+        command_buffer.last_pipeline_render_options == render_options)
     {
         return;
     }
@@ -83,6 +91,8 @@ fn handleBindPipeline(
     const pipeline = try vk.pipeline.pipeline(
         program_handle,
         layout_handle,
+        debug_options,
+        render_options,
     );
 
     vk.device.cmdBindPipeline(
@@ -93,6 +103,8 @@ fn handleBindPipeline(
 
     command_buffer.last_pipeline_program = program_handle;
     command_buffer.last_pipeline_layout = layout_handle;
+    command_buffer.last_pipeline_debug_options = debug_options;
+    command_buffer.last_pipeline_render_options = render_options;
 }
 
 fn handleBindVertexBuffer(handle: gfx.CommandBufferHandle) !void {
@@ -445,6 +457,16 @@ pub fn setScissor(handle: gfx.CommandBufferHandle, scissor: *const c.VkRect2D) v
     );
 }
 
+pub fn setDebug(handle: gfx.CommandBufferHandle, debug_options: gfx.DebugOptions) void {
+    const command_buffer = command_buffers.valuePtr(handle);
+    command_buffer.current_debug_options = debug_options;
+}
+
+pub fn setRender(handle: gfx.CommandBufferHandle, render_options: gfx.RenderOptions) void {
+    const command_buffer = command_buffers.valuePtr(handle);
+    command_buffer.current_render_options = render_options;
+}
+
 pub fn bindPipelineLayout(
     handle: gfx.CommandBufferHandle,
     pipeline_layout: gfx.PipelineLayoutHandle,
@@ -519,11 +541,15 @@ pub fn draw(
     const command_buffer = command_buffers.valuePtr(handle);
     const current_layout = command_buffer.current_pipeline_layout;
     const current_program = command_buffer.current_program;
+    const current_debug_options = command_buffer.current_debug_options;
+    const current_render_options = command_buffer.current_render_options;
 
     handleBindPipeline(
         handle,
         current_program.?,
         current_layout.?,
+        current_debug_options,
+        current_render_options,
     ) catch {
         vk.log.err("Failed to bind Vulkan program: {d}", .{current_program.?});
         return;
@@ -560,11 +586,15 @@ pub fn drawIndexed(
     const command_buffer = command_buffers.valuePtr(handle);
     const current_layout = command_buffer.current_pipeline_layout;
     const current_program = command_buffer.current_program;
+    const current_debug_options = command_buffer.current_debug_options;
+    const current_render_options = command_buffer.current_render_options;
 
     handleBindPipeline(
         handle,
         current_program.?,
         current_layout.?,
+        current_debug_options,
+        current_render_options,
     ) catch {
         vk.log.err("Failed to bind Vulkan program: {d}", .{current_program.?});
         return;

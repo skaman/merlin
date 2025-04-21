@@ -35,6 +35,7 @@ pub const MaxPipelineLayoutHandles = 512;
 
 pub const Options = struct {
     renderer_type: RendererType,
+    window_handle: platform.WindowHandle,
     enable_vulkan_debug: bool = false,
 };
 
@@ -116,6 +117,109 @@ pub const TextureKTXOptions = struct {
 
 pub const BufferOptions = struct {
     debug_name: ?[]const u8 = null,
+};
+
+pub const DebugOptions = packed struct {
+    wireframe: bool = false,
+};
+
+pub const CullMode = enum(u2) {
+    none,
+    front,
+    back,
+    front_and_back,
+
+    pub fn name(self: CullMode) []const u8 {
+        return switch (self) {
+            .none => "none",
+            .front => "front",
+            .back => "back",
+            .front_and_back => "front_and_back",
+        };
+    }
+};
+
+pub const BlendFactor = enum(u4) {
+    zero,
+    one,
+    src_color,
+    one_minus_src_color,
+    dst_color,
+    one_minus_dst_color,
+    src_alpha,
+    one_minus_src_alpha,
+    dst_alpha,
+    one_minus_dst_alpha,
+
+    pub fn name(self: BlendFactor) []const u8 {
+        return switch (self) {
+            .zero => "zero",
+            .one => "one",
+            .src_color => "src_color",
+            .one_minus_src_color => "one_minus_src_color",
+            .dst_color => "dst_color",
+            .one_minus_dst_color => "one_minus_dst_color",
+            .src_alpha => "src_alpha",
+            .one_minus_src_alpha => "one_minus_src_alpha",
+            .dst_alpha => "dst_alpha",
+            .one_minus_dst_alpha => "one_minus_dst_alpha",
+        };
+    }
+};
+
+pub const BlendOp = enum(u4) {
+    add,
+    subtract,
+    reverse_subtract,
+    min,
+    max,
+
+    pub fn name(self: BlendOp) []const u8 {
+        return switch (self) {
+            .add => "add",
+            .subtract => "subtract",
+            .reverse_subtract => "reverse_subtract",
+            .min => "min",
+            .max => "max",
+        };
+    }
+};
+
+pub const BlendWriteMask = packed struct {
+    r: bool = true,
+    g: bool = true,
+    b: bool = true,
+    a: bool = true,
+};
+
+pub const BlendOptions = packed struct {
+    enabled: bool = false,
+    src_color_factor: BlendFactor = .src_alpha,
+    dst_color_factor: BlendFactor = .one_minus_src_alpha,
+    color_op: BlendOp = .add,
+    src_alpha_factor: BlendFactor = .one,
+    dst_alpha_factor: BlendFactor = .one_minus_src_alpha,
+    alpha_op: BlendOp = .add,
+    write_mask: BlendWriteMask = .{},
+};
+
+pub const FrontFace = enum(u1) {
+    counter_clockwise,
+    clockwise,
+
+    pub fn name(self: FrontFace) []const u8 {
+        return switch (self) {
+            .counter_clockwise => "counter_clockwise",
+            .clockwise => "clockwise",
+        };
+    }
+};
+
+pub const RenderOptions = packed struct {
+    cull_mode: CullMode = .back,
+    front_face: FrontFace = .counter_clockwise,
+    //msaa: bool = false,
+    blend: BlendOptions = .{},
 };
 
 pub fn UniformArray(comptime THandle: type) type {
@@ -203,6 +307,8 @@ const VTab = struct {
     endFrame: *const fn () anyerror!void,
     setViewport: *const fn (position: [2]u32, size: [2]u32) void,
     setScissor: *const fn (position: [2]u32, size: [2]u32) void,
+    setDebug: *const fn (debug_options: DebugOptions) void,
+    setRender: *const fn (render_options: RenderOptions) void,
     bindPipelineLayout: *const fn (handle: PipelineLayoutHandle) void,
     bindProgram: *const fn (program: ProgramHandle) void,
     bindVertexBuffer: *const fn (buffer: BufferHandle, offset: u32) void,
@@ -259,6 +365,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .endFrame = noop.endFrame,
                 .setViewport = noop.setViewport,
                 .setScissor = noop.setScissor,
+                .setDebug = noop.setDebug,
+                .setRender = noop.setRender,
                 .bindPipelineLayout = noop.bindPipelineLayout,
                 .bindProgram = noop.bindProgram,
                 .bindVertexBuffer = noop.bindVertexBuffer,
@@ -297,6 +405,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .endFrame = vulkan.endFrame,
                 .setViewport = vulkan.setViewport,
                 .setScissor = vulkan.setScissor,
+                .setDebug = vulkan.setDebug,
+                .setRender = vulkan.setRender,
                 .bindPipelineLayout = vulkan.bindPipelineLayout,
                 .bindProgram = vulkan.bindProgram,
                 .bindVertexBuffer = vulkan.bindVertexBuffer,
@@ -372,6 +482,12 @@ pub inline fn currentFrameInFlight() u32 {
 /// Creates a shader from a loader.
 pub fn createShader(reader: std.io.AnyReader, options: ShaderOptions) !ShaderHandle {
     return try v_tab.createShader(reader, options);
+}
+
+/// Creates a shader from memory.
+pub fn createShaderFromMemory(data: []const u8, options: ShaderOptions) !ShaderHandle {
+    var stream = std.io.fixedBufferStream(data);
+    return try v_tab.createShader(stream.reader().any(), options);
 }
 
 /// Destroys a shader.
@@ -454,7 +570,7 @@ pub inline fn createTextureFromMemory(
     options: TextureOptions,
 ) !TextureHandle {
     var stream = std.io.fixedBufferStream(data);
-    return try v_tab.createTexture(stream.reader().any(), data.len, options);
+    return try v_tab.createTexture(stream.reader().any(), @intCast(data.len), options);
 }
 
 /// Creates a KTX texture from a loader.
@@ -495,6 +611,16 @@ pub inline fn setViewport(position: [2]u32, size: [2]u32) void {
 /// Sets the scissor.
 pub inline fn setScissor(position: [2]u32, size: [2]u32) void {
     v_tab.setScissor(position, size);
+}
+
+/// Sets the debug options.
+pub inline fn setDebug(debug_options: DebugOptions) void {
+    v_tab.setDebug(debug_options);
+}
+
+/// Sets the render options.
+pub inline fn setRender(render_options: RenderOptions) void {
+    v_tab.setRender(render_options);
 }
 
 pub fn bindPipelineLayout(handle: PipelineLayoutHandle) void {

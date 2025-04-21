@@ -53,6 +53,8 @@ pub fn beginFrame() !bool {
 pub fn endFrame() !void {}
 pub fn setViewport(_: [2]u32, _: [2]u32) void {}
 pub fn setScissor(_: [2]u32, _: [2]u32) void {}
+pub fn setDebug(_: gfx.DebugOptions) void {}
+pub fn setRender(_: gfx.RenderOptions) void {}
 pub fn bindPipelineLayout(_: gfx.PipelineLayoutHandle) void {}
 pub fn bindProgram(_: gfx.ProgramHandle) void {}
 pub fn bindVertexBuffer(_: gfx.BufferHandle, _: u32) void {}
