@@ -15,7 +15,7 @@ const Dispatch = struct {
 // Globals
 // *********************************************************************************************
 
-var dispatch: ?Dispatch = null;
+var _dispatch: ?Dispatch = null;
 
 // *********************************************************************************************
 // Private API
@@ -194,8 +194,8 @@ fn createCocoaSurface() !c.VkSurfaceKHR {
 // *********************************************************************************************
 
 pub fn create() !c.VkSurfaceKHR {
-    if (dispatch == null) {
-        dispatch = try vk.library.load(Dispatch, vk.instance.handle);
+    if (_dispatch == null) {
+        _dispatch = try vk.library.load(Dispatch, vk.instance.handle);
     }
 
     var surface: c.VkSurfaceKHR = undefined;
@@ -223,8 +223,8 @@ pub fn create() !c.VkSurfaceKHR {
 }
 
 pub fn destroy(surface: c.VkSurfaceKHR) void {
-    std.debug.assert(dispatch != null);
-    dispatch.?.DestroySurfaceKHR(
+    std.debug.assert(_dispatch != null);
+    _dispatch.?.DestroySurfaceKHR(
         vk.instance.handle,
         surface,
         vk.instance.allocation_callbacks,

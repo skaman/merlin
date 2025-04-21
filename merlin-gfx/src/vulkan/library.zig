@@ -22,8 +22,8 @@ const Dispatch = struct {
 pub var get_instance_proc_addr: std.meta.Child(c.PFN_vkGetInstanceProcAddr) = undefined;
 pub var get_device_proc_addr: std.meta.Child(c.PFN_vkGetDeviceProcAddr) = undefined;
 
-var handle: std.DynLib = undefined;
-var dispatch: Dispatch = undefined;
+var _handle: std.DynLib = undefined;
+var _dispatch: Dispatch = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -42,9 +42,9 @@ fn loadLibrary() !std.DynLib {
 // *********************************************************************************************
 
 pub fn init() !void {
-    handle = try loadLibrary();
+    _handle = try loadLibrary();
 
-    get_instance_proc_addr = handle.lookup(
+    get_instance_proc_addr = _handle.lookup(
         std.meta.Child(c.PFN_vkGetInstanceProcAddr),
         "vkGetInstanceProcAddr",
     ) orelse {
@@ -52,7 +52,7 @@ pub fn init() !void {
         return error.GetInstanceProcAddrNotFound;
     };
 
-    get_device_proc_addr = handle.lookup(
+    get_device_proc_addr = _handle.lookup(
         std.meta.Child(c.PFN_vkGetDeviceProcAddr),
         "vkGetDeviceProcAddr",
     ) orelse {
@@ -60,11 +60,11 @@ pub fn init() !void {
         return error.GetDeviceProcAddrNotFound;
     };
 
-    dispatch = try load(Dispatch, null);
+    _dispatch = try load(Dispatch, null);
 }
 
 pub fn deinit() void {
-    handle.close();
+    _handle.close();
 }
 
 pub fn get_proc(
@@ -102,7 +102,7 @@ pub fn createInstance(
 ) !void {
     try vk.checkVulkanError(
         "Failed to create Vulkan instance",
-        dispatch.CreateInstance(create_info, allocation_callbacks, instance),
+        _dispatch.CreateInstance(create_info, allocation_callbacks, instance),
     );
 }
 
@@ -111,7 +111,7 @@ pub fn enumerateInstanceExtensionProperties(
     count: *u32,
     properties: [*c]c.VkExtensionProperties,
 ) !void {
-    const result = dispatch.EnumerateInstanceExtensionProperties(
+    const result = _dispatch.EnumerateInstanceExtensionProperties(
         layer_name,
         count,
         properties,
@@ -151,7 +151,7 @@ pub fn enumerateInstanceLayerProperties(
     count: *u32,
     properties: [*c]c.VkLayerProperties,
 ) !void {
-    const result = dispatch.EnumerateInstanceLayerProperties(
+    const result = _dispatch.EnumerateInstanceLayerProperties(
         count,
         properties,
     );

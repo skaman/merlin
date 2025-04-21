@@ -36,33 +36,33 @@ pub const MaxDescriptorSets = 1024;
 // *********************************************************************************************
 
 pub var gpa: std.mem.Allocator = undefined;
-var arena_impl: std.heap.ArenaAllocator = undefined;
+var _arena_impl: std.heap.ArenaAllocator = undefined;
 pub var arena: std.mem.Allocator = undefined;
 
 pub var main_window_handle: platform.WindowHandle = undefined;
 
-var graphics_queue: c.VkQueue = undefined;
-var present_queue: c.VkQueue = undefined;
-var transfer_queue: c.VkQueue = undefined;
+var _graphics_queue: c.VkQueue = undefined;
+var _present_queue: c.VkQueue = undefined;
+var _transfer_queue: c.VkQueue = undefined;
 
-var main_surface: c.VkSurfaceKHR = undefined;
-var main_swap_chain: swap_chain.SwapChain = undefined;
+var _main_surface: c.VkSurfaceKHR = undefined;
+var _main_swap_chain: swap_chain.SwapChain = undefined;
 pub var main_render_pass: c.VkRenderPass = undefined; // TODO: this should not be public
-var main_depth_image: depth_image.DepthImage = undefined;
-var main_command_buffers: [MaxFramesInFlight]gfx.CommandBufferHandle = undefined;
-var main_descriptor_pool: c.VkDescriptorPool = undefined;
+var _main_depth_image: depth_image.DepthImage = undefined;
+var _main_command_buffers: [MaxFramesInFlight]gfx.CommandBufferHandle = undefined;
+var _main_descriptor_pool: c.VkDescriptorPool = undefined;
 
-var graphics_command_pool: c.VkCommandPool = undefined;
-var transfer_command_pool: c.VkCommandPool = undefined;
+var _graphics_command_pool: c.VkCommandPool = undefined;
+var _transfer_command_pool: c.VkCommandPool = undefined;
 
-var image_available_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
-var render_finished_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
-var in_flight_fences: [MaxFramesInFlight]c.VkFence = undefined;
+var _image_available_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
+var _render_finished_semaphores: [MaxFramesInFlight]c.VkSemaphore = undefined;
+var _in_flight_fences: [MaxFramesInFlight]c.VkFence = undefined;
 
-var current_image_index: u32 = 0;
-var current_frame_in_flight: u32 = 0;
+var _current_image_index: u32 = 0;
+var _current_frame_in_flight: u32 = 0;
 
-var framebuffer_invalidated: bool = false;
+var _framebuffer_invalidated: bool = false;
 
 // *********************************************************************************************
 // Private API
@@ -81,32 +81,32 @@ fn recreateSwapChain() !void {
     const framebuffer_height = framebuffer_size[1];
 
     if (framebuffer_width == 0 or framebuffer_height == 0) {
-        framebuffer_invalidated = true;
+        _framebuffer_invalidated = true;
         return;
     }
 
     try device.deviceWaitIdle();
 
-    depth_image.destroy(main_depth_image);
-    swap_chain.destroy(&main_swap_chain);
+    depth_image.destroy(_main_depth_image);
+    swap_chain.destroy(&_main_swap_chain);
 
-    main_swap_chain = try swap_chain.create(
-        main_surface,
+    _main_swap_chain = try swap_chain.create(
+        _main_surface,
         framebuffer_width,
         framebuffer_height,
     );
-    errdefer swap_chain.destroy(&main_swap_chain);
+    errdefer swap_chain.destroy(&_main_swap_chain);
 
-    main_depth_image = try depth_image.create(
+    _main_depth_image = try depth_image.create(
         framebuffer_width,
         framebuffer_height,
     );
-    errdefer depth_image.destroy(main_depth_image);
+    errdefer depth_image.destroy(_main_depth_image);
 
     try swap_chain.createFrameBuffers(
-        &main_swap_chain,
+        &_main_swap_chain,
         main_render_pass,
-        main_depth_image.view,
+        _main_depth_image.view,
     );
 }
 
@@ -198,9 +198,9 @@ pub fn init(
 
     gpa = allocator;
 
-    arena_impl = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    errdefer arena_impl.deinit();
-    arena = arena_impl.allocator();
+    _arena_impl = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    errdefer _arena_impl.deinit();
+    arena = _arena_impl.allocator();
 
     main_window_handle = options.window_handle;
 
@@ -213,61 +213,61 @@ pub fn init(
     try debug.init(options);
     errdefer debug.deinit();
 
-    main_surface = try surface.create();
-    errdefer surface.destroy(main_surface);
+    _main_surface = try surface.create();
+    errdefer surface.destroy(_main_surface);
 
-    try device.init(options, main_surface);
+    try device.init(options, _main_surface);
     errdefer device.deinit();
 
     device.getDeviceQueue(
         device.queue_family_indices.graphics_family.?,
         0,
-        &graphics_queue,
+        &_graphics_queue,
     );
 
     device.getDeviceQueue(
         device.queue_family_indices.present_family.?,
         0,
-        &present_queue,
+        &_present_queue,
     );
 
     device.getDeviceQueue(
         device.queue_family_indices.transfer_family.?,
         0,
-        &transfer_queue,
+        &_transfer_queue,
     );
 
     const framebuffer_size = platform.windowFramebufferSize(main_window_handle);
     const framebuffer_width = framebuffer_size[0];
     const framebuffer_height = framebuffer_size[1];
 
-    main_swap_chain = try swap_chain.create(
-        main_surface,
+    _main_swap_chain = try swap_chain.create(
+        _main_surface,
         framebuffer_width,
         framebuffer_height,
     );
-    errdefer swap_chain.destroy(&main_swap_chain);
+    errdefer swap_chain.destroy(&_main_swap_chain);
 
-    main_render_pass = try render_pass.create(main_swap_chain.format);
+    main_render_pass = try render_pass.create(_main_swap_chain.format);
     errdefer render_pass.destroy(main_render_pass);
 
-    main_depth_image = try depth_image.create(
+    _main_depth_image = try depth_image.create(
         framebuffer_width,
         framebuffer_height,
     );
-    errdefer depth_image.destroy(main_depth_image);
+    errdefer depth_image.destroy(_main_depth_image);
 
     try swap_chain.createFrameBuffers(
-        &main_swap_chain,
+        &_main_swap_chain,
         main_render_pass,
-        main_depth_image.view,
+        _main_depth_image.view,
     );
 
-    graphics_command_pool = try command_pool.create(device.queue_family_indices.graphics_family.?);
-    errdefer command_pool.destroy(graphics_command_pool);
+    _graphics_command_pool = try command_pool.create(device.queue_family_indices.graphics_family.?);
+    errdefer command_pool.destroy(_graphics_command_pool);
 
-    transfer_command_pool = try command_pool.create(device.queue_family_indices.transfer_family.?);
-    errdefer command_pool.destroy(transfer_command_pool);
+    _transfer_command_pool = try command_pool.create(device.queue_family_indices.transfer_family.?);
+    errdefer command_pool.destroy(_transfer_command_pool);
 
     command_buffers.init();
     errdefer command_buffers.deinit();
@@ -275,11 +275,11 @@ pub fn init(
     var created_command_buffers: u32 = 0;
     errdefer {
         for (0..created_command_buffers) |i| {
-            command_buffers.destroy(main_command_buffers[i]);
+            command_buffers.destroy(_main_command_buffers[i]);
         }
     }
     for (0..MaxFramesInFlight) |i| {
-        main_command_buffers[i] = try command_buffers.create(graphics_command_pool);
+        _main_command_buffers[i] = try command_buffers.create(_graphics_command_pool);
         created_command_buffers += 1;
     }
 
@@ -301,17 +301,17 @@ pub fn init(
     for (0..MaxFramesInFlight) |i| {
         try device.createSemaphore(
             &semaphore_create_info,
-            &image_available_semaphores[i],
+            &_image_available_semaphores[i],
         );
 
         try device.createSemaphore(
             &semaphore_create_info,
-            &render_finished_semaphores[i],
+            &_render_finished_semaphores[i],
         );
 
         try device.createFence(
             &fence_create_info,
-            &in_flight_fences[i],
+            &_in_flight_fences[i],
         );
     }
 
@@ -337,8 +337,8 @@ pub fn init(
         },
     );
 
-    try device.createDescriptorPool(&pool_info, &main_descriptor_pool);
-    errdefer device.destroyDescriptorPool(main_descriptor_pool);
+    try device.createDescriptorPool(&pool_info, &_main_descriptor_pool);
+    errdefer device.destroyDescriptorPool(_main_descriptor_pool);
 
     pipeline_layouts.init();
     pipeline.init();
@@ -364,40 +364,40 @@ pub fn deinit() void {
     pipeline.deinit();
     pipeline_layouts.deinit();
 
-    device.destroyDescriptorPool(main_descriptor_pool);
+    device.destroyDescriptorPool(_main_descriptor_pool);
 
     descriptor_registry.deinit();
 
     for (0..MaxFramesInFlight) |i| {
-        device.destroySemaphore(image_available_semaphores[i]);
-        device.destroySemaphore(render_finished_semaphores[i]);
-        device.destroyFence(in_flight_fences[i]);
+        device.destroySemaphore(_image_available_semaphores[i]);
+        device.destroySemaphore(_render_finished_semaphores[i]);
+        device.destroyFence(_in_flight_fences[i]);
     }
 
     for (0..MaxFramesInFlight) |i| {
-        command_buffers.destroy(main_command_buffers[i]);
+        command_buffers.destroy(_main_command_buffers[i]);
     }
     command_buffers.deinit();
 
-    command_pool.destroy(graphics_command_pool);
-    command_pool.destroy(transfer_command_pool);
+    command_pool.destroy(_graphics_command_pool);
+    command_pool.destroy(_transfer_command_pool);
 
     render_pass.destroy(main_render_pass);
-    depth_image.destroy(main_depth_image);
-    swap_chain.destroy(&main_swap_chain);
-    surface.destroy(main_surface);
+    depth_image.destroy(_main_depth_image);
+    swap_chain.destroy(&_main_swap_chain);
+    surface.destroy(_main_surface);
     device.deinit();
     debug.deinit();
     instance.deinit();
     library.deinit();
 
-    arena_impl.deinit();
+    _arena_impl.deinit();
 }
 
 pub fn swapchainSize() [2]u32 {
     return .{
-        main_swap_chain.extent.width,
-        main_swap_chain.extent.height,
+        _main_swap_chain.extent.width,
+        _main_swap_chain.extent.height,
     };
 }
 
@@ -410,7 +410,7 @@ pub fn maxFramesInFlight() u32 {
 }
 
 pub fn currentFrameInFlight() u32 {
-    return current_frame_in_flight;
+    return _current_frame_in_flight;
 }
 
 pub fn createShader(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderHandle {
@@ -439,7 +439,7 @@ pub fn createProgram(
     return programs.create(
         vertex_shader,
         fragment_shader,
-        main_descriptor_pool,
+        _main_descriptor_pool,
         options,
     );
 }
@@ -468,8 +468,8 @@ pub fn updateBuffer(
     size: u32,
 ) !void {
     try buffers.update(
-        transfer_command_pool,
-        transfer_queue,
+        _transfer_command_pool,
+        _transfer_queue,
         handle,
         reader,
         offset,
@@ -479,8 +479,8 @@ pub fn updateBuffer(
 
 pub fn createTexture(reader: std.io.AnyReader, size: u32, options: gfx.TextureOptions) !gfx.TextureHandle {
     return textures.create(
-        transfer_command_pool,
-        transfer_queue,
+        _transfer_command_pool,
+        _transfer_queue,
         reader,
         size,
         options,
@@ -489,8 +489,8 @@ pub fn createTexture(reader: std.io.AnyReader, size: u32, options: gfx.TextureOp
 
 pub fn createTextureFromKTX(reader: std.io.AnyReader, size: u32, options: gfx.TextureKTXOptions) !gfx.TextureHandle {
     return textures.createFromKTX(
-        transfer_command_pool,
-        transfer_queue,
+        _transfer_command_pool,
+        _transfer_queue,
         reader,
         size,
         options,
@@ -508,46 +508,46 @@ pub fn registerUniformName(name: []const u8) !gfx.UniformHandle {
 pub fn beginFrame() !bool {
     try device.waitForFences(
         1,
-        &in_flight_fences[current_frame_in_flight],
+        &_in_flight_fences[_current_frame_in_flight],
         c.VK_TRUE,
         c.UINT64_MAX,
     );
 
     if (try device.acquireNextImageKHR(
-        main_swap_chain.handle,
+        _main_swap_chain.handle,
         c.UINT64_MAX,
-        image_available_semaphores[current_frame_in_flight],
+        _image_available_semaphores[_current_frame_in_flight],
         null,
-        &current_image_index,
+        &_current_image_index,
     ) == c.VK_ERROR_OUT_OF_DATE_KHR) {
         try recreateSwapChain();
         return false;
     }
 
-    try device.resetFences(1, &in_flight_fences[current_frame_in_flight]);
+    try device.resetFences(1, &_in_flight_fences[_current_frame_in_flight]);
 
-    try command_buffers.reset(main_command_buffers[current_frame_in_flight]);
+    try command_buffers.reset(_main_command_buffers[_current_frame_in_flight]);
     destroyPendingResources();
-    try command_buffers.begin(main_command_buffers[current_frame_in_flight]);
+    try command_buffers.begin(_main_command_buffers[_current_frame_in_flight]);
 
     try command_buffers.beginRenderPass(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         main_render_pass,
-        main_swap_chain.frame_buffers.?[current_image_index],
-        main_swap_chain.extent,
+        _main_swap_chain.frame_buffers.?[_current_image_index],
+        _main_swap_chain.extent,
     );
 
     return true;
 }
 
 pub fn endFrame() !void {
-    command_buffers.endRenderPass(main_command_buffers[current_frame_in_flight]);
-    try command_buffers.end(main_command_buffers[current_frame_in_flight]);
+    command_buffers.endRenderPass(_main_command_buffers[_current_frame_in_flight]);
+    try command_buffers.end(_main_command_buffers[_current_frame_in_flight]);
 
     const wait_stages = [_]c.VkPipelineStageFlags{c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    const wait_semaphores = [_]c.VkSemaphore{image_available_semaphores[current_frame_in_flight]};
-    const signal_semaphores = [_]c.VkSemaphore{render_finished_semaphores[current_frame_in_flight]};
-    const command_buffer = command_buffers.commandBufferFromHandle(main_command_buffers[current_frame_in_flight]);
+    const wait_semaphores = [_]c.VkSemaphore{_image_available_semaphores[_current_frame_in_flight]};
+    const signal_semaphores = [_]c.VkSemaphore{_render_finished_semaphores[_current_frame_in_flight]};
+    const command_buffer = command_buffers.commandBufferFromHandle(_main_command_buffers[_current_frame_in_flight]);
     const submit_info = std.mem.zeroInit(
         c.VkSubmitInfo,
         .{
@@ -563,10 +563,10 @@ pub fn endFrame() !void {
     );
 
     try device.queueSubmit(
-        graphics_queue,
+        _graphics_queue,
         1,
         &submit_info,
-        in_flight_fences[current_frame_in_flight],
+        _in_flight_fences[_current_frame_in_flight],
     );
 
     const present_info = std.mem.zeroInit(
@@ -576,25 +576,25 @@ pub fn endFrame() !void {
             .waitSemaphoreCount = 1,
             .pWaitSemaphores = &signal_semaphores,
             .swapchainCount = 1,
-            .pSwapchains = &main_swap_chain.handle,
-            .pImageIndices = &current_image_index,
+            .pSwapchains = &_main_swap_chain.handle,
+            .pImageIndices = &_current_image_index,
         },
     );
 
     const framebuffer_size = platform.windowFramebufferSize(main_window_handle);
-    if (main_swap_chain.extent.width != framebuffer_size[0] or main_swap_chain.extent.height != framebuffer_size[1]) {
-        framebuffer_invalidated = true;
+    if (_main_swap_chain.extent.width != framebuffer_size[0] or _main_swap_chain.extent.height != framebuffer_size[1]) {
+        _framebuffer_invalidated = true;
     }
 
-    const result = try device.queuePresentKHR(present_queue, &present_info);
-    if (result == c.VK_ERROR_OUT_OF_DATE_KHR or result == c.VK_SUBOPTIMAL_KHR or framebuffer_invalidated) {
-        framebuffer_invalidated = false;
+    const result = try device.queuePresentKHR(_present_queue, &present_info);
+    if (result == c.VK_ERROR_OUT_OF_DATE_KHR or result == c.VK_SUBOPTIMAL_KHR or _framebuffer_invalidated) {
+        _framebuffer_invalidated = false;
         try recreateSwapChain();
     }
 
-    current_frame_in_flight = (current_frame_in_flight + 1) % MaxFramesInFlight;
+    _current_frame_in_flight = (_current_frame_in_flight + 1) % MaxFramesInFlight;
 
-    _ = arena_impl.reset(.retain_capacity);
+    _ = _arena_impl.reset(.retain_capacity);
 }
 
 pub fn setViewport(position: [2]u32, size: [2]u32) void {
@@ -611,7 +611,7 @@ pub fn setViewport(position: [2]u32, size: [2]u32) void {
     );
 
     command_buffers.setViewport(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         &vk_viewport,
     );
 }
@@ -631,42 +631,42 @@ pub fn setScissor(position: [2]u32, size: [2]u32) void {
         },
     );
     command_buffers.setScissor(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         &vk_scissor,
     );
 }
 
 pub fn setDebug(debug_options: gfx.DebugOptions) void {
     command_buffers.setDebug(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         debug_options,
     );
 }
 
 pub fn setRender(render_options: gfx.RenderOptions) void {
     command_buffers.setRender(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         render_options,
     );
 }
 
 pub fn bindPipelineLayout(pipeline_layout: gfx.PipelineLayoutHandle) void {
     command_buffers.bindPipelineLayout(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         pipeline_layout,
     );
 }
 
 pub fn bindProgram(program: gfx.ProgramHandle) void {
     command_buffers.bindProgram(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         program,
     );
 }
 
 pub fn bindVertexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
     command_buffers.bindVertexBuffer(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         buffer,
         offset,
     );
@@ -674,7 +674,7 @@ pub fn bindVertexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
 
 pub fn bindIndexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
     command_buffers.bindIndexBuffer(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         buffer,
         offset,
     );
@@ -682,7 +682,7 @@ pub fn bindIndexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
 
 pub fn bindUniformBuffer(uniform: gfx.UniformHandle, buffer: gfx.BufferHandle, offset: u32) void {
     command_buffers.bindUniformBuffer(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         uniform,
         buffer,
         offset,
@@ -691,7 +691,7 @@ pub fn bindUniformBuffer(uniform: gfx.UniformHandle, buffer: gfx.BufferHandle, o
 
 pub fn bindCombinedSampler(uniform: gfx.UniformHandle, texture: gfx.TextureHandle) void {
     command_buffers.bindCombinedSampler(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         uniform,
         texture,
     );
@@ -704,7 +704,7 @@ pub fn draw(
     first_instance: u32,
 ) void {
     command_buffers.draw(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         vertex_count,
         instance_count,
         first_vertex,
@@ -721,7 +721,7 @@ pub fn drawIndexed(
     index_type: types.IndexType,
 ) void {
     command_buffers.drawIndexed(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         index_count,
         instance_count,
         first_index,
@@ -736,7 +736,7 @@ pub fn beginDebugLabel(
     color: [4]f32,
 ) void {
     command_buffers.beginDebugLabel(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         label_name,
         color,
     );
@@ -744,7 +744,7 @@ pub fn beginDebugLabel(
 
 pub fn endDebugLabel() void {
     command_buffers.endDebugLabel(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
     );
 }
 
@@ -753,7 +753,7 @@ pub fn insertDebugLabel(
     color: [4]f32,
 ) void {
     command_buffers.insertDebugLabel(
-        main_command_buffers[current_frame_in_flight],
+        _main_command_buffers[_current_frame_in_flight],
         label_name,
         color,
     );

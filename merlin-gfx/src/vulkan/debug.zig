@@ -11,7 +11,7 @@ const vk = @import("vulkan.zig");
 // Globals
 // *********************************************************************************************
 
-var debug_messenger: ?c.VkDebugUtilsMessengerEXT = null;
+var _debug_messenger: ?c.VkDebugUtilsMessengerEXT = null;
 
 // *********************************************************************************************
 // Public API
@@ -37,18 +37,18 @@ pub fn init(options: *const gfx.Options) !void {
         &create_info,
         &debug_utils_messenger,
     );
-    debug_messenger = debug_utils_messenger;
+    _debug_messenger = debug_utils_messenger;
 }
 
 pub fn deinit() void {
-    if (debug_messenger) |messenger| {
+    if (_debug_messenger) |messenger| {
         vk.instance.destroyDebugUtilsMessengerEXT(messenger);
-        debug_messenger = null;
+        _debug_messenger = null;
     }
 }
 
 pub fn setObjectName(object_type: c.VkObjectType, object_handle: anytype, name: []const u8) !void {
-    if (debug_messenger == null) {
+    if (_debug_messenger == null) {
         return;
     }
 
@@ -70,7 +70,7 @@ pub fn beginCommandBufferLabel(
     label_name: []const u8,
     color: [4]f32,
 ) void {
-    if (debug_messenger == null) {
+    if (_debug_messenger == null) {
         return;
     }
 
@@ -92,7 +92,7 @@ pub fn beginCommandBufferLabel(
 }
 
 pub fn endCommandBufferLabel(command_buffer: c.VkCommandBuffer) void {
-    if (debug_messenger == null) {
+    if (_debug_messenger == null) {
         return;
     }
 
@@ -104,7 +104,7 @@ pub fn insertCommandBufferLabel(
     label_name: []const u8,
     color: [4]f32,
 ) void {
-    if (debug_messenger == null) {
+    if (_debug_messenger == null) {
         return;
     }
 

@@ -79,7 +79,7 @@ const PipelineKey = struct {
 // Globals
 // *********************************************************************************************
 
-var pipelines: std.AutoHashMap(PipelineKey, c.VkPipeline) = undefined;
+var _pipelines: std.AutoHashMap(PipelineKey, c.VkPipeline) = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -359,16 +359,16 @@ fn create(
 // *********************************************************************************************
 
 pub fn init() void {
-    pipelines = .init(vk.gpa);
+    _pipelines = .init(vk.gpa);
 }
 
 pub fn deinit() void {
-    var iterator = pipelines.valueIterator();
+    var iterator = _pipelines.valueIterator();
     while (iterator.next()) |pipeline_value| {
         vk.device.destroyPipeline(pipeline_value.*);
     }
 
-    pipelines.deinit();
+    _pipelines.deinit();
 }
 
 pub fn pipeline(
@@ -383,7 +383,7 @@ pub fn pipeline(
         .debug_options = debug_options,
         .render_options = render_options,
     };
-    var pipeline_value = pipelines.get(key);
+    var pipeline_value = _pipelines.get(key);
     if (pipeline_value != null) {
         return pipeline_value.?;
     }
@@ -396,6 +396,6 @@ pub fn pipeline(
         debug_options,
         render_options,
     );
-    try pipelines.put(key, pipeline_value.?);
+    try _pipelines.put(key, pipeline_value.?);
     return pipeline_value.?;
 }
