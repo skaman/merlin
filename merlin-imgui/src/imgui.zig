@@ -24,9 +24,10 @@ pub const Options = struct {
     window_handle: platform.WindowHandle,
 };
 
-const ScaleTranslate = struct {
+const UniformData = struct {
     scale: [2]f32,
     translate: [2]f32,
+    srgb: bool,
 };
 
 // *********************************************************************************************
@@ -40,10 +41,8 @@ var vert_shader_handle: gfx.ShaderHandle = undefined;
 var frag_shader_handle: gfx.ShaderHandle = undefined;
 var program_handle: gfx.ProgramHandle = undefined;
 var tex_uniform_handle: gfx.UniformHandle = undefined;
-var scale_translate_uniform_handle: gfx.UniformHandle = undefined;
-//var buffer_alignment: u32 = 0;
-//var io: ?*c.ImGuiIO = undefined;
-var scale_translate_uniform_buffer_handle: gfx.BufferHandle = undefined;
+var uniform_data_handle: gfx.UniformHandle = undefined;
+var uniform_data_buffer_handle: gfx.BufferHandle = undefined;
 var pipeline_layout_handle: gfx.PipelineLayoutHandle = undefined;
 var vertex_buffer_handle: ?gfx.BufferHandle = null;
 var vertex_buffer_size: u32 = 0;
@@ -149,34 +148,6 @@ fn updateMonitors() !void {
     }
 }
 
-//fn updateMouseData() !void {
-//    const io = c.igGetIO_Nil();
-//    const platform_io = c.igGetPlatformIO_Nil();
-//    var mouse_viewport_id: c.ImGuiID = 0;
-//
-//    for (0..@intCast(platform_io.*.Viewports.Size)) |i| {
-//        const viewport = platform_io.*.Viewports.Data[i];
-//        const window_handle: platform.WindowHandle = @enumFromInt(@intFromPtr(viewport.*.PlatformHandle));
-//        if (platform.windowFocused(window_handle)) {
-//            var mouse_pos = platform.cursorPosition(window_handle);
-//            if (io.*.ConfigFlags & c.ImGuiConfigFlags_ViewportsEnable != 0) {
-//                const window_pos = platform.windowPosition(window_handle);
-//                mouse_pos[0] += @floatFromInt(window_pos[0]);
-//                mouse_pos[1] += @floatFromInt(window_pos[1]);
-//            }
-//            c.ImGuiIO_AddMousePosEvent(io, mouse_pos[0], mouse_pos[1]);
-//        }
-//
-//        if (platform.windowHovered(window_handle)) {
-//            mouse_viewport_id = viewport.*.ID;
-//        }
-//    }
-//
-//    if (io.*.BackendFlags & c.ImGuiBackendFlags_HasMouseHoveredViewport != 0) {
-//        c.ImGuiIO_AddMouseViewportEvent(io, mouse_viewport_id);
-//    }
-//}
-
 fn updateMouseCursor() !void {
     const io = c.igGetIO_Nil();
     if (io.*.ConfigFlags & c.ImGuiConfigFlags_NoMouseCursorChange != 0 or
@@ -218,13 +189,6 @@ fn windowFocusCallback(
     const io = c.igGetIO_Nil();
     c.ImGuiIO_AddFocusEvent(io, focused);
 }
-
-//fn cursorEnterCallback(
-//    _: platform.WindowHandle,
-//    entered: bool,
-//) void {
-//    const io = c.igGetIO_Nil();
-//}
 
 fn cursorPositionCallback(
     window_handle: platform.WindowHandle,
@@ -474,14 +438,15 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
             -1 - draw_data.*.DisplayPos.x * scale[0],
             -1 - draw_data.*.DisplayPos.y * scale[1],
         };
-        const scale_translate = ScaleTranslate{
+        const scale_translate = UniformData{
             .scale = scale,
             .translate = translate,
+            .srgb = true,
         };
         const scale_translate_ptr: [*]const u8 = @ptrCast(&scale_translate);
         try gfx.updateBufferFromMemory(
-            scale_translate_uniform_buffer_handle,
-            scale_translate_ptr[0..@sizeOf(ScaleTranslate)],
+            uniform_data_buffer_handle,
+            scale_translate_ptr[0..@sizeOf(UniformData)],
             0,
         );
 
@@ -502,8 +467,8 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
             font_texture_handle,
         );
         gfx.bindUniformBuffer(
-            scale_translate_uniform_handle,
-            scale_translate_uniform_buffer_handle,
+            uniform_data_handle,
+            uniform_data_buffer_handle,
             0,
         );
         gfx.bindPipelineLayout(pipeline_layout_handle);
@@ -602,16 +567,18 @@ pub fn init(options: Options) !void {
     );
     errdefer gfx.destroyProgram(program_handle);
 
-    scale_translate_uniform_handle = try gfx.registerUniformName("u_scale_translate");
-    scale_translate_uniform_buffer_handle = try gfx.createBuffer(
-        @sizeOf(ScaleTranslate),
+    const alignment = gfx.uniformAlignment();
+    const uniform_data_size = ((@sizeOf(UniformData) + alignment - 1) / alignment) * alignment;
+    uniform_data_handle = try gfx.registerUniformName("u_data");
+    uniform_data_buffer_handle = try gfx.createBuffer(
+        uniform_data_size,
         .{ .uniform = true },
         .host,
         .{
             .debug_name = "ImGui ScaleTranslate Uniform Buffer",
         },
     );
-    errdefer gfx.destroyBuffer(scale_translate_uniform_buffer_handle);
+    errdefer gfx.destroyBuffer(uniform_data_buffer_handle);
 
     var vertex_layout: gfx_types.VertexLayout = .init();
     vertex_layout.add(.position, 2, .f32, false);
@@ -659,7 +626,7 @@ pub fn deinit() void {
     platform.unregisterWindowFocusCallback(windowFocusCallback);
 
     gfx.destroyPipelineLayout(pipeline_layout_handle);
-    gfx.destroyBuffer(scale_translate_uniform_buffer_handle);
+    gfx.destroyBuffer(uniform_data_buffer_handle);
     if (vertex_buffer_handle) |handle| {
         gfx.destroyBuffer(handle);
     }
@@ -691,7 +658,6 @@ pub fn update(delta_time: f32) !void {
     io.*.DeltaTime = delta_time;
 
     try updateMonitors();
-    //try updateMouseData();
     try updateMouseCursor();
 
     // Test window

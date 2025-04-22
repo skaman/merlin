@@ -541,6 +541,8 @@ pub fn beginFrame() !bool {
 }
 
 pub fn endFrame() !void {
+    defer _ = _arena_impl.reset(.retain_capacity);
+
     command_buffers.endRenderPass(_main_command_buffers[_current_frame_in_flight]);
     try command_buffers.end(_main_command_buffers[_current_frame_in_flight]);
 
@@ -593,8 +595,6 @@ pub fn endFrame() !void {
     }
 
     _current_frame_in_flight = (_current_frame_in_flight + 1) % MaxFramesInFlight;
-
-    _ = _arena_impl.reset(.retain_capacity);
 }
 
 pub fn setViewport(position: [2]u32, size: [2]u32) void {

@@ -7,8 +7,33 @@ layout(location = 0) in struct {
 
 layout(location = 0) out vec4 f_color;
 
+layout(binding = 0) uniform UniformData {
+    vec2 scale;
+    vec2 translate;
+    bool srgb;
+} u_data;
 layout(binding = 1) uniform sampler2D s_tex;
 
+vec4 fromLinear(vec4 linearRGB)
+{
+    bvec3 cutoff = lessThan(linearRGB.rgb, vec3(0.0031308));
+    vec3 higher = vec3(1.055) * pow(linearRGB.rgb, vec3(1.0 / 2.4)) - vec3(0.055);
+    vec3 lower = linearRGB.rgb * vec3(12.92);
+
+    return vec4(mix(higher, lower, cutoff), linearRGB.a);
+}
+
+// Converts a color from sRGB gamma to linear light gamma
+vec4 toLinear(vec4 sRGB)
+{
+    bvec3 cutoff = lessThan(sRGB.rgb, vec3(0.04045));
+    vec3 higher = pow((sRGB.rgb + vec3(0.055)) / vec3(1.055), vec3(2.4));
+    vec3 lower = sRGB.rgb / vec3(12.92);
+
+    return vec4(mix(higher, lower, cutoff), sRGB.a);
+}
+
 void main() {
-    f_color = texture(s_tex, v_in.uv) * v_in.color;
+    vec4 pixel = texture(s_tex, v_in.uv) * v_in.color;
+    f_color = u_data.srgb ? toLinear(pixel) : pixel;
 }
