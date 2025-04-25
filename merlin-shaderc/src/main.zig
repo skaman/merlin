@@ -101,6 +101,15 @@ pub fn main() !void {
         }
     }
 
+    try std_out.print("Push constants:\n", .{});
+    for (data.push_constants.items) |push_constant| {
+        try std_out.print("  - {s} (offset={d}, size={d})\n", .{
+            push_constant.name,
+            push_constant.offset,
+            push_constant.size,
+        });
+    }
+
     try std_out.print("Saving {s}\n", .{output_file.?});
     try shaderc.save(
         output_file.?,

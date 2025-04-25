@@ -13,10 +13,9 @@ const vk = @import("vulkan.zig");
 
 pub const Shader = struct {
     module: c.VkShaderModule,
-    input_attributes: [vk.pipeline.MaxVertexAttributes]types.ShaderInputAttribute,
-    input_attribute_count: u8,
-    descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]types.DescriptorSet,
-    descriptor_set_count: u8,
+    input_attributes: []const types.ShaderInputAttribute,
+    descriptor_sets: []const types.DescriptorSet,
+    push_constants: []const types.PushConstant,
     debug_name: ?[]const u8,
 };
 
@@ -25,6 +24,61 @@ pub const Shader = struct {
 // *********************************************************************************************
 
 var _shaders_to_destroy: std.ArrayList(*Shader) = undefined;
+
+// *********************************************************************************************
+// Private API
+// *********************************************************************************************
+
+fn dupeShaderInputAttributes(input_attributes: []const types.ShaderInputAttribute) ![]const types.ShaderInputAttribute {
+    var duped = try vk.gpa.alloc(types.ShaderInputAttribute, input_attributes.len);
+    for (input_attributes, 0..) |input_attribute, i| {
+        duped[i] = input_attribute;
+    }
+    return duped;
+}
+
+fn dupeDescriptorSets(descriptor_sets: []const types.DescriptorSet) ![]const types.DescriptorSet {
+    var duped = try vk.gpa.alloc(types.DescriptorSet, descriptor_sets.len);
+    for (descriptor_sets, 0..) |descriptor_set, i| {
+        duped[i] = descriptor_set;
+        var bindings = try vk.gpa.dupe(types.DescriptorBinding, descriptor_set.bindings);
+        for (descriptor_set.bindings, 0..) |binding, j| {
+            bindings[j].name = try vk.gpa.dupe(u8, binding.name);
+        }
+        duped[i].bindings = bindings;
+    }
+    return duped;
+}
+
+fn dupePushConstants(push_constants: []const types.PushConstant) ![]const types.PushConstant {
+    var duped = try vk.gpa.alloc(types.PushConstant, push_constants.len);
+    for (push_constants, 0..) |push_constant, i| {
+        duped[i] = push_constant;
+        duped[i].name = try vk.gpa.dupe(u8, push_constant.name);
+    }
+    return duped;
+}
+
+fn freeShaderInputAttributes(input_attributes: []const types.ShaderInputAttribute) void {
+    vk.gpa.free(input_attributes);
+}
+
+fn freeDescriptorSets(descriptor_sets: []const types.DescriptorSet) void {
+    for (descriptor_sets) |descriptor_set| {
+        for (descriptor_set.bindings) |binding| {
+            vk.gpa.free(binding.name);
+        }
+        vk.gpa.free(descriptor_set.bindings);
+    }
+    vk.gpa.free(descriptor_sets);
+}
+
+fn freePushConstants(push_constants: []const types.PushConstant) void {
+    for (push_constants) |push_constant| {
+        vk.gpa.free(push_constant.name);
+    }
+    vk.gpa.free(push_constants);
+}
 
 // *********************************************************************************************
 // Public API
@@ -47,16 +101,6 @@ pub fn create(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderH
         reader,
     );
 
-    if (data.input_attributes.len > vk.pipeline.MaxVertexAttributes) {
-        vk.log.err("Input attributes count exceeds maximum vertex attributes", .{});
-        return error.MaxVertexAttributesExceeded;
-    }
-
-    if (data.descriptor_sets.len > vk.pipeline.MaxDescriptorSetBindings) {
-        vk.log.err("Descriptor sets count exceeds maximum descriptor sets", .{});
-        return error.MaxDescriptorSetsExceeded;
-    }
-
     var module: c.VkShaderModule = undefined;
     const create_info = c.VkShaderModuleCreateInfo{
         .sType = c.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
@@ -68,17 +112,22 @@ pub fn create(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderH
     const shader = try vk.gpa.create(Shader);
     errdefer vk.gpa.destroy(shader);
 
+    const input_attributes = try dupeShaderInputAttributes(data.input_attributes);
+    errdefer freeShaderInputAttributes(input_attributes);
+
+    const descriptor_sets = try dupeDescriptorSets(data.descriptor_sets);
+    errdefer freeDescriptorSets(descriptor_sets);
+
+    const push_constants = try dupePushConstants(data.push_constants);
+    errdefer freePushConstants(push_constants);
+
     shader.* = .{
         .module = module,
-        .input_attributes = undefined,
-        .input_attribute_count = @intCast(data.input_attributes.len),
-        .descriptor_sets = undefined,
-        .descriptor_set_count = @intCast(data.descriptor_sets.len),
+        .input_attributes = input_attributes,
+        .descriptor_sets = descriptor_sets,
+        .push_constants = push_constants,
         .debug_name = null,
     };
-
-    @memcpy(shader.input_attributes[0..data.input_attributes.len], data.input_attributes);
-    @memcpy(shader.descriptor_sets[0..data.descriptor_sets.len], data.descriptor_sets);
 
     vk.log.debug("Created {s} shader:", .{switch (data.type) {
         .vertex => "vertex",
@@ -100,6 +149,10 @@ pub fn create(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderH
         for (descriptor_set.bindings) |binding| {
             vk.log.debug("    Binding {d}: {s} {s}", .{ binding.binding, binding.name, binding.type.name() });
         }
+    }
+
+    for (data.push_constants) |push_constant| {
+        vk.log.debug("  - Push constant: {s} ({d} bytes)", .{ push_constant.name, push_constant.size });
     }
 
     return .{ .handle = @ptrCast(shader) };
@@ -124,6 +177,9 @@ pub fn destroyPendingResources() void {
             vk.log.debug("Shader '{s}' destroyed", .{name});
             vk.gpa.free(name);
         }
+        freeShaderInputAttributes(shader.input_attributes);
+        freeDescriptorSets(shader.descriptor_sets);
+        freePushConstants(shader.push_constants);
         vk.gpa.destroy(shader);
     }
     _shaders_to_destroy.clearRetainingCapacity();

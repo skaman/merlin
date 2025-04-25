@@ -105,7 +105,7 @@ var material_handles: utils.HandlePool(
     MaxMaterialHandles,
 ) = undefined;
 
-var material_uniform_handle: gfx.UniformHandle = undefined;
+var material_uniform_handle: gfx.NameHandle = undefined;
 var material_uniform_buffer: gfx.UniformArray(MaterialUniform) = undefined;
 var default_texture_handle: gfx.TextureHandle = undefined;
 
@@ -278,7 +278,7 @@ pub fn init(allocator: std.mem.Allocator) !void {
     assets_path = try getAssetsPath(gpa);
     errdefer allocator.free(assets_path);
 
-    material_uniform_handle = try gfx.registerUniformName("u_material");
+    material_uniform_handle = gfx.nameHandle("u_material");
 
     material_uniform_buffer = try .init(
         MaxMaterialHandles,
@@ -376,8 +376,8 @@ pub fn loadMesh(filename: []const u8) !MeshHandle {
     log.debug("  - Indices count: {d}", .{mesh_data.indices_count});
     log.debug("  - Indices data size: {s}", .{std.fmt.fmtIntSizeDec(mesh_data.indices_data_size)});
     log.debug("  - Index type: {s}", .{mesh_data.index_type.name()});
-    log.debug("  - Pipeline layout handle: {d}", .{pipeline_handle});
-    log.debug("  - Buffer handle: {d}", .{buffer_handle});
+    log.debug("  - Pipeline layout handle: {any}", .{pipeline_handle});
+    log.debug("  - Buffer handle: {any}", .{buffer_handle});
 
     return handle;
 }
@@ -548,7 +548,7 @@ pub inline fn material(handle: MaterialHandle) *Material {
     return materials.valuePtr(handle);
 }
 
-pub inline fn materialUniformHandle() gfx.UniformHandle {
+pub inline fn materialUniformHandle() gfx.NameHandle {
     return material_uniform_handle;
 }
 

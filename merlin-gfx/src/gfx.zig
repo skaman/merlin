@@ -16,10 +16,10 @@ pub const log = std.log.scoped(.gfx);
 pub const ShaderHandle = packed struct { handle: *anyopaque };
 pub const ProgramHandle = packed struct { handle: *anyopaque };
 pub const BufferHandle = packed struct { handle: *anyopaque };
-pub const UniformHandle = packed struct { handle: *anyopaque };
 pub const TextureHandle = packed struct { handle: *anyopaque };
 pub const PipelineLayoutHandle = packed struct { handle: *anyopaque };
 pub const CommandBufferHandle = packed struct { handle: *anyopaque };
+pub const NameHandle = packed struct { handle: u64 };
 
 // *********************************************************************************************
 // Structs and Enums
@@ -298,7 +298,6 @@ const VTab = struct {
     createTexture: *const fn (reader: std.io.AnyReader, size: u32, options: TextureOptions) anyerror!TextureHandle,
     createTextureFromKTX: *const fn (reader: std.io.AnyReader, size: u32, options: TextureKTXOptions) anyerror!TextureHandle,
     destroyTexture: *const fn (handle: TextureHandle) void,
-    registerUniformName: *const fn (name: []const u8) anyerror!UniformHandle,
     beginFrame: *const fn () anyerror!bool,
     endFrame: *const fn () anyerror!void,
     setViewport: *const fn (position: [2]u32, size: [2]u32) void,
@@ -309,8 +308,9 @@ const VTab = struct {
     bindProgram: *const fn (program: ProgramHandle) void,
     bindVertexBuffer: *const fn (buffer: BufferHandle, offset: u32) void,
     bindIndexBuffer: *const fn (buffer: BufferHandle, offset: u32) void,
-    bindUniformBuffer: *const fn (uniform: UniformHandle, buffer: BufferHandle, offset: u32) void,
-    bindCombinedSampler: *const fn (uniform: UniformHandle, texture: TextureHandle) void,
+    bindUniformBuffer: *const fn (name: NameHandle, buffer: BufferHandle, offset: u32) void,
+    bindCombinedSampler: *const fn (name: NameHandle, texture: TextureHandle) void,
+    pushConstants: *const fn (shader_stage: types.ShaderType, offset: u32, data: []const u8) void,
     draw: *const fn (vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void,
     drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32, index_type: types.IndexType) void,
     beginDebugLabel: *const fn (label_name: []const u8, color: [4]f32) void,
@@ -356,7 +356,6 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .createTexture = noop.createTexture,
                 .createTextureFromKTX = noop.createTextureFromKTX,
                 .destroyTexture = noop.destroyTexture,
-                .registerUniformName = noop.registerUniformName,
                 .beginFrame = noop.beginFrame,
                 .endFrame = noop.endFrame,
                 .setViewport = noop.setViewport,
@@ -369,6 +368,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .bindIndexBuffer = noop.bindIndexBuffer,
                 .bindUniformBuffer = noop.bindUniformBuffer,
                 .bindCombinedSampler = noop.bindCombinedSampler,
+                .pushConstants = noop.pushConstants,
                 .draw = noop.draw,
                 .drawIndexed = noop.drawIndexed,
                 .beginDebugLabel = noop.beginDebugLabel,
@@ -396,7 +396,6 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .createTexture = vulkan.createTexture,
                 .createTextureFromKTX = vulkan.createTextureFromKTX,
                 .destroyTexture = vulkan.destroyTexture,
-                .registerUniformName = vulkan.registerUniformName,
                 .beginFrame = vulkan.beginFrame,
                 .endFrame = vulkan.endFrame,
                 .setViewport = vulkan.setViewport,
@@ -409,6 +408,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .bindIndexBuffer = vulkan.bindIndexBuffer,
                 .bindUniformBuffer = vulkan.bindUniformBuffer,
                 .bindCombinedSampler = vulkan.bindCombinedSampler,
+                .pushConstants = vulkan.pushConstants,
                 .draw = vulkan.draw,
                 .drawIndexed = vulkan.drawIndexed,
                 .beginDebugLabel = vulkan.beginDebugLabel,
@@ -585,9 +585,10 @@ pub inline fn destroyTexture(handle: TextureHandle) void {
     v_tab.destroyTexture(handle);
 }
 
-/// Registers a uniform name.
-pub inline fn registerUniformName(name: []const u8) !UniformHandle {
-    return try v_tab.registerUniformName(name);
+pub inline fn nameHandle(name: []const u8) NameHandle {
+    return .{
+        .handle = std.hash.Fnv1a_64.hash(name),
+    };
 }
 
 /// Begins a frame.
@@ -638,19 +639,27 @@ pub inline fn bindIndexBuffer(handle: BufferHandle, offset: u32) void {
 }
 
 pub inline fn bindUniformBuffer(
-    uniform: UniformHandle,
+    name: NameHandle,
     buffer: BufferHandle,
     offset: u32,
 ) void {
     v_tab.bindUniformBuffer(
-        uniform,
+        name,
         buffer,
         offset,
     );
 }
 
-pub inline fn bindCombinedSampler(uniform: UniformHandle, texture: TextureHandle) void {
-    v_tab.bindCombinedSampler(uniform, texture);
+pub inline fn bindCombinedSampler(name: NameHandle, texture: TextureHandle) void {
+    v_tab.bindCombinedSampler(name, texture);
+}
+
+pub inline fn pushConstants(
+    shader_stage: types.ShaderType,
+    offset: u32,
+    data: []const u8,
+) void {
+    v_tab.pushConstants(shader_stage, offset, data);
 }
 
 pub inline fn draw(

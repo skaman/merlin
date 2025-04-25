@@ -44,9 +44,6 @@ pub fn createTextureFromKTX(_: std.io.AnyReader, _: u32, _: gfx.TextureKTXOption
     return .{ .handle = undefined };
 }
 pub fn destroyTexture(_: gfx.TextureHandle) void {}
-pub fn registerUniformName(_: []const u8) !gfx.UniformHandle {
-    return .{ .handle = undefined };
-}
 pub fn beginFrame() !bool {
     return true;
 }
@@ -59,8 +56,9 @@ pub fn bindPipelineLayout(_: gfx.PipelineLayoutHandle) void {}
 pub fn bindProgram(_: gfx.ProgramHandle) void {}
 pub fn bindVertexBuffer(_: gfx.BufferHandle, _: u32) void {}
 pub fn bindIndexBuffer(_: gfx.BufferHandle, _: u32) void {}
-pub fn bindUniformBuffer(_: gfx.UniformHandle, _: gfx.BufferHandle, _: u32) void {}
-pub fn bindCombinedSampler(_: gfx.UniformHandle, _: gfx.TextureHandle) void {}
+pub fn bindUniformBuffer(_: gfx.NameHandle, _: gfx.BufferHandle, _: u32) void {}
+pub fn bindCombinedSampler(_: gfx.NameHandle, _: gfx.TextureHandle) void {}
+pub fn pushConstants(_: types.ShaderType, _: u32, _: []const u8) void {}
 pub fn draw(_: u32, _: u32, _: u32, _: u32) void {}
 pub fn drawIndexed(_: u32, _: u32, _: u32, _: i32, _: u32, _: types.IndexType) void {}
 pub fn beginDebugLabel(_: []const u8, _: [4]f32) void {}

@@ -140,6 +140,12 @@ pub const DescriptorSet = struct {
     bindings: []const DescriptorBinding,
 };
 
+pub const PushConstant = struct {
+    name: []const u8,
+    offset: u32,
+    size: u32,
+};
+
 pub const ShaderType = enum(u8) {
     vertex,
     fragment,
@@ -155,6 +161,7 @@ pub const ShaderData = struct {
     data: []align(@alignOf(u32)) const u8,
     input_attributes: []const ShaderInputAttribute,
     descriptor_sets: []const DescriptorSet,
+    push_constants: []const PushConstant,
 };
 
 pub const VertexAttributeType = enum(u8) {

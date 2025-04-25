@@ -25,6 +25,7 @@ const Dispatch = struct {
     CmdEndRenderPass: std.meta.Child(c.PFN_vkCmdEndRenderPass) = undefined,
     CmdPipelineBarrier: std.meta.Child(c.PFN_vkCmdPipelineBarrier) = undefined,
     CmdPushDescriptorSetKHR: std.meta.Child(c.PFN_vkCmdPushDescriptorSetKHR) = undefined,
+    CmdPushConstants: std.meta.Child(c.PFN_vkCmdPushConstants) = undefined,
     CmdSetScissor: std.meta.Child(c.PFN_vkCmdSetScissor) = undefined,
     CmdSetViewport: std.meta.Child(c.PFN_vkCmdSetViewport) = undefined,
     CreateBuffer: std.meta.Child(c.PFN_vkCreateBuffer) = undefined,
@@ -809,6 +810,27 @@ pub inline fn cmdPushDescriptorSet(
         set,
         descriptor_write_count,
         descriptor_writes,
+    );
+}
+
+pub inline fn cmdPushConstants(
+    command_buffer: c.VkCommandBuffer,
+    layout: c.VkPipelineLayout,
+    stage_flags: c.VkShaderStageFlags,
+    offset: u32,
+    size: u32,
+    values: [*c]const u8,
+) void {
+    std.debug.assert(command_buffer != null);
+    std.debug.assert(layout != null);
+
+    dispatch.CmdPushConstants(
+        command_buffer,
+        layout,
+        stage_flags,
+        offset,
+        size,
+        values,
     );
 }
 

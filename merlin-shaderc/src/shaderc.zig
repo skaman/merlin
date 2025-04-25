@@ -31,6 +31,7 @@ pub const CompiledShader = struct {
     data: []align(@alignOf(u32)) const u8,
     input_attributes: ?reflect.InputAttributes,
     descriptor_sets: reflect.DescriptorSets,
+    push_constants: reflect.PushConstants,
     shader_type: gfx_types.ShaderType,
 
     pub fn deinit(self: *const CompiledShader) void {
@@ -39,6 +40,7 @@ pub const CompiledShader = struct {
             iattr.deinit();
         }
         self.descriptor_sets.deinit();
+        self.push_constants.deinit();
     }
 };
 
@@ -127,12 +129,16 @@ pub fn compile(allocator: std.mem.Allocator, filename: []const u8, file_content:
     const descriptor_sets = try shader_reflect.descriptorSets(allocator);
     errdefer descriptor_sets.deinit();
 
+    const push_constants = try shader_reflect.pushConstants(allocator);
+    errdefer push_constants.deinit();
+
     return .{
         .allocator = allocator,
         .type = shader_type,
         .data = data,
         .input_attributes = input_attributes,
         .descriptor_sets = descriptor_sets,
+        .push_constants = push_constants,
         .shader_type = shader_type,
     };
 }
@@ -149,6 +155,7 @@ pub fn save(
         .data = compiled_shader.data,
         .input_attributes = if (compiled_shader.input_attributes) |attrs| attrs.attributes else &[0]gfx_types.ShaderInputAttribute{},
         .descriptor_sets = compiled_shader.descriptor_sets.sets,
+        .push_constants = compiled_shader.push_constants.items,
     };
 
     try utils.Serializer.writeHeader(

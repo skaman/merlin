@@ -24,10 +24,13 @@ pub const Options = struct {
     window_handle: platform.WindowHandle,
 };
 
-const UniformData = struct {
+const VertexConstantData = struct {
     scale: [2]f32,
     translate: [2]f32,
-    srgb: bool,
+};
+
+const FragmentConstantData = struct {
+    srgb: u32,
 };
 
 // *********************************************************************************************
@@ -40,9 +43,7 @@ var font_texture_handle: gfx.TextureHandle = undefined;
 var vert_shader_handle: gfx.ShaderHandle = undefined;
 var frag_shader_handle: gfx.ShaderHandle = undefined;
 var program_handle: gfx.ProgramHandle = undefined;
-var tex_uniform_handle: gfx.UniformHandle = undefined;
-var uniform_data_handle: gfx.UniformHandle = undefined;
-var uniform_data_buffer_handle: gfx.BufferHandle = undefined;
+var tex_uniform_handle: gfx.NameHandle = undefined;
 var pipeline_layout_handle: gfx.PipelineLayoutHandle = undefined;
 var vertex_buffer_handle: ?gfx.BufferHandle = null;
 var vertex_buffer_size: u32 = 0;
@@ -438,19 +439,16 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
             -1 - draw_data.*.DisplayPos.x * scale[0],
             -1 - draw_data.*.DisplayPos.y * scale[1],
         };
-        const scale_translate = UniformData{
+        const vertex_constant_data = VertexConstantData{
             .scale = scale,
             .translate = translate,
-            .srgb = true,
         };
-        const scale_translate_ptr: [*]const u8 = @ptrCast(&scale_translate);
-        try gfx.updateBufferFromMemory(
-            uniform_data_buffer_handle,
-            scale_translate_ptr[0..@sizeOf(UniformData)],
-            0,
-        );
+        const vertex_constant_data_ptr: [*]const u8 = @ptrCast(&vertex_constant_data);
 
-        //log.debug("scale: {any}, translate: {any}", .{ scale, translate });
+        const fragment_constant_data = FragmentConstantData{
+            .srgb = 1,
+        };
+        const fragment_constant_data_ptr: [*]const u8 = @ptrCast(&fragment_constant_data);
 
         gfx.beginDebugLabel("Render ImGui", gfx_types.Colors.LightCoral);
         defer gfx.endDebugLabel();
@@ -461,15 +459,20 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
         });
 
         gfx.setViewport(.{ 0, 0 }, framebuffer_size);
+        gfx.pushConstants(
+            .vertex,
+            0,
+            vertex_constant_data_ptr[0..@sizeOf(VertexConstantData)],
+        );
+        gfx.pushConstants(
+            .fragment,
+            64,
+            fragment_constant_data_ptr[0..@sizeOf(FragmentConstantData)],
+        );
         gfx.bindProgram(program_handle);
         gfx.bindCombinedSampler(
             tex_uniform_handle,
             font_texture_handle,
-        );
-        gfx.bindUniformBuffer(
-            uniform_data_handle,
-            uniform_data_buffer_handle,
-            0,
         );
         gfx.bindPipelineLayout(pipeline_layout_handle);
         gfx.bindVertexBuffer(vertex_buffer_handle.?, 0);
@@ -567,19 +570,6 @@ pub fn init(options: Options) !void {
     );
     errdefer gfx.destroyProgram(program_handle);
 
-    const alignment = gfx.uniformAlignment();
-    const uniform_data_size = ((@sizeOf(UniformData) + alignment - 1) / alignment) * alignment;
-    uniform_data_handle = try gfx.registerUniformName("u_data");
-    uniform_data_buffer_handle = try gfx.createBuffer(
-        uniform_data_size,
-        .{ .uniform = true },
-        .host,
-        .{
-            .debug_name = "ImGui ScaleTranslate Uniform Buffer",
-        },
-    );
-    errdefer gfx.destroyBuffer(uniform_data_buffer_handle);
-
     var vertex_layout: gfx_types.VertexLayout = .init();
     vertex_layout.add(.position, 2, .f32, false);
     vertex_layout.add(.tex_coord_0, 2, .f32, false);
@@ -594,7 +584,7 @@ pub fn init(options: Options) !void {
 
     _ = c.ImFontAtlas_AddFontDefault(io.*.Fonts, null);
 
-    tex_uniform_handle = try gfx.registerUniformName("s_tex");
+    tex_uniform_handle = gfx.nameHandle("s_tex");
     font_texture_handle = try createFontsTexture();
     errdefer gfx.destroyTexture(font_texture_handle);
 
@@ -626,7 +616,6 @@ pub fn deinit() void {
     platform.unregisterWindowFocusCallback(windowFocusCallback);
 
     gfx.destroyPipelineLayout(pipeline_layout_handle);
-    gfx.destroyBuffer(uniform_data_buffer_handle);
     if (vertex_buffer_handle) |handle| {
         gfx.destroyBuffer(handle);
     }

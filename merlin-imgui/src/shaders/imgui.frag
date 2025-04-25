@@ -7,12 +7,12 @@ layout(location = 0) in struct {
 
 layout(location = 0) out vec4 f_color;
 
-layout(binding = 0) uniform UniformData {
-    vec2 scale;
-    vec2 translate;
-    bool srgb;
-} u_data;
 layout(binding = 1) uniform sampler2D s_tex;
+
+layout(push_constant) uniform constants
+{
+    layout(offset = 64) bool srgb;
+} p_data;
 
 vec4 fromLinear(vec4 linearRGB)
 {
@@ -35,5 +35,5 @@ vec4 toLinear(vec4 sRGB)
 
 void main() {
     vec4 pixel = texture(s_tex, v_in.uv) * v_in.color;
-    f_color = u_data.srgb ? toLinear(pixel) : pixel;
+    f_color = p_data.srgb ? toLinear(pixel) : pixel;
 }

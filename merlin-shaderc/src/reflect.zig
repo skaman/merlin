@@ -5,6 +5,10 @@ const gfx_types = utils.gfx_types;
 
 const c = @import("c.zig").c;
 
+// *********************************************************************************************
+// Constants
+// *********************************************************************************************
+
 const AttributeMapEntry = struct {
     name: []const u8,
     attribute: gfx_types.VertexAttributeType,
@@ -30,6 +34,56 @@ const AttributeMap = [_]AttributeMapEntry{
     AttributeMapEntry{ .name = "a_texcoord6", .attribute = .tex_coord_6 },
     AttributeMapEntry{ .name = "a_texcoord7", .attribute = .tex_coord_7 },
 };
+
+// *********************************************************************************************
+// Private API
+// *********************************************************************************************
+
+fn parseDescriptorSet(
+    allocator: std.mem.Allocator,
+    descriptor_set: *c.SpvReflectDescriptorSet,
+    //std_out: anytype,
+) ![]gfx_types.DescriptorBinding {
+    const result = try allocator.alloc(
+        gfx_types.DescriptorBinding,
+        descriptor_set.binding_count,
+    );
+    errdefer allocator.free(result);
+
+    var loaded_bindings: u32 = 0;
+    errdefer {
+        for (0..loaded_bindings) |i| {
+            allocator.free(result[i].name);
+        }
+    }
+
+    for (0..descriptor_set.binding_count) |i| {
+        const binding = descriptor_set.bindings[i];
+
+        const descriptor_type = switch (binding.*.descriptor_type) {
+            c.SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER => gfx_types.DescriptorBindType.uniform_buffer,
+            c.SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => gfx_types.DescriptorBindType.combined_sampler,
+            else => return error.UnsupportedDescriptorType,
+        };
+
+        result[i] = .{
+            .name = try allocator.dupe(u8, std.mem.sliceTo(binding.*.name, 0)),
+            .binding = binding.*.binding,
+            .size = switch (descriptor_type) {
+                gfx_types.DescriptorBindType.uniform_buffer => binding.*.block.size,
+                gfx_types.DescriptorBindType.combined_sampler => 0,
+            },
+            .type = descriptor_type,
+        };
+        loaded_bindings += 1;
+    }
+
+    return result;
+}
+
+// *********************************************************************************************
+// Public API
+// *********************************************************************************************
 
 pub const DescriptorSets = struct {
     allocator: std.mem.Allocator,
@@ -68,6 +122,18 @@ pub const InputVariable = struct {
 
     pub fn deinit(self: *const InputVariable) void {
         self.allocator.free(self.name);
+    }
+};
+
+pub const PushConstants = struct {
+    allocator: std.mem.Allocator,
+    items: []gfx_types.PushConstant,
+
+    pub fn deinit(self: *const PushConstants) void {
+        for (self.items) |push_constant| {
+            self.allocator.free(push_constant.name);
+        }
+        self.allocator.free(self.items);
     }
 };
 
@@ -228,55 +294,52 @@ pub const ShaderReflect = struct {
         };
     }
 
-    fn parseDescriptorSet(
+    pub fn pushConstants(
+        self: *ShaderReflect,
         allocator: std.mem.Allocator,
-        descriptor_set: *c.SpvReflectDescriptorSet,
-        //std_out: anytype,
-    ) ![]gfx_types.DescriptorBinding {
-        const result = try allocator.alloc(
-            gfx_types.DescriptorBinding,
-            descriptor_set.binding_count,
+    ) !PushConstants {
+        var push_constants_count: u32 = 0;
+        if (c.spvReflectEnumeratePushConstants(
+            &self.shader_module,
+            &push_constants_count,
+            null,
+        ) != c.SPV_REFLECT_RESULT_SUCCESS) {
+            std.log.err("Failed to enumerate push constants", .{});
+            return error.FailedEnumerateDescriptorSets;
+        }
+
+        const push_constants = try allocator.alloc(
+            *c.SpvReflectBlockVariable,
+            push_constants_count,
         );
-        errdefer allocator.free(result);
+        defer allocator.free(push_constants);
 
-        var loaded_bindings: u32 = 0;
-        errdefer {
-            for (0..loaded_bindings) |i| {
-                allocator.free(result[i].name);
-            }
+        if (c.spvReflectEnumeratePushConstants(
+            &self.shader_module,
+            &push_constants_count,
+            @ptrCast(push_constants.ptr),
+        ) != c.SPV_REFLECT_RESULT_SUCCESS) {
+            std.log.err("Failed to enumerate push constants", .{});
+            return error.FailedEnumerateDescriptorSets;
         }
 
-        for (0..descriptor_set.binding_count) |i| {
-            const binding = descriptor_set.bindings[i];
+        const items = try allocator.alloc(
+            gfx_types.PushConstant,
+            push_constants_count,
+        );
+        errdefer allocator.free(items);
 
-            const descriptor_type = switch (binding.*.descriptor_type) {
-                c.SPV_REFLECT_DESCRIPTOR_TYPE_UNIFORM_BUFFER => gfx_types.DescriptorBindType.uniform_buffer,
-                c.SPV_REFLECT_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => gfx_types.DescriptorBindType.combined_sampler,
-                else => return error.UnsupportedDescriptorType,
+        for (push_constants, 0..) |push_constant, i| {
+            items[i] = .{
+                .name = try allocator.dupe(u8, std.mem.sliceTo(push_constant.name, 0)),
+                .offset = push_constant.offset,
+                .size = push_constant.size,
             };
-
-            result[i] = .{
-                .name = try allocator.dupe(u8, std.mem.sliceTo(binding.*.name, 0)),
-                .binding = binding.*.binding,
-                .size = switch (descriptor_type) {
-                    gfx_types.DescriptorBindType.uniform_buffer => binding.*.block.size,
-                    gfx_types.DescriptorBindType.combined_sampler => 0,
-                },
-                .type = descriptor_type,
-            };
-            loaded_bindings += 1;
-
-            //try std_out.print("  - {s} (binding={d}, type={s}, size={s})\n", .{
-            //    result[i].name,
-            //    result[i].binding,
-            //    switch (result[i].type) {
-            //        gfx_types.DescriptorBindType.uniform => "uniform",
-            //        gfx_types.DescriptorBindType.combined_sampler => "combined sampler",
-            //    },
-            //    std.fmt.fmtIntSizeDec(result[i].size),
-            //});
         }
 
-        return result;
+        return .{
+            .allocator = allocator,
+            .items = items,
+        };
     }
 };

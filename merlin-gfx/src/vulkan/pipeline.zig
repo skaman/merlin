@@ -13,6 +13,7 @@ const vk = @import("vulkan.zig");
 
 pub const MaxVertexAttributes = 16;
 pub const MaxDescriptorSetBindings = 16;
+pub const MaxPushConstants = 8;
 
 const AttributeType = [@typeInfo(types.VertexComponentType).@"enum".fields.len][4][2]c.VkFormat{
     // i8
@@ -130,11 +131,9 @@ fn create(
     const vertex_shader = program.vertex_shader;
     const fragment_shader = program.fragment_shader;
 
-    const vertex_shader_input_attributes = vertex_shader.input_attributes[0..vertex_shader.input_attribute_count];
-
     var attribute_descriptions: [MaxVertexAttributes]c.VkVertexInputAttributeDescription = undefined;
     var attribute_count: u32 = 0;
-    for (vertex_shader_input_attributes) |input_attribute| {
+    for (vertex_shader.input_attributes) |input_attribute| {
         const attribute_data = vertex_layout.attributes[@intFromEnum(input_attribute.attribute)];
         if (attribute_data.num == 0) {
             vk.log.warn("Attribute {s} not found in vertex layout", .{input_attribute.attribute.name()});

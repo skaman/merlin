@@ -29,8 +29,8 @@ const Context = struct {
     vertex_shader_handle: gfx.ShaderHandle,
     fragment_shader_handle: gfx.ShaderHandle,
     program_handle: gfx.ProgramHandle,
-    mvp_uniform_handle: gfx.UniformHandle,
-    tex_sampler_uniform_handle: gfx.UniformHandle,
+    mvp_uniform_handle: gfx.NameHandle,
+    tex_sampler_uniform_handle: gfx.NameHandle,
     mvp_uniform_buffer_handle: gfx.BufferHandle,
     texture_handle: gfx.TextureHandle,
     meshes: std.ArrayList(MeshInstance),
@@ -111,12 +111,13 @@ pub fn init(gpa_allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator
     const program_handle = try gfx.createProgram(
         vert_shader_handle,
         frag_shader_handle,
+        .{ .debug_name = "Simple Mesh program" },
     );
     errdefer gfx.destroyProgram(program_handle);
 
     // Uniforms
-    const mvp_uniform_handle = try gfx.registerUniformName("u_mvp");
-    const tex_sampler_uniform_handle = try gfx.registerUniformName("u_tex_sampler");
+    const mvp_uniform_handle = gfx.nameHandle("u_mvp");
+    const tex_sampler_uniform_handle = gfx.nameHandle("u_tex_sampler");
 
     const max_frames_in_flight = gfx.maxFramesInFlight();
     const mvp_uniform_buffer_handle = try gfx.createBuffer(

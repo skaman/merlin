@@ -18,10 +18,10 @@ pub const Program = struct {
     descriptor_pool: c.VkDescriptorPool,
     descriptor_set_layout: c.VkDescriptorSetLayout,
 
-    uniform_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.UniformHandle,
+    uniform_name_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.NameHandle,
     write_descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet,
     descriptor_types: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorType,
-    uninform_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32,
+    uniform_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32,
 
     layout_count: u32,
 
@@ -82,8 +82,7 @@ pub fn create(
     const vertex_shader = vk.shaders.shaderFromHandle(vertex_shader_handle);
     const fragment_shader = vk.shaders.shaderFromHandle(fragment_shader_handle);
 
-    const vertex_shader_descriptor_sets = vertex_shader.descriptor_sets[0..vertex_shader.descriptor_set_count];
-    for (vertex_shader_descriptor_sets) |descriptor_set| {
+    for (vertex_shader.descriptor_sets) |descriptor_set| {
         if (descriptor_set.set != 0) {
             vk.log.err("Vertex shader descriptor set index must be 0", .{});
             return error.VertexShaderDescriptorSetIndexMustBeZero;
@@ -98,8 +97,7 @@ pub fn create(
         }
     }
 
-    const fragment_shader_descriptor_sets = fragment_shader.descriptor_sets[0..fragment_shader.descriptor_set_count];
-    for (fragment_shader_descriptor_sets) |descriptor_set| {
+    for (fragment_shader.descriptor_sets) |descriptor_set| {
         for (descriptor_set.bindings) |binding| {
             if (descriptor_set.set != 0) {
                 vk.log.err("Fragment shader descriptor set index must be 0", .{});
@@ -159,14 +157,35 @@ pub fn create(
         try vk.device.createDescriptorSetLayout(&create_info, &descriptor_set_layout);
     }
 
+    var push_constants: [vk.pipeline.MaxPushConstants]c.VkPushConstantRange = undefined;
+    var push_constant_count: u32 = 0;
+
+    for (vertex_shader.push_constants) |push_constant| {
+        push_constants[push_constant_count] = c.VkPushConstantRange{
+            .stageFlags = c.VK_SHADER_STAGE_VERTEX_BIT,
+            .offset = push_constant.offset,
+            .size = push_constant.size,
+        };
+        push_constant_count += 1;
+    }
+
+    for (fragment_shader.push_constants) |push_constant| {
+        push_constants[push_constant_count] = c.VkPushConstantRange{
+            .stageFlags = c.VK_SHADER_STAGE_FRAGMENT_BIT,
+            .offset = push_constant.offset,
+            .size = push_constant.size,
+        };
+        push_constant_count += 1;
+    }
+
     const pipeline_layout_create_info = std.mem.zeroInit(
         c.VkPipelineLayoutCreateInfo,
         .{
             .sType = c.VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
             .setLayoutCount = 1,
             .pSetLayouts = &descriptor_set_layout.?,
-            .pushConstantRangeCount = 0,
-            .pPushConstantRanges = null,
+            .pushConstantRangeCount = push_constant_count,
+            .pPushConstantRanges = &push_constants,
         },
     );
 
@@ -185,7 +204,7 @@ pub fn create(
     var write_descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet = undefined;
     var descriptor_types: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorType = undefined;
     var uniform_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32 = undefined;
-    var uniform_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.UniformHandle = undefined;
+    var uniform_name_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.NameHandle = undefined;
 
     for (0..layout_count) |binding_index| {
         const name = layout_names[binding_index];
@@ -194,7 +213,7 @@ pub fn create(
 
         descriptor_types[binding_index] = descriptor_type;
         uniform_sizes[binding_index] = size;
-        uniform_handles[binding_index] = try vk.descriptor_registry.registerName(name);
+        uniform_name_handles[binding_index] = gfx.nameHandle(name);
 
         write_descriptor_sets[binding_index] = std.mem.zeroInit(
             c.VkWriteDescriptorSet,
@@ -215,10 +234,10 @@ pub fn create(
         .fragment_shader = fragment_shader,
         .descriptor_pool = descriptor_pool,
         .descriptor_set_layout = descriptor_set_layout,
-        .uniform_handles = uniform_handles,
+        .uniform_name_handles = uniform_name_handles,
         .write_descriptor_sets = write_descriptor_sets,
         .descriptor_types = descriptor_types,
-        .uninform_sizes = uniform_sizes,
+        .uniform_sizes = uniform_sizes,
         .layout_count = layout_count,
         .debug_name = null,
     };

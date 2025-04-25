@@ -25,6 +25,13 @@ const UniformBinding = union(types.DescriptorBindType) {
     combined_sampler: CombinedSamplerBinding,
 };
 
+const PushConstantBinding = struct {
+    shader_stage: c.VkShaderStageFlags,
+    offset: u32,
+    size: u32,
+    data: [*c]const u8,
+};
+
 pub const CommandBuffer = struct {
     command_pool: c.VkCommandPool,
     handle: c.VkCommandBuffer,
@@ -37,7 +44,8 @@ pub const CommandBuffer = struct {
     current_vertex_buffer_offset: u32 = 0,
     current_index_buffer: ?gfx.BufferHandle = null,
     current_index_buffer_offset: u32 = 0,
-    current_uniform_bindings: std.AutoHashMap(gfx.UniformHandle, UniformBinding) = undefined,
+    current_uniform_bindings: std.AutoHashMap(gfx.NameHandle, UniformBinding) = undefined,
+    current_push_constants: std.ArrayList(PushConstantBinding) = undefined,
 
     last_pipeline_layout: ?gfx.PipelineLayoutHandle = null,
     last_pipeline_program: ?gfx.ProgramHandle = null,
@@ -147,9 +155,11 @@ fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.
     var image_infos: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorImageInfo = undefined;
 
     for (0..layout_count) |binding_index| {
-        const uniform_handle = program.uniform_handles[binding_index];
+        const uniform_name_handle = program.uniform_name_handles[binding_index];
         const descriptor_type = program.descriptor_types[binding_index];
-        const uniform_binding = command_buffer.current_uniform_bindings.get(uniform_handle) orelse {
+        const uniform_binding = command_buffer.current_uniform_bindings.get(
+            uniform_name_handle,
+        ) orelse {
             vk.log.err("Failed to find uniform binding for handle", .{});
             return error.UniformBindingNotFound;
         };
@@ -157,8 +167,10 @@ fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.
         switch (descriptor_type) {
             c.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER => {
                 std.debug.assert(uniform_binding == .uniform_buffer);
-                const buffer = vk.buffers.bufferFromHandle(uniform_binding.uniform_buffer.buffer_handle).buffer;
-                const uniform_size = program.uninform_sizes[binding_index];
+                const buffer = vk.buffers.bufferFromHandle(
+                    uniform_binding.uniform_buffer.buffer_handle,
+                ).buffer;
+                const uniform_size = program.uniform_sizes[binding_index];
                 buffer_infos[binding_index] = .{
                     .buffer = buffer,
                     .offset = uniform_binding.uniform_buffer.offset,
@@ -195,6 +207,29 @@ fn handlePushDescriptorSet(handle: gfx.CommandBufferHandle, program_handle: gfx.
         layout_count,
         write_descriptor_sets,
     );
+}
+
+fn handlePushConstants(
+    handle: gfx.CommandBufferHandle,
+    program_handle: gfx.ProgramHandle,
+) !void {
+    var command_buffer = commandBufferFromHandle(handle);
+    const program = vk.programs.programFromHandle(program_handle);
+    const pipeline_layout = program.pipeline_layout;
+    const push_constants = command_buffer.current_push_constants.items;
+
+    for (push_constants) |push_constant| {
+        vk.device.cmdPushConstants(
+            command_buffer.handle,
+            pipeline_layout,
+            push_constant.shader_stage,
+            push_constant.offset,
+            push_constant.size,
+            push_constant.data,
+        );
+    }
+
+    command_buffer.current_push_constants.clearRetainingCapacity();
 }
 
 // *********************************************************************************************
@@ -234,6 +269,7 @@ pub fn create(command_pool: c.VkCommandPool) !gfx.CommandBufferHandle {
         .command_pool = command_pool,
         .handle = command_buffer,
         .current_uniform_bindings = .init(vk.gpa),
+        .current_push_constants = std.ArrayList(PushConstantBinding).init(vk.gpa),
     };
 
     vk.log.debug("Created command buffer", .{});
@@ -244,6 +280,7 @@ pub fn create(command_pool: c.VkCommandPool) !gfx.CommandBufferHandle {
 pub fn destroy(handle: gfx.CommandBufferHandle) void {
     const command_buffer = commandBufferFromHandle(handle);
     command_buffer.current_uniform_bindings.deinit();
+    command_buffer.current_push_constants.deinit();
     vk.device.freeCommandBuffers(
         command_buffer.command_pool,
         1,
@@ -485,12 +522,12 @@ pub fn bindIndexBuffer(
 
 pub fn bindUniformBuffer(
     handle: gfx.CommandBufferHandle,
-    uniform: gfx.UniformHandle,
+    name: gfx.NameHandle,
     buffer: gfx.BufferHandle,
     offset: u32,
 ) void {
     const command_buffer = commandBufferFromHandle(handle);
-    command_buffer.current_uniform_bindings.put(uniform, .{
+    command_buffer.current_uniform_bindings.put(name, .{
         .uniform_buffer = .{
             .buffer_handle = buffer,
             .offset = offset,
@@ -503,16 +540,39 @@ pub fn bindUniformBuffer(
 
 pub fn bindCombinedSampler(
     handle: gfx.CommandBufferHandle,
-    uniform: gfx.UniformHandle,
+    name: gfx.NameHandle,
     texture: gfx.TextureHandle,
 ) void {
     const command_buffer = commandBufferFromHandle(handle);
-    command_buffer.current_uniform_bindings.put(uniform, .{
+    command_buffer.current_uniform_bindings.put(name, .{
         .combined_sampler = .{
             .texture_handle = texture,
         },
     }) catch {
-        vk.log.err("Failed to bind uniform buffer", .{});
+        vk.log.err("Failed to bind combined sampler", .{});
+        return;
+    };
+}
+
+pub fn pushConstants(
+    handle: gfx.CommandBufferHandle,
+    shader_stage: types.ShaderType,
+    offset: u32,
+    size: u32,
+    data: *const u8,
+) void {
+    const command_buffer = commandBufferFromHandle(handle);
+    const push_constant = PushConstantBinding{
+        .shader_stage = switch (shader_stage) {
+            .vertex => c.VK_SHADER_STAGE_VERTEX_BIT,
+            .fragment => c.VK_SHADER_STAGE_FRAGMENT_BIT,
+        },
+        .offset = offset,
+        .size = size,
+        .data = data,
+    };
+    command_buffer.current_push_constants.append(push_constant) catch {
+        vk.log.err("Failed to push constants", .{});
         return;
     };
 }
@@ -548,6 +608,11 @@ pub fn draw(
 
     handlePushDescriptorSet(handle, current_program.?) catch {
         vk.log.err("Failed to bind Vulkan descriptor set", .{});
+        return;
+    };
+
+    handlePushConstants(handle, current_program.?) catch {
+        vk.log.err("Failed to bind Vulkan push constants", .{});
         return;
     };
 
@@ -598,6 +663,11 @@ pub fn drawIndexed(
 
     handleBindIndexBuffer(handle, index_type) catch {
         vk.log.err("Failed to bind Vulkan index buffer", .{});
+        return;
+    };
+
+    handlePushConstants(handle, current_program.?) catch {
+        vk.log.err("Failed to bind Vulkan push constants", .{});
         return;
     };
 

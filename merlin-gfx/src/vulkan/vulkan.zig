@@ -12,7 +12,6 @@ pub const command_buffers = @import("command_buffers.zig");
 pub const command_pool = @import("command_pool.zig");
 pub const debug = @import("debug.zig");
 pub const depth_image = @import("depth_image.zig");
-pub const descriptor_registry = @import("descriptor_registry.zig");
 pub const device = @import("device.zig");
 pub const image = @import("image.zig");
 pub const instance = @import("instance.zig");
@@ -315,9 +314,6 @@ pub fn init(
         );
     }
 
-    try descriptor_registry.init();
-    errdefer descriptor_registry.deinit();
-
     const pool_size = std.mem.zeroInit(
         c.VkDescriptorPoolSize,
         .{
@@ -365,8 +361,6 @@ pub fn deinit() void {
     pipeline_layouts.deinit();
 
     device.destroyDescriptorPool(_main_descriptor_pool);
-
-    descriptor_registry.deinit();
 
     for (0..MaxFramesInFlight) |i| {
         device.destroySemaphore(_image_available_semaphores[i]);
@@ -499,10 +493,6 @@ pub fn createTextureFromKTX(reader: std.io.AnyReader, size: u32, options: gfx.Te
 
 pub fn destroyTexture(handle: gfx.TextureHandle) void {
     return textures.destroy(handle);
-}
-
-pub fn registerUniformName(name: []const u8) !gfx.UniformHandle {
-    return descriptor_registry.registerName(name);
 }
 
 pub fn beginFrame() !bool {
@@ -680,20 +670,34 @@ pub fn bindIndexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
     );
 }
 
-pub fn bindUniformBuffer(uniform: gfx.UniformHandle, buffer: gfx.BufferHandle, offset: u32) void {
+pub fn bindUniformBuffer(name: gfx.NameHandle, buffer: gfx.BufferHandle, offset: u32) void {
     command_buffers.bindUniformBuffer(
         _main_command_buffers[_current_frame_in_flight],
-        uniform,
+        name,
         buffer,
         offset,
     );
 }
 
-pub fn bindCombinedSampler(uniform: gfx.UniformHandle, texture: gfx.TextureHandle) void {
+pub fn bindCombinedSampler(name: gfx.NameHandle, texture: gfx.TextureHandle) void {
     command_buffers.bindCombinedSampler(
         _main_command_buffers[_current_frame_in_flight],
-        uniform,
+        name,
         texture,
+    );
+}
+
+pub fn pushConstants(
+    shader_stage: types.ShaderType,
+    offset: u32,
+    data: []const u8,
+) void {
+    command_buffers.pushConstants(
+        _main_command_buffers[_current_frame_in_flight],
+        shader_stage,
+        offset,
+        @intCast(data.len),
+        @ptrCast(data.ptr),
     );
 }
 

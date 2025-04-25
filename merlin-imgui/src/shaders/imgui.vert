@@ -9,14 +9,14 @@ layout(location = 0) out struct {
     vec2 uv;
 } v_out;
 
-layout(binding = 0) uniform UniformData {
+layout(push_constant) uniform constants
+{
     vec2 scale;
     vec2 translate;
-    bool srgb;
-} u_data;
+} p_data;
 
 void main() {
     v_out.uv = a_texcoord0;
     v_out.color = a_color0;
-    gl_Position = vec4((a_position * u_data.scale) + u_data.translate, 0.0, 1.0);
+    gl_Position = vec4((a_position * p_data.scale) + p_data.translate, 0.0, 1.0);
 }
