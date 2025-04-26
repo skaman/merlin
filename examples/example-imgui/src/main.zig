@@ -91,7 +91,7 @@ pub fn main() !void {
     try assets.init(gpa_allocator);
     defer assets.deinit();
 
-    try imgui.init(.{
+    try imgui.init(gpa_allocator, .{
         .window_handle = window_handle,
     });
     defer imgui.deinit();

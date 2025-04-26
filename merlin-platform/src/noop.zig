@@ -4,23 +4,34 @@ const platform = @import("platform.zig");
 
 pub fn init(_: std.mem.Allocator) !void {}
 pub fn deinit() void {}
-pub fn createWindow(_: platform.WindowHandle, _: *const platform.WindowOptions) !void {}
+pub fn createWindow(_: *const platform.WindowOptions) !platform.WindowHandle {
+    return .{ .handle = undefined };
+}
 pub fn destroyWindow(_: platform.WindowHandle) void {}
+pub fn showWindow(_: platform.WindowHandle) void {}
 pub fn windowPosition(_: platform.WindowHandle) [2]i32 {
     return .{ 0, 0 };
 }
+pub fn setWindowPosition(_: platform.WindowHandle, _: [2]i32) void {}
 pub fn windowSize(_: platform.WindowHandle) [2]u32 {
     return .{ 0, 0 };
 }
+pub fn setWindowSize(_: platform.WindowHandle, _: [2]u32) void {}
 pub fn windowFramebufferSize(_: platform.WindowHandle) [2]u32 {
     return .{ 0, 0 };
 }
 pub fn windowFocused(_: platform.WindowHandle) bool {
     return false;
 }
+pub fn setWindowFocus(_: platform.WindowHandle) void {}
 pub fn windowHovered(_: platform.WindowHandle) bool {
     return false;
 }
+pub fn windowMinimized(_: platform.WindowHandle) bool {
+    return false;
+}
+pub fn setWindowAlpha(_: platform.WindowHandle, _: f32) void {}
+pub fn setWindowTitle(_: platform.WindowHandle, _: []const u8) !void {}
 pub fn shouldCloseWindow(_: platform.WindowHandle) bool {
     return true;
 }
@@ -39,6 +50,10 @@ pub fn setCursorMode(_: platform.WindowHandle, _: platform.CursorMode) void {}
 pub fn monitors() ![]platform.MonitorInfo {
     return &[_]platform.MonitorInfo{};
 }
+pub fn clipboardText(_: platform.WindowHandle) ?[]const u8 {
+    return null;
+}
+pub fn setClipboardText(_: platform.WindowHandle, _: []const u8) !void {}
 pub fn pollEvents() void {}
 pub fn nativeWindowHandleType() platform.NativeWindowHandleType {
     return .default;

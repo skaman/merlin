@@ -33,22 +33,29 @@ const FragmentConstantData = struct {
     srgb: u32,
 };
 
+const ViewportData = struct {
+    window_owned: bool = false,
+    ignore_window_pos_event_frame: c_int = 0,
+    ignore_window_size_event_frame: c_int = 0,
+};
+
 // *********************************************************************************************
 // Globals
 // *********************************************************************************************
 
-var main_window_handle: platform.WindowHandle = undefined;
-var context: ?*c.ImGuiContext = undefined;
-var font_texture_handle: gfx.TextureHandle = undefined;
-var vert_shader_handle: gfx.ShaderHandle = undefined;
-var frag_shader_handle: gfx.ShaderHandle = undefined;
-var program_handle: gfx.ProgramHandle = undefined;
-var tex_uniform_handle: gfx.NameHandle = undefined;
-var pipeline_layout_handle: gfx.PipelineLayoutHandle = undefined;
-var vertex_buffer_handle: ?gfx.BufferHandle = null;
-var vertex_buffer_size: u32 = 0;
-var index_buffer_handle: ?gfx.BufferHandle = null;
-var index_buffer_size: u32 = 0;
+var _gpa: std.mem.Allocator = undefined;
+var _main_window_handle: platform.WindowHandle = undefined;
+var _context: ?*c.ImGuiContext = undefined;
+var _font_texture_handle: gfx.TextureHandle = undefined;
+var _vert_shader_handle: gfx.ShaderHandle = undefined;
+var _frag_shader_handle: gfx.ShaderHandle = undefined;
+var _program_handle: gfx.ProgramHandle = undefined;
+var _tex_uniform_handle: gfx.NameHandle = undefined;
+var _pipeline_layout_handle: gfx.PipelineLayoutHandle = undefined;
+var _vertex_buffer_handle: ?gfx.BufferHandle = null;
+var _vertex_buffer_size: u32 = 0;
+var _index_buffer_handle: ?gfx.BufferHandle = null;
+var _index_buffer_size: u32 = 0;
 
 // *********************************************************************************************
 // Private API
@@ -152,7 +159,7 @@ fn updateMonitors() !void {
 fn updateMouseCursor() !void {
     const io = c.igGetIO_Nil();
     if (io.*.ConfigFlags & c.ImGuiConfigFlags_NoMouseCursorChange != 0 or
-        platform.cursorMode(main_window_handle) == .disabled)
+        platform.cursorMode(_main_window_handle) == .disabled)
     {
         return;
     }
@@ -162,7 +169,7 @@ fn updateMouseCursor() !void {
 
     for (0..@intCast(platform_io.*.Viewports.Size)) |i| {
         const viewport = platform_io.*.Viewports.Data[i];
-        const window_handle: platform.WindowHandle = @enumFromInt(@intFromPtr(viewport.*.PlatformHandle));
+        const window_handle: platform.WindowHandle = .{ .handle = viewport.*.PlatformHandle.? };
         if (imgui_cursor == c.ImGuiMouseCursor_None or io.*.MouseDrawCursor) {
             platform.setCursorMode(window_handle, .hidden);
         } else {
@@ -206,13 +213,23 @@ fn cursorPositionCallback(
     c.ImGuiIO_AddMousePosEvent(io, position_x, position_y);
 }
 
+fn updateKeyModifiers(modifiers: platform.KeyModifier) void {
+    const io = c.igGetIO_Nil();
+    c.ImGuiIO_AddKeyEvent(io, c.ImGuiMod_Ctrl, modifiers.control);
+    c.ImGuiIO_AddKeyEvent(io, c.ImGuiMod_Shift, modifiers.shift);
+    c.ImGuiIO_AddKeyEvent(io, c.ImGuiMod_Alt, modifiers.alt);
+    c.ImGuiIO_AddKeyEvent(io, c.ImGuiMod_Super, modifiers.super);
+}
+
 fn mouseButtonCallback(
     _: platform.WindowHandle,
     button: platform.MouseButton,
     action: platform.MouseButtonAction,
+    modifiers: platform.KeyModifier,
 ) void {
     const io = c.igGetIO_Nil();
     c.ImGuiIO_AddMouseButtonEvent(io, @intFromEnum(button), action == .press);
+    updateKeyModifiers(modifiers);
 }
 
 fn mouseScrollCallback(
@@ -358,10 +375,10 @@ fn keyCallback(
 ) void {
     if (action != .press and action != .release) return;
 
-    _ = modifiers;
     const io = c.igGetIO_Nil();
     const imgui_key = keyToImGuiKey(key);
     c.ImGuiIO_AddKeyEvent(io, imgui_key, action == .press);
+    updateKeyModifiers(modifiers);
 }
 
 fn charCallback(
@@ -374,34 +391,34 @@ fn charCallback(
 
 fn draw(draw_data: [*c]c.ImDrawData) !void {
     if (draw_data.*.TotalVtxCount > 0) {
-        const framebuffer_size = platform.windowFramebufferSize(main_window_handle);
+        const framebuffer_size = platform.windowFramebufferSize(_main_window_handle);
         const vertex_size: u32 = @intCast(@sizeOf(c.ImDrawVert) * draw_data.*.TotalVtxCount);
         const index_size: u32 = @intCast(@sizeOf(c.ImDrawIdx) * draw_data.*.TotalIdxCount);
 
-        if (vertex_buffer_handle == null or vertex_buffer_size < vertex_size) {
-            if (vertex_buffer_handle) |handle| {
+        if (_vertex_buffer_handle == null or _vertex_buffer_size < vertex_size) {
+            if (_vertex_buffer_handle) |handle| {
                 gfx.destroyBuffer(handle);
             }
-            vertex_buffer_handle = try gfx.createBuffer(
+            _vertex_buffer_handle = try gfx.createBuffer(
                 vertex_size,
                 .{ .vertex = true },
                 .host,
                 .{ .debug_name = "ImGui Vertex Buffer" },
             );
-            vertex_buffer_size = vertex_size;
+            _vertex_buffer_size = vertex_size;
         }
 
-        if (index_buffer_handle == null or index_buffer_size < index_size) {
-            if (index_buffer_handle) |handle| {
+        if (_index_buffer_handle == null or _index_buffer_size < index_size) {
+            if (_index_buffer_handle) |handle| {
                 gfx.destroyBuffer(handle);
             }
-            index_buffer_handle = try gfx.createBuffer(
+            _index_buffer_handle = try gfx.createBuffer(
                 index_size,
                 .{ .index = true },
                 .host,
                 .{ .debug_name = "ImGui Index Buffer" },
             );
-            index_buffer_size = index_size;
+            _index_buffer_size = index_size;
         }
 
         var vertex_offset: u32 = 0;
@@ -413,7 +430,7 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
             const vertex_cmd_size: usize = @intCast(@sizeOf(c.ImDrawVert) * vertex_count);
             const vertex_cmd_data = cmd_list.*.VtxBuffer.Data[0..vertex_count];
             try gfx.updateBufferFromMemory(
-                vertex_buffer_handle.?,
+                _vertex_buffer_handle.?,
                 @ptrCast(vertex_cmd_data),
                 vertex_offset,
             );
@@ -423,7 +440,7 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
             const index_cmd_size: usize = @intCast(@sizeOf(c.ImDrawIdx) * index_count);
             const index_cmd_data = cmd_list.*.IdxBuffer.Data[0..index_count];
             try gfx.updateBufferFromMemory(
-                index_buffer_handle.?,
+                _index_buffer_handle.?,
                 @ptrCast(index_cmd_data),
                 index_offset,
             );
@@ -469,14 +486,14 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
             64,
             fragment_constant_data_ptr[0..@sizeOf(FragmentConstantData)],
         );
-        gfx.bindProgram(program_handle);
+        gfx.bindProgram(_program_handle);
         gfx.bindCombinedSampler(
-            tex_uniform_handle,
-            font_texture_handle,
+            _tex_uniform_handle,
+            _font_texture_handle,
         );
-        gfx.bindPipelineLayout(pipeline_layout_handle);
-        gfx.bindVertexBuffer(vertex_buffer_handle.?, 0);
-        gfx.bindIndexBuffer(index_buffer_handle.?, 0);
+        gfx.bindPipelineLayout(_pipeline_layout_handle);
+        gfx.bindVertexBuffer(_vertex_buffer_handle.?, 0);
+        gfx.bindIndexBuffer(_index_buffer_handle.?, 0);
 
         const clip_offset: [2]f32 = .{ draw_data.*.DisplayPos.x, draw_data.*.DisplayPos.y };
         const clip_scale: [2]f32 = .{ draw_data.*.FramebufferScale.x, draw_data.*.FramebufferScale.y };
@@ -530,63 +547,215 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
     }
 }
 
+fn setClipboardTextFn(_: ?*c.ImGuiContext, text: [*c]const u8) callconv(.c) void {
+    platform.setClipboardText(_main_window_handle, text[0..std.mem.len(text)]) catch |err| {
+        log.err("Failed to set clipboard text: {}", .{err});
+    };
+}
+
+fn getClipboardTextFn(_: ?*c.ImGuiContext) callconv(.c) [*c]const u8 {
+    const text = platform.clipboardText(_main_window_handle);
+    if (text) |text_ptr| {
+        return text_ptr.ptr;
+    } else {
+        return null;
+    }
+}
+
+fn createWindow(viewport: ?*c.ImGuiViewport) callconv(.c) void {
+    const viewport_data = _gpa.create(ViewportData) catch |err| {
+        log.err("Failed to create viewport data: {}", .{err});
+        return;
+    };
+    viewport_data.* = .{
+        .window_owned = true,
+    };
+
+    const window_handle = platform.createWindow(.{
+        .title = "No Title Yet",
+        .width = @intFromFloat(viewport.?.Size.x),
+        .height = @intFromFloat(viewport.?.Size.y),
+        .visible = false,
+        .focused = false,
+        .decorated = viewport.?.Flags & c.ImGuiViewportFlags_NoDecoration == 0,
+        .floating = viewport.?.Flags & c.ImGuiViewportFlags_TopMost != 0,
+    }) catch |err| {
+        log.err("Failed to create window: {}", .{err});
+        return;
+    };
+
+    platform.setWindowPosition(window_handle, .{
+        @intFromFloat(viewport.?.Pos.x),
+        @intFromFloat(viewport.?.Pos.y),
+    });
+
+    viewport.?.PlatformHandle = window_handle.handle;
+    viewport.?.PlatformUserData = @ptrCast(viewport_data);
+}
+
+fn destroyWindow(viewport: ?*c.ImGuiViewport) callconv(.c) void {
+    log.debug("Destroy window {any}", .{viewport});
+    const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.?.PlatformUserData));
+    if (viewport_data) |data| {
+        if (data.window_owned) {
+            log.debug("Destroy window handle {any}", .{viewport.?.PlatformHandle.?});
+            const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+            platform.destroyWindow(window_handle);
+        }
+        log.debug("Destroy viewport data {any}", .{data});
+        _gpa.destroy(data);
+    }
+    viewport.?.PlatformHandle = null;
+    viewport.?.PlatformUserData = null;
+}
+
+fn showWindow(viewport: ?*c.ImGuiViewport) callconv(.c) void {
+    const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+    platform.showWindow(window_handle);
+}
+
+fn getWindowPosition(viewport: ?*c.ImGuiViewport) callconv(.c) c.ImVec2 {
+    const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+    const position = platform.windowPosition(window_handle);
+    return c.ImVec2{
+        .x = @floatFromInt(position[0]),
+        .y = @floatFromInt(position[1]),
+    };
+}
+
+fn setWindowPosition(viewport: ?*c.ImGuiViewport, pos: c.ImVec2) callconv(.c) void {
+    const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+    const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.?.PlatformUserData));
+    viewport_data.?.ignore_window_pos_event_frame = c.igGetFrameCount();
+    platform.setWindowPosition(window_handle, .{
+        @intFromFloat(pos.x),
+        @intFromFloat(pos.y),
+    });
+}
+
+fn getWindowSize(viewport: ?*c.ImGuiViewport) callconv(.c) c.ImVec2 {
+    const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+    const size = platform.windowSize(window_handle);
+    return c.ImVec2{
+        .x = @floatFromInt(size[0]),
+        .y = @floatFromInt(size[1]),
+    };
+}
+
+fn setWindowSize(viewport: ?*c.ImGuiViewport, size: c.ImVec2) callconv(.c) void {
+    const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+    const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.?.PlatformUserData));
+    viewport_data.?.ignore_window_size_event_frame = c.igGetFrameCount();
+    platform.setWindowSize(window_handle, .{
+        @intFromFloat(size.x),
+        @intFromFloat(size.y),
+    });
+}
+
+fn getWindowFocus(viewport: ?*c.ImGuiViewport) callconv(.c) bool {
+    const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+    return platform.windowFocused(window_handle);
+}
+
+fn setWindowFocus(viewport: ?*c.ImGuiViewport) callconv(.c) void {
+    const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+    platform.setWindowFocus(window_handle);
+}
+
+fn setWindowTitle(viewport: ?*c.ImGuiViewport, title: [*c]const u8) callconv(.c) void {
+    const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+    platform.setWindowTitle(window_handle, title[0..std.mem.len(title)]) catch |err| {
+        log.err("Failed to set window title: {}", .{err});
+    };
+}
+
+fn getWindowMinimized(viewport: ?*c.ImGuiViewport) callconv(.c) bool {
+    const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+    return platform.windowMinimized(window_handle);
+}
+
+fn setWindowAlpha(viewport: ?*c.ImGuiViewport, alpha: f32) callconv(.c) void {
+    const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+    platform.setWindowAlpha(window_handle, alpha);
+}
+
+fn renderWindow(viewport: ?*c.ImGuiViewport, _: ?*anyopaque) callconv(.c) void {
+    _ = viewport;
+    //log.debug("Render window", .{});
+}
+
 // *********************************************************************************************
 // Public API
 // *********************************************************************************************
 
-pub fn init(options: Options) !void {
-    main_window_handle = options.window_handle;
+pub fn init(allocator: std.mem.Allocator, options: Options) !void {
+    _gpa = allocator;
+    _main_window_handle = options.window_handle;
 
-    context = c.igCreateContext(null);
-
-    const viewport = c.igGetMainViewport();
-    viewport.*.PlatformHandle = @ptrFromInt(@intFromEnum(main_window_handle));
+    _context = c.igCreateContext(null);
 
     const io = c.igGetIO_Nil();
     io.*.BackendRendererUserData = null;
     io.*.BackendRendererName = "merlin";
-    io.*.BackendFlags = c.ImGuiBackendFlags_RendererHasVtxOffset;
-    io.*.BackendFlags = c.ImGuiBackendFlags_HasMouseCursors;
-    io.*.BackendFlags = c.ImGuiBackendFlags_HasSetMousePos;
-    //io.*.BackendFlags = c.ImGuiBackendFlags_PlatformHasViewports;
-    io.*.BackendFlags = c.ImGuiBackendFlags_HasMouseHoveredViewport;
 
-    vert_shader_handle = try gfx.createShaderFromMemory(
+    io.*.BackendFlags |= c.ImGuiBackendFlags_RendererHasVtxOffset;
+    io.*.BackendFlags |= c.ImGuiBackendFlags_RendererHasViewports;
+    io.*.BackendFlags |= c.ImGuiBackendFlags_HasMouseCursors;
+    io.*.BackendFlags |= c.ImGuiBackendFlags_HasSetMousePos;
+    io.*.BackendFlags |= c.ImGuiBackendFlags_HasMouseHoveredViewport;
+    if (platform.nativeWindowHandleType() != .wayland) {
+        io.*.BackendFlags |= c.ImGuiBackendFlags_PlatformHasViewports;
+    }
+
+    io.*.ConfigFlags |= c.ImGuiConfigFlags_DockingEnable;
+    io.*.ConfigFlags |= c.ImGuiConfigFlags_ViewportsEnable;
+
+    const viewport = c.igGetMainViewport();
+    viewport.*.PlatformHandle = _main_window_handle.handle;
+
+    const viewport_data = _gpa.create(ViewportData) catch |err| {
+        log.err("Failed to create viewport data: {}", .{err});
+        return;
+    };
+    viewport_data.* = .{};
+    viewport.*.PlatformUserData = @ptrCast(viewport_data);
+
+    _vert_shader_handle = try gfx.createShaderFromMemory(
         vert_shader_code,
         .{ .debug_name = "ImGui Vertex Shader" },
     );
-    errdefer gfx.destroyShader(vert_shader_handle);
+    errdefer gfx.destroyShader(_vert_shader_handle);
 
-    frag_shader_handle = try gfx.createShaderFromMemory(
+    _frag_shader_handle = try gfx.createShaderFromMemory(
         frag_shader_code,
         .{ .debug_name = "ImGui Fragment Shader" },
     );
-    errdefer gfx.destroyShader(frag_shader_handle);
+    errdefer gfx.destroyShader(_frag_shader_handle);
 
-    program_handle = try gfx.createProgram(
-        vert_shader_handle,
-        frag_shader_handle,
+    _program_handle = try gfx.createProgram(
+        _vert_shader_handle,
+        _frag_shader_handle,
         .{ .debug_name = "ImGui Program" },
     );
-    errdefer gfx.destroyProgram(program_handle);
+    errdefer gfx.destroyProgram(_program_handle);
 
     var vertex_layout: gfx_types.VertexLayout = .init();
     vertex_layout.add(.position, 2, .f32, false);
     vertex_layout.add(.tex_coord_0, 2, .f32, false);
     vertex_layout.add(.color_0, 4, .u8, true);
-    pipeline_layout_handle = try gfx.createPipelineLayout(vertex_layout);
-    errdefer gfx.destroyPipelineLayout(pipeline_layout_handle);
+    _pipeline_layout_handle = try gfx.createPipelineLayout(vertex_layout);
+    errdefer gfx.destroyPipelineLayout(_pipeline_layout_handle);
 
-    vertex_buffer_handle = null;
-    vertex_buffer_size = 0;
-    index_buffer_handle = null;
-    index_buffer_size = 0;
+    _vertex_buffer_handle = null;
+    _vertex_buffer_size = 0;
+    _index_buffer_handle = null;
+    _index_buffer_size = 0;
 
     _ = c.ImFontAtlas_AddFontDefault(io.*.Fonts, null);
 
-    tex_uniform_handle = gfx.nameHandle("s_tex");
-    font_texture_handle = try createFontsTexture();
-    errdefer gfx.destroyTexture(font_texture_handle);
+    _tex_uniform_handle = gfx.nameHandle("s_tex");
+    _font_texture_handle = try createFontsTexture();
+    errdefer gfx.destroyTexture(_font_texture_handle);
 
     try platform.registerWindowFocusCallback(windowFocusCallback);
     errdefer platform.unregisterWindowFocusCallback(windowFocusCallback);
@@ -605,6 +774,23 @@ pub fn init(options: Options) !void {
 
     try platform.registerCharCallback(charCallback);
     errdefer platform.unregisterCharCallback(charCallback);
+
+    const platform_io = c.igGetPlatformIO_Nil();
+    platform_io.*.Platform_SetClipboardTextFn = setClipboardTextFn;
+    platform_io.*.Platform_GetClipboardTextFn = getClipboardTextFn;
+    platform_io.*.Platform_CreateWindow = createWindow;
+    platform_io.*.Platform_DestroyWindow = destroyWindow;
+    platform_io.*.Platform_ShowWindow = showWindow;
+    platform_io.*.Platform_GetWindowPos = getWindowPosition;
+    platform_io.*.Platform_SetWindowPos = setWindowPosition;
+    platform_io.*.Platform_GetWindowSize = getWindowSize;
+    platform_io.*.Platform_SetWindowSize = setWindowSize;
+    platform_io.*.Platform_GetWindowFocus = getWindowFocus;
+    platform_io.*.Platform_SetWindowFocus = setWindowFocus;
+    platform_io.*.Platform_SetWindowTitle = setWindowTitle;
+    platform_io.*.Platform_GetWindowMinimized = getWindowMinimized;
+    platform_io.*.Platform_SetWindowAlpha = setWindowAlpha;
+    platform_io.*.Platform_RenderWindow = renderWindow;
 }
 
 pub fn deinit() void {
@@ -615,23 +801,25 @@ pub fn deinit() void {
     platform.unregisterCursorPositionCallback(cursorPositionCallback);
     platform.unregisterWindowFocusCallback(windowFocusCallback);
 
-    gfx.destroyPipelineLayout(pipeline_layout_handle);
-    if (vertex_buffer_handle) |handle| {
+    c.igDestroyPlatformWindows();
+
+    gfx.destroyPipelineLayout(_pipeline_layout_handle);
+    if (_vertex_buffer_handle) |handle| {
         gfx.destroyBuffer(handle);
     }
-    if (index_buffer_handle) |handle| {
+    if (_index_buffer_handle) |handle| {
         gfx.destroyBuffer(handle);
     }
-    gfx.destroyTexture(font_texture_handle);
-    gfx.destroyShader(vert_shader_handle);
-    gfx.destroyShader(frag_shader_handle);
-    gfx.destroyProgram(program_handle);
-    c.igDestroyContext(context);
+    gfx.destroyTexture(_font_texture_handle);
+    gfx.destroyShader(_vert_shader_handle);
+    gfx.destroyShader(_frag_shader_handle);
+    gfx.destroyProgram(_program_handle);
+    c.igDestroyContext(_context);
 }
 
 pub fn update(delta_time: f32) !void {
-    const window_size = platform.windowSize(main_window_handle);
-    const framebuffer_size = platform.windowFramebufferSize(main_window_handle);
+    const window_size = platform.windowSize(_main_window_handle);
+    const framebuffer_size = platform.windowFramebufferSize(_main_window_handle);
 
     const io = c.igGetIO_Nil();
     io.*.DisplaySize = c.ImVec2{
@@ -658,10 +846,31 @@ pub fn update(delta_time: f32) !void {
 
     var show_demo_window: bool = true;
     c.igShowDemoWindow(&show_demo_window);
+
+    var showAnotherWindow: bool = true;
+    _ = c.igBegin("imgui Another Window", &showAnotherWindow, 0);
+    c.igText("Hello from imgui");
+    const buttonSize: c.ImVec2 = .{
+        .x = 0,
+        .y = 0,
+    };
+    if (c.igButton("Close me", buttonSize)) {
+        showAnotherWindow = false;
+    }
+    c.igEnd();
     c.igEndFrame();
 
     c.igRender();
 
     const draw_data = c.igGetDrawData();
     try draw(draw_data);
+
+    if (io.*.ConfigFlags & c.ImGuiConfigFlags_ViewportsEnable != 0) {
+        //log.debug("Rendering viewports", .{});
+        c.igUpdatePlatformWindows();
+        c.igRenderPlatformWindowsDefault(
+            null,
+            null,
+        );
+    }
 }

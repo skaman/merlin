@@ -7,8 +7,7 @@ const noop = @import("noop.zig");
 
 pub const log = std.log.scoped(.gfx);
 
-pub const WindowHandle = enum(u16) { _ };
-pub const MaxWindowHandles = 64;
+pub const WindowHandle = packed struct { handle: *anyopaque };
 
 // *********************************************************************************************
 // Structs and Enums
@@ -27,6 +26,10 @@ pub const WindowOptions = struct {
     width: u32,
     height: u32,
     title: []const u8,
+    visible: bool = true,
+    focused: bool = true,
+    decorated: bool = true,
+    floating: bool = false,
 };
 
 pub const NativeWindowHandleType = enum(u8) {
@@ -233,6 +236,7 @@ pub const MouseButtonCallback = *const fn (
     handle: WindowHandle,
     button: MouseButton,
     action: MouseButtonAction,
+    modifiers: KeyModifier,
 ) void;
 
 pub const MouseScrollCallback = *const fn (
@@ -257,13 +261,20 @@ pub const CharCallback = *const fn (
 const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator) anyerror!void,
     deinit: *const fn () void,
-    createWindow: *const fn (handle: WindowHandle, options: *const WindowOptions) anyerror!void,
+    createWindow: *const fn (options: *const WindowOptions) anyerror!WindowHandle,
     destroyWindow: *const fn (handle: WindowHandle) void,
+    showWindow: *const fn (handle: WindowHandle) void,
     windowPosition: *const fn (handle: WindowHandle) [2]i32,
+    setWindowPosition: *const fn (handle: WindowHandle, position: [2]i32) void,
     windowSize: *const fn (handle: WindowHandle) [2]u32,
+    setWindowSize: *const fn (handle: WindowHandle, size: [2]u32) void,
     windowFramebufferSize: *const fn (handle: WindowHandle) [2]u32,
     windowFocused: *const fn (handle: WindowHandle) bool,
+    setWindowFocus: *const fn (handle: WindowHandle) void,
     windowHovered: *const fn (handle: WindowHandle) bool,
+    windowMinimized: *const fn (handle: WindowHandle) bool,
+    setWindowAlpha: *const fn (handle: WindowHandle, alpha: f32) void,
+    setWindowTitle: *const fn (handle: WindowHandle, title: []const u8) anyerror!void,
     shouldCloseWindow: *const fn (handle: WindowHandle) bool,
     cursorPosition: *const fn (handle: WindowHandle) [2]f32,
     cursorMode: *const fn (handle: WindowHandle) CursorMode,
@@ -271,6 +282,8 @@ const VTab = struct {
     setCursorPosition: *const fn (handle: WindowHandle, position: [2]f32) void,
     setCursorMode: *const fn (handle: WindowHandle, mode: CursorMode) void,
     monitors: *const fn () anyerror![]MonitorInfo,
+    clipboardText: *const fn (handle: WindowHandle) ?[]const u8,
+    setClipboardText: *const fn (handle: WindowHandle, text: []const u8) anyerror!void,
     pollEvents: *const fn () void,
     nativeWindowHandleType: *const fn () NativeWindowHandleType,
     nativeWindowHandle: *const fn (handle: WindowHandle) ?*anyopaque,
@@ -293,9 +306,7 @@ const VTab = struct {
 // Globals
 // *********************************************************************************************
 
-var window_handles: utils.HandlePool(WindowHandle, MaxWindowHandles) = undefined;
-
-var v_tab: VTab = undefined;
+var _v_tab: VTab = undefined;
 
 fn getVTab(
     platform_type: Type,
@@ -306,19 +317,27 @@ fn getVTab(
             .deinit = noop.deinit,
             .createWindow = noop.createWindow,
             .destroyWindow = noop.destroyWindow,
+            .showWindow = noop.showWindow,
             .windowPosition = noop.windowPosition,
+            .setWindowPosition = noop.setWindowPosition,
             .windowSize = noop.windowSize,
+            .setWindowSize = noop.setWindowSize,
             .windowFramebufferSize = noop.windowFramebufferSize,
             .windowFocused = noop.windowFocused,
+            .setWindowFocus = noop.setWindowFocus,
             .windowHovered = noop.windowHovered,
+            .windowMinimized = noop.windowMinimized,
+            .setWindowAlpha = noop.setWindowAlpha,
+            .setWindowTitle = noop.setWindowTitle,
             .shouldCloseWindow = noop.shouldCloseWindow,
-            //.cursor = noop.cursor,
             .cursorPosition = noop.cursorPosition,
             .cursorMode = noop.cursorMode,
             .setCursor = noop.setCursor,
             .setCursorPosition = noop.setCursorPosition,
             .setCursorMode = noop.setCursorMode,
             .monitors = noop.monitors,
+            .clipboardText = noop.clipboardText,
+            .setClipboardText = noop.setClipboardText,
             .pollEvents = noop.pollEvents,
             .nativeWindowHandleType = noop.nativeWindowHandleType,
             .nativeWindowHandle = noop.nativeWindowHandle,
@@ -341,11 +360,18 @@ fn getVTab(
             .deinit = glfw.deinit,
             .createWindow = glfw.createWindow,
             .destroyWindow = glfw.destroyWindow,
+            .showWindow = glfw.showWindow,
             .windowPosition = glfw.windowPosition,
+            .setWindowPosition = glfw.setWindowPosition,
             .windowSize = glfw.windowSize,
+            .setWindowSize = glfw.setWindowSize,
             .windowFramebufferSize = glfw.windowFramebufferSize,
             .windowFocused = glfw.windowFocused,
+            .setWindowFocus = glfw.setWindowFocus,
             .windowHovered = glfw.windowHovered,
+            .windowMinimized = glfw.windowMinimized,
+            .setWindowAlpha = glfw.setWindowAlpha,
+            .setWindowTitle = glfw.setWindowTitle,
             .shouldCloseWindow = glfw.shouldCloseWindow,
             .cursorPosition = glfw.cursorPosition,
             .cursorMode = glfw.cursorMode,
@@ -353,6 +379,8 @@ fn getVTab(
             .setCursorPosition = glfw.setCursorPosition,
             .setCursorMode = glfw.setCursorMode,
             .monitors = glfw.monitors,
+            .clipboardText = glfw.clipboardText,
+            .setClipboardText = glfw.setClipboardText,
             .pollEvents = glfw.pollEvents,
             .nativeWindowHandleType = glfw.nativeWindowHandleType,
             .nativeWindowHandle = glfw.nativeWindowHandle,
@@ -379,142 +407,170 @@ pub fn init(
 ) !void {
     log.debug("Initializing platform", .{});
 
-    v_tab = try getVTab(options.type);
-    window_handles = .init();
+    _v_tab = try getVTab(options.type);
 
-    try v_tab.init(allocator);
-    errdefer v_tab.deinit();
+    try _v_tab.init(allocator);
+    errdefer _v_tab.deinit();
 }
 
 pub fn deinit() void {
     log.debug("Deinitializing platform", .{});
 
-    v_tab.deinit();
-
-    window_handles.deinit();
+    _v_tab.deinit();
 }
 
-pub fn createWindow(options: WindowOptions) !WindowHandle {
-    const handle = window_handles.create();
-    errdefer window_handles.destroy(handle);
-
-    try v_tab.createWindow(handle, &options);
-    return handle;
+pub inline fn createWindow(options: WindowOptions) !WindowHandle {
+    return _v_tab.createWindow(&options);
 }
 
-pub fn destroyWindow(handle: WindowHandle) void {
-    v_tab.destroyWindow(handle);
-    window_handles.destroy(handle);
+pub inline fn destroyWindow(handle: WindowHandle) void {
+    _v_tab.destroyWindow(handle);
+}
+
+pub inline fn showWindow(handle: WindowHandle) void {
+    _v_tab.showWindow(handle);
 }
 
 pub inline fn windowPosition(handle: WindowHandle) [2]i32 {
-    return v_tab.windowPosition(handle);
+    return _v_tab.windowPosition(handle);
+}
+
+pub inline fn setWindowPosition(handle: WindowHandle, position: [2]i32) void {
+    _v_tab.setWindowPosition(handle, position);
 }
 
 pub inline fn windowSize(handle: WindowHandle) [2]u32 {
-    return v_tab.windowSize(handle);
+    return _v_tab.windowSize(handle);
+}
+
+pub inline fn setWindowSize(handle: WindowHandle, size: [2]u32) void {
+    _v_tab.setWindowSize(handle, size);
 }
 
 pub inline fn windowFramebufferSize(handle: WindowHandle) [2]u32 {
-    return v_tab.windowFramebufferSize(handle);
+    return _v_tab.windowFramebufferSize(handle);
 }
 
 pub inline fn windowFocused(handle: WindowHandle) bool {
-    return v_tab.windowFocused(handle);
+    return _v_tab.windowFocused(handle);
+}
+
+pub inline fn setWindowFocus(handle: WindowHandle) void {
+    _v_tab.setWindowFocus(handle);
 }
 
 pub inline fn windowHovered(handle: WindowHandle) bool {
-    return v_tab.windowHovered(handle);
+    return _v_tab.windowHovered(handle);
+}
+
+pub inline fn windowMinimized(handle: WindowHandle) bool {
+    return _v_tab.windowMinimized(handle);
+}
+
+pub inline fn setWindowAlpha(handle: WindowHandle, alpha: f32) void {
+    _v_tab.setWindowAlpha(handle, alpha);
+}
+
+pub inline fn setWindowTitle(handle: WindowHandle, title: []const u8) !void {
+    return _v_tab.setWindowTitle(handle, title);
 }
 
 pub inline fn shouldCloseWindow(handle: WindowHandle) bool {
-    return v_tab.shouldCloseWindow(handle);
+    return _v_tab.shouldCloseWindow(handle);
 }
 
 pub inline fn cursorPosition(handle: WindowHandle) [2]f32 {
-    return v_tab.cursorPosition(handle);
+    return _v_tab.cursorPosition(handle);
 }
 
 pub inline fn cursorMode(handle: WindowHandle) CursorMode {
-    return v_tab.cursorMode(handle);
+    return _v_tab.cursorMode(handle);
 }
 
 pub inline fn setCursor(handle: WindowHandle, cursor_: Cursor) void {
-    v_tab.setCursor(handle, cursor_);
+    _v_tab.setCursor(handle, cursor_);
 }
 
 pub inline fn setCursorPosition(handle: WindowHandle, position: [2]f32) void {
-    v_tab.setCursorPosition(handle, position);
+    _v_tab.setCursorPosition(handle, position);
 }
 
 pub inline fn setCursorMode(handle: WindowHandle, mode: CursorMode) void {
-    v_tab.setCursorMode(handle, mode);
+    _v_tab.setCursorMode(handle, mode);
 }
 
 pub inline fn monitors() ![]MonitorInfo {
-    return v_tab.monitors();
+    return _v_tab.monitors();
+}
+
+pub inline fn clipboardText(handle: WindowHandle) ?[]const u8 {
+    return _v_tab.clipboardText(handle);
+}
+
+pub inline fn setClipboardText(handle: WindowHandle, text: []const u8) !void {
+    return _v_tab.setClipboardText(handle, text);
 }
 
 pub inline fn pollEvents() void {
-    v_tab.pollEvents();
+    _v_tab.pollEvents();
 }
 
 pub inline fn nativeWindowHandleType() NativeWindowHandleType {
-    return v_tab.nativeWindowHandleType();
+    return _v_tab.nativeWindowHandleType();
 }
 
 pub inline fn nativeWindowHandle(handle: WindowHandle) ?*anyopaque {
-    return v_tab.nativeWindowHandle(handle);
+    return _v_tab.nativeWindowHandle(handle);
 }
 
 pub inline fn nativeDisplayHandle() ?*anyopaque {
-    return v_tab.nativeDisplayHandle();
+    return _v_tab.nativeDisplayHandle();
 }
 
 pub inline fn registerWindowFocusCallback(callback: WindowFocusCallback) !void {
-    try v_tab.registerWindowFocusCallback(callback);
+    try _v_tab.registerWindowFocusCallback(callback);
 }
 
 pub inline fn unregisterWindowFocusCallback(callback: WindowFocusCallback) void {
-    v_tab.unregisterWindowFocusCallback(callback);
+    _v_tab.unregisterWindowFocusCallback(callback);
 }
 
 pub inline fn registerCursorPositionCallback(callback: CursorPositionCallback) !void {
-    try v_tab.registerCursorPositionCallback(callback);
+    try _v_tab.registerCursorPositionCallback(callback);
 }
 
 pub inline fn unregisterCursorPositionCallback(callback: CursorPositionCallback) void {
-    v_tab.unregisterCursorPositionCallback(callback);
+    _v_tab.unregisterCursorPositionCallback(callback);
 }
 
 pub inline fn registerMouseButtonCallback(callback: MouseButtonCallback) !void {
-    try v_tab.registerMouseButtonCallback(callback);
+    try _v_tab.registerMouseButtonCallback(callback);
 }
 
 pub inline fn unregisterMouseButtonCallback(callback: MouseButtonCallback) void {
-    v_tab.unregisterMouseButtonCallback(callback);
+    _v_tab.unregisterMouseButtonCallback(callback);
 }
 
 pub inline fn registerMouseScrollCallback(callback: MouseScrollCallback) !void {
-    try v_tab.registerMouseScrollCallback(callback);
+    try _v_tab.registerMouseScrollCallback(callback);
 }
 
 pub inline fn unregisterMouseScrollCallback(callback: MouseScrollCallback) void {
-    v_tab.unregisterMouseScrollCallback(callback);
+    _v_tab.unregisterMouseScrollCallback(callback);
 }
 
 pub inline fn registerKeyCallback(callback: KeyCallback) !void {
-    try v_tab.registerKeyCallback(callback);
+    try _v_tab.registerKeyCallback(callback);
 }
 
 pub inline fn unregisterKeyCallback(callback: KeyCallback) void {
-    v_tab.unregisterKeyCallback(callback);
+    _v_tab.unregisterKeyCallback(callback);
 }
 
 pub inline fn registerCharCallback(callback: CharCallback) !void {
-    try v_tab.registerCharCallback(callback);
+    try _v_tab.registerCharCallback(callback);
 }
 
 pub inline fn unregisterCharCallback(callback: CharCallback) void {
-    v_tab.unregisterCharCallback(callback);
+    _v_tab.unregisterCharCallback(callback);
 }
