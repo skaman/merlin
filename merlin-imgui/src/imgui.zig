@@ -389,6 +389,52 @@ fn charCallback(
     c.ImGuiIO_AddInputCharacter(io, @intCast(character));
 }
 
+fn windowCloseCallback(
+    window_handle: platform.WindowHandle,
+) void {
+    const viewport = c.igFindViewportByPlatformHandle(window_handle.handle);
+    const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.*.PlatformUserData));
+    if (viewport_data) |data| {
+        if (data.window_owned) {
+            viewport.*.PlatformRequestClose = true;
+        }
+    }
+}
+
+fn windowPositionCallback(
+    window_handle: platform.WindowHandle,
+    _: [2]i32,
+) void {
+    const viewport = c.igFindViewportByPlatformHandle(window_handle.handle);
+    const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.*.PlatformUserData));
+    if (viewport_data) |data| {
+        if (data.window_owned) {
+            const ignore_event = c.igGetFrameCount() <= (data.ignore_window_pos_event_frame + 1);
+            if (ignore_event)
+                return;
+
+            viewport.*.PlatformRequestMove = true;
+        }
+    }
+}
+
+fn windowSizeCallback(
+    window_handle: platform.WindowHandle,
+    _: [2]u32,
+) void {
+    const viewport = c.igFindViewportByPlatformHandle(window_handle.handle);
+    const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.*.PlatformUserData));
+    if (viewport_data) |data| {
+        if (data.window_owned) {
+            const ignore_event = c.igGetFrameCount() <= (data.ignore_window_size_event_frame + 1);
+            if (ignore_event)
+                return;
+
+            viewport.*.PlatformRequestResize = true;
+        }
+    }
+}
+
 fn draw(draw_data: [*c]c.ImDrawData) !void {
     if (draw_data.*.TotalVtxCount > 0) {
         const framebuffer_size = platform.windowFramebufferSize(_main_window_handle);
@@ -594,15 +640,12 @@ fn createWindow(viewport: ?*c.ImGuiViewport) callconv(.c) void {
 }
 
 fn destroyWindow(viewport: ?*c.ImGuiViewport) callconv(.c) void {
-    log.debug("Destroy window {any}", .{viewport});
     const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.?.PlatformUserData));
     if (viewport_data) |data| {
         if (data.window_owned) {
-            log.debug("Destroy window handle {any}", .{viewport.?.PlatformHandle.?});
             const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
             platform.destroyWindow(window_handle);
         }
-        log.debug("Destroy viewport data {any}", .{data});
         _gpa.destroy(data);
     }
     viewport.?.PlatformHandle = null;
@@ -775,6 +818,15 @@ pub fn init(allocator: std.mem.Allocator, options: Options) !void {
     try platform.registerCharCallback(charCallback);
     errdefer platform.unregisterCharCallback(charCallback);
 
+    try platform.registerWindowCloseCallback(windowCloseCallback);
+    errdefer platform.unregisterWindowCloseCallback(windowCloseCallback);
+
+    try platform.registerWindowPositionCallback(windowPositionCallback);
+    errdefer platform.unregisterWindowPositionCallback(windowPositionCallback);
+
+    try platform.registerWindowSizeCallback(windowSizeCallback);
+    errdefer platform.unregisterWindowSizeCallback(windowSizeCallback);
+
     const platform_io = c.igGetPlatformIO_Nil();
     platform_io.*.Platform_SetClipboardTextFn = setClipboardTextFn;
     platform_io.*.Platform_GetClipboardTextFn = getClipboardTextFn;
@@ -794,6 +846,9 @@ pub fn init(allocator: std.mem.Allocator, options: Options) !void {
 }
 
 pub fn deinit() void {
+    platform.unregisterWindowSizeCallback(windowSizeCallback);
+    platform.unregisterWindowPositionCallback(windowPositionCallback);
+    platform.unregisterWindowCloseCallback(windowCloseCallback);
     platform.unregisterCharCallback(charCallback);
     platform.unregisterKeyCallback(keyCallback);
     platform.unregisterMouseScrollCallback(mouseScrollCallback);

@@ -24,6 +24,9 @@ var _mouse_button_callbacks: std.ArrayList(platform.MouseButtonCallback) = undef
 var _mouse_scroll_callbacks: std.ArrayList(platform.MouseScrollCallback) = undefined;
 var _key_callbacks: std.ArrayList(platform.KeyCallback) = undefined;
 var _char_callbacks: std.ArrayList(platform.CharCallback) = undefined;
+var _window_close_callbacks: std.ArrayList(platform.WindowCloseCallback) = undefined;
+var _window_position_callbacks: std.ArrayList(platform.WindowPositionCallback) = undefined;
+var _window_size_callbacks: std.ArrayList(platform.WindowSizeCallback) = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -136,6 +139,40 @@ fn glfwCharCallback(
     }
 }
 
+fn glfwWindowCloseCallback(
+    window: ?*c.GLFWwindow,
+) callconv(.c) void {
+    const handle: platform.WindowHandle = .{ .handle = @ptrCast(window) };
+
+    for (_window_close_callbacks.items) |callback| {
+        callback(handle);
+    }
+}
+
+fn glfwWindowPositionCallback(
+    window: ?*c.GLFWwindow,
+    xpos: c_int,
+    ypos: c_int,
+) callconv(.c) void {
+    const handle: platform.WindowHandle = .{ .handle = @ptrCast(window) };
+
+    for (_window_position_callbacks.items) |callback| {
+        callback(handle, .{ @intCast(xpos), @intCast(ypos) });
+    }
+}
+
+fn glfwWindowSizeCallback(
+    window: ?*c.GLFWwindow,
+    width: c_int,
+    height: c_int,
+) callconv(.c) void {
+    const handle: platform.WindowHandle = .{ .handle = @ptrCast(window) };
+
+    for (_window_size_callbacks.items) |callback| {
+        callback(handle, .{ @intCast(width), @intCast(height) });
+    }
+}
+
 // *********************************************************************************************
 // Public API
 // *********************************************************************************************
@@ -167,6 +204,15 @@ pub fn init(allocator: std.mem.Allocator) !void {
     _char_callbacks = .init(_gpa);
     errdefer _char_callbacks.deinit();
 
+    _window_close_callbacks = .init(_gpa);
+    errdefer _window_close_callbacks.deinit();
+
+    _window_position_callbacks = .init(_gpa);
+    errdefer _window_position_callbacks.deinit();
+
+    _window_size_callbacks = .init(_gpa);
+    errdefer _window_size_callbacks.deinit();
+
     _ = c.glfwSetErrorCallback(&glfwErrorCallback);
 
     c.glfwInitHint(c.GLFW_PLATFORM, c.GLFW_PLATFORM_X11);
@@ -197,6 +243,9 @@ pub fn deinit() void {
         c.glfwDestroyCursor(cursor_);
     }
 
+    _window_size_callbacks.deinit();
+    _window_position_callbacks.deinit();
+    _window_close_callbacks.deinit();
     _char_callbacks.deinit();
     _key_callbacks.deinit();
     _mouse_scroll_callbacks.deinit();
@@ -230,6 +279,9 @@ pub fn createWindow(options: *const platform.WindowOptions) !platform.WindowHand
     _ = c.glfwSetScrollCallback(window, &glfwMouseScrollCallback);
     _ = c.glfwSetKeyCallback(window, &glfwKeyCallback);
     _ = c.glfwSetCharCallback(window, &glfwCharCallback);
+    _ = c.glfwSetWindowCloseCallback(window, &glfwWindowCloseCallback);
+    _ = c.glfwSetWindowPosCallback(window, &glfwWindowPositionCallback);
+    _ = c.glfwSetWindowSizeCallback(window, &glfwWindowSizeCallback);
 
     return .{ .handle = @ptrCast(window) };
 }
@@ -535,5 +587,50 @@ pub fn unregisterCharCallback(callback: platform.CharCallback) void {
     );
     if (index != null) {
         _ = _char_callbacks.swapRemove(index.?);
+    }
+}
+
+pub fn registerWindowCloseCallback(callback: platform.WindowCloseCallback) anyerror!void {
+    try _window_close_callbacks.append(callback);
+}
+
+pub fn unregisterWindowCloseCallback(callback: platform.WindowCloseCallback) void {
+    const index = std.mem.indexOf(
+        platform.WindowCloseCallback,
+        _window_close_callbacks.items,
+        &[_]platform.WindowCloseCallback{callback},
+    );
+    if (index != null) {
+        _ = _window_close_callbacks.swapRemove(index.?);
+    }
+}
+
+pub fn registerWindowPositionCallback(callback: platform.WindowPositionCallback) anyerror!void {
+    try _window_position_callbacks.append(callback);
+}
+
+pub fn unregisterWindowPositionCallback(callback: platform.WindowPositionCallback) void {
+    const index = std.mem.indexOf(
+        platform.WindowPositionCallback,
+        _window_position_callbacks.items,
+        &[_]platform.WindowPositionCallback{callback},
+    );
+    if (index != null) {
+        _ = _window_position_callbacks.swapRemove(index.?);
+    }
+}
+
+pub fn registerWindowSizeCallback(callback: platform.WindowSizeCallback) anyerror!void {
+    try _window_size_callbacks.append(callback);
+}
+
+pub fn unregisterWindowSizeCallback(callback: platform.WindowSizeCallback) void {
+    const index = std.mem.indexOf(
+        platform.WindowSizeCallback,
+        _window_size_callbacks.items,
+        &[_]platform.WindowSizeCallback{callback},
+    );
+    if (index != null) {
+        _ = _window_size_callbacks.swapRemove(index.?);
     }
 }

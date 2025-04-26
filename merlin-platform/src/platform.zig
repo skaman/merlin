@@ -258,6 +258,20 @@ pub const CharCallback = *const fn (
     codepoint: u32,
 ) void;
 
+pub const WindowCloseCallback = *const fn (
+    handle: WindowHandle,
+) void;
+
+pub const WindowPositionCallback = *const fn (
+    handle: WindowHandle,
+    position: [2]i32,
+) void;
+
+pub const WindowSizeCallback = *const fn (
+    handle: WindowHandle,
+    size: [2]u32,
+) void;
+
 const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator) anyerror!void,
     deinit: *const fn () void,
@@ -300,6 +314,12 @@ const VTab = struct {
     unregisterKeyCallback: *const fn (callback: KeyCallback) void,
     registerCharCallback: *const fn (callback: CharCallback) anyerror!void,
     unregisterCharCallback: *const fn (callback: CharCallback) void,
+    registerWindowCloseCallback: *const fn (callback: WindowCloseCallback) anyerror!void,
+    unregisterWindowCloseCallback: *const fn (callback: WindowCloseCallback) void,
+    registerWindowPositionCallback: *const fn (callback: WindowPositionCallback) anyerror!void,
+    unregisterWindowPositionCallback: *const fn (callback: WindowPositionCallback) void,
+    registerWindowSizeCallback: *const fn (callback: WindowSizeCallback) anyerror!void,
+    unregisterWindowSizeCallback: *const fn (callback: WindowSizeCallback) void,
 };
 
 // *********************************************************************************************
@@ -354,6 +374,12 @@ fn getVTab(
             .unregisterKeyCallback = noop.unregisterKeyCallback,
             .registerCharCallback = noop.registerCharCallback,
             .unregisterCharCallback = noop.unregisterCharCallback,
+            .registerWindowCloseCallback = noop.registerWindowCloseCallback,
+            .unregisterWindowCloseCallback = noop.unregisterWindowCloseCallback,
+            .registerWindowPositionCallback = noop.registerWindowPositionCallback,
+            .unregisterWindowPositionCallback = noop.unregisterWindowPositionCallback,
+            .registerWindowSizeCallback = noop.registerWindowSizeCallback,
+            .unregisterWindowSizeCallback = noop.unregisterWindowSizeCallback,
         },
         Type.glfw => return VTab{
             .init = glfw.init,
@@ -397,6 +423,12 @@ fn getVTab(
             .unregisterKeyCallback = glfw.unregisterKeyCallback,
             .registerCharCallback = glfw.registerCharCallback,
             .unregisterCharCallback = glfw.unregisterCharCallback,
+            .registerWindowCloseCallback = glfw.registerWindowCloseCallback,
+            .unregisterWindowCloseCallback = glfw.unregisterWindowCloseCallback,
+            .registerWindowPositionCallback = glfw.registerWindowPositionCallback,
+            .unregisterWindowPositionCallback = glfw.unregisterWindowPositionCallback,
+            .registerWindowSizeCallback = glfw.registerWindowSizeCallback,
+            .unregisterWindowSizeCallback = glfw.unregisterWindowSizeCallback,
         },
     }
 }
@@ -573,4 +605,28 @@ pub inline fn registerCharCallback(callback: CharCallback) !void {
 
 pub inline fn unregisterCharCallback(callback: CharCallback) void {
     _v_tab.unregisterCharCallback(callback);
+}
+
+pub inline fn registerWindowCloseCallback(callback: WindowCloseCallback) !void {
+    try _v_tab.registerWindowCloseCallback(callback);
+}
+
+pub inline fn unregisterWindowCloseCallback(callback: WindowCloseCallback) void {
+    _v_tab.unregisterWindowCloseCallback(callback);
+}
+
+pub inline fn registerWindowPositionCallback(callback: WindowPositionCallback) !void {
+    try _v_tab.registerWindowPositionCallback(callback);
+}
+
+pub inline fn unregisterWindowPositionCallback(callback: WindowPositionCallback) void {
+    _v_tab.unregisterWindowPositionCallback(callback);
+}
+
+pub inline fn registerWindowSizeCallback(callback: WindowSizeCallback) !void {
+    try _v_tab.registerWindowSizeCallback(callback);
+}
+
+pub inline fn unregisterWindowSizeCallback(callback: WindowSizeCallback) void {
+    _v_tab.unregisterWindowSizeCallback(callback);
 }

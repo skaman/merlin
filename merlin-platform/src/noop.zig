@@ -76,3 +76,9 @@ pub fn registerKeyCallback(_: platform.KeyCallback) anyerror!void {}
 pub fn unregisterKeyCallback(_: platform.KeyCallback) void {}
 pub fn registerCharCallback(_: platform.CharCallback) anyerror!void {}
 pub fn unregisterCharCallback(_: platform.CharCallback) void {}
+pub fn registerWindowCloseCallback(_: platform.WindowCloseCallback) anyerror!void {}
+pub fn unregisterWindowCloseCallback(_: platform.WindowCloseCallback) void {}
+pub fn registerWindowPositionCallback(_: platform.WindowPositionCallback) anyerror!void {}
+pub fn unregisterWindowPositionCallback(_: platform.WindowPositionCallback) void {}
+pub fn registerWindowSizeCallback(_: platform.WindowSizeCallback) anyerror!void {}
+pub fn unregisterWindowSizeCallback(_: platform.WindowSizeCallback) void {}
