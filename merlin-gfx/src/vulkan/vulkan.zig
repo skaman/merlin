@@ -11,7 +11,6 @@ pub const buffers = @import("buffers.zig");
 pub const command_buffers = @import("command_buffers.zig");
 pub const command_pool = @import("command_pool.zig");
 pub const debug = @import("debug.zig");
-pub const depth_image = @import("depth_image.zig");
 pub const device = @import("device.zig");
 pub const image = @import("image.zig");
 pub const instance = @import("instance.zig");
@@ -21,14 +20,32 @@ pub const pipeline_layouts = @import("pipeline_layouts.zig");
 pub const programs = @import("programs.zig");
 pub const render_pass = @import("render_pass.zig");
 pub const shaders = @import("shaders.zig");
-pub const surface = @import("surface.zig");
-pub const swap_chain = @import("swap_chain.zig");
 pub const textures = @import("textures.zig");
 
 pub const log = std.log.scoped(.gfx_vk);
 
 pub const MaxFramesInFlight = 2;
 pub const MaxDescriptorSets = 1024;
+
+const Dispatch = struct {
+    DestroySurfaceKHR: std.meta.Child(c.PFN_vkDestroySurfaceKHR) = undefined,
+};
+
+// *********************************************************************************************
+// Structs
+// *********************************************************************************************
+
+const WindowContext = struct {
+    surface: c.VkSurfaceKHR,
+    swap_chain: c.VkSwapchainKHR,
+    images: []c.VkImage,
+    image_views: []c.VkImageView,
+    extent: c.VkExtent2D,
+    format: c.VkFormat,
+    framebuffers: []c.VkFramebuffer,
+    depth_image: image.Image,
+    depth_image_view: c.VkImageView,
+};
 
 // *********************************************************************************************
 // Globals
@@ -38,16 +55,16 @@ pub var gpa: std.mem.Allocator = undefined;
 var _arena_impl: std.heap.ArenaAllocator = undefined;
 pub var arena: std.mem.Allocator = undefined;
 
+var _dispatch: ?Dispatch = null;
+
 pub var main_window_handle: platform.WindowHandle = undefined;
 
 var _graphics_queue: c.VkQueue = undefined;
 var _present_queue: c.VkQueue = undefined;
 var _transfer_queue: c.VkQueue = undefined;
 
-var _main_surface: c.VkSurfaceKHR = undefined;
-var _main_swap_chain: swap_chain.SwapChain = undefined;
+var _main_window_context: WindowContext = undefined;
 pub var main_render_pass: c.VkRenderPass = undefined; // TODO: this should not be public
-var _main_depth_image: depth_image.DepthImage = undefined;
 var _main_command_buffers: [MaxFramesInFlight]gfx.CommandBufferHandle = undefined;
 var _main_descriptor_pool: c.VkDescriptorPool = undefined;
 
@@ -86,27 +103,532 @@ fn recreateSwapChain() !void {
 
     try device.deviceWaitIdle();
 
-    depth_image.destroy(_main_depth_image);
-    swap_chain.destroy(&_main_swap_chain);
+    destroyFrameBuffers(&_main_window_context);
+    destroyDepthImage(&_main_window_context);
+    destroySwapChain(&_main_window_context);
 
-    _main_swap_chain = try swap_chain.create(
-        _main_surface,
+    try createSwapChain(
+        &_main_window_context,
         framebuffer_width,
         framebuffer_height,
     );
-    errdefer swap_chain.destroy(&_main_swap_chain);
+    errdefer destroySwapChain(&_main_window_context);
 
-    _main_depth_image = try depth_image.create(
-        framebuffer_width,
-        framebuffer_height,
-    );
-    errdefer depth_image.destroy(_main_depth_image);
+    try createDepthImage(&_main_window_context);
+    errdefer destroyDepthImage(&_main_window_context);
 
-    try swap_chain.createFrameBuffers(
-        &_main_swap_chain,
+    try createFrameBuffers(
+        &_main_window_context,
         main_render_pass,
-        _main_depth_image.view,
     );
+}
+
+fn createWaylandSurface() !c.VkSurfaceKHR {
+    const createWaylandSurfaceKHR = try library.get_proc(
+        c.PFN_vkCreateWaylandSurfaceKHR,
+        instance.handle,
+        "vkCreateWaylandSurfaceKHR",
+    );
+
+    log.debug("Creating Wayland surface", .{});
+
+    const create_info = std.mem.zeroInit(c.VkWaylandSurfaceCreateInfoKHR, .{
+        .sType = c.VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
+        .surface = @as(?*c.struct_wl_surface, @ptrCast(platform.nativeWindowHandle(main_window_handle))),
+        .display = @as(?*c.struct_wl_display, @ptrCast(platform.nativeDisplayHandle())),
+    });
+    var surface: c.VkSurfaceKHR = undefined;
+    try checkVulkanError(
+        "Failed to create Vulkan surface",
+        createWaylandSurfaceKHR(
+            instance.handle,
+            &create_info,
+            instance.allocation_callbacks,
+            &surface,
+        ),
+    );
+    return surface;
+}
+
+fn createXlibSurface() !c.VkSurfaceKHR {
+    const createXlibSurfaceKHR = try library.get_proc(
+        c.PFN_vkCreateXlibSurfaceKHR,
+        instance.handle,
+        "vkCreateXlibSurfaceKHR",
+    );
+
+    log.debug("Creating Xlib surface", .{});
+
+    const create_info = std.mem.zeroInit(c.VkXlibSurfaceCreateInfoKHR, .{
+        .sType = c.VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+        .window = @as(c.Window, @intCast(@intFromPtr(platform.nativeWindowHandle(main_window_handle)))),
+        .dpy = @as(?*c.Display, @ptrCast(platform.nativeDisplayHandle())),
+    });
+    var surface: c.VkSurfaceKHR = undefined;
+    try checkVulkanError(
+        "Failed to create Vulkan surface",
+        createXlibSurfaceKHR(
+            instance.handle,
+            &create_info,
+            instance.allocation_callbacks,
+            &surface,
+        ),
+    );
+    return surface;
+}
+
+fn createXcbSurface() !c.VkSurfaceKHR {
+    const createXcbSurfaceKHR = try library.get_proc(
+        c.PFN_vkCreateXcbSurfaceKHR,
+        instance.handle,
+        "vkCreateXcbSurfaceKHR",
+    );
+
+    log.debug("Creating Xcb surface", .{});
+
+    var xcblib = try std.DynLib.open("libX11-xcb.so.1");
+    defer xcblib.close();
+
+    const XGetXCBConnection = *const fn (?*c.Display) callconv(.c) ?*c.xcb_connection_t;
+    const get_xcb_connection = xcblib.lookup(
+        XGetXCBConnection,
+        "XGetXCBConnection",
+    ) orelse {
+        log.err("Failed to load XGetXCBConnection", .{});
+        return error.LoadLibraryFailed;
+    };
+
+    const connection = get_xcb_connection(@ptrCast(platform.nativeDisplayHandle()));
+    if (connection == null) {
+        log.err("Failed to get XCB connection", .{});
+        return error.GetProcAddressFailed;
+    }
+
+    const create_info = std.mem.zeroInit(c.VkXcbSurfaceCreateInfoKHR, .{
+        .sType = c.VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
+        .connection = connection,
+        .window = @as(c.xcb_window_t, @intCast(@intFromPtr(platform.nativeWindowHandle(main_window_handle)))),
+    });
+    var surface: c.VkSurfaceKHR = undefined;
+    try checkVulkanError(
+        "Failed to create Vulkan surface",
+        createXcbSurfaceKHR(
+            instance.handle,
+            &create_info,
+            instance.allocation_callbacks,
+            &surface,
+        ),
+    );
+    return surface;
+}
+
+// Something is wront with HWND alignment, so we need to use a pointer and bypass the c includes
+pub const struct_VkWin32SurfaceCreateInfoKHR = extern struct {
+    sType: c.VkStructureType = @import("std").mem.zeroes(c.VkStructureType),
+    pNext: ?*const anyopaque = @import("std").mem.zeroes(?*const anyopaque),
+    flags: c.VkWin32SurfaceCreateFlagsKHR = @import("std").mem.zeroes(c.VkWin32SurfaceCreateFlagsKHR),
+    hinstance: ?*anyopaque,
+    hwnd: ?*anyopaque,
+};
+
+pub const PFN_vkCreateWin32SurfaceKHR = ?*const fn (
+    c.VkInstance,
+    [*c]const struct_VkWin32SurfaceCreateInfoKHR,
+    [*c]const c.VkAllocationCallbacks,
+    [*c]c.VkSurfaceKHR,
+) callconv(.c) c.VkResult;
+
+fn createWin32Surface() !c.VkSurfaceKHR {
+    const createWin32SurfaceKHR = try library.get_proc(
+        PFN_vkCreateWin32SurfaceKHR,
+        instance.handle,
+        "vkCreateWin32SurfaceKHR",
+    );
+
+    log.debug("Creating Win32 surface", .{});
+
+    const window_handle = platform.nativeWindowHandle(main_window_handle);
+    const create_info = std.mem.zeroInit(struct_VkWin32SurfaceCreateInfoKHR, .{
+        .sType = c.VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR,
+        .hwnd = window_handle,
+    });
+    var surface: c.VkSurfaceKHR = undefined;
+    try checkVulkanError(
+        "Failed to create Vulkan surface",
+        createWin32SurfaceKHR(
+            instance.handle,
+            &create_info,
+            instance.allocation_callbacks,
+            &surface,
+        ),
+    );
+    return surface;
+}
+
+fn createCocoaSurface() !c.VkSurfaceKHR {
+    const createMacOSSurfaceMVK = try library.get_proc(
+        c.PFN_vkCreateMacOSSurfaceMVK,
+        instance.handle,
+        "vkCreateMacOSSurfaceMVK",
+    );
+
+    log.debug("Creating Cocoa surface", .{});
+
+    const create_info = std.mem.zeroInit(c.VkMacOSSurfaceCreateInfoMVK, .{
+        .sType = c.VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK,
+        .pView = @as(?*c.id, @ptrCast(platform.nativeDefaultWindowHandle())),
+    });
+    var surface: c.VkSurfaceKHR = undefined;
+    try checkVulkanError(
+        "Failed to create Vulkan surface",
+        createMacOSSurfaceMVK(
+            instance.handle,
+            &create_info,
+            instance.allocation_callbacks,
+            &surface,
+        ),
+    );
+    return surface;
+}
+
+fn createSurface() !c.VkSurfaceKHR {
+    if (_dispatch == null) {
+        _dispatch = try library.load(Dispatch, instance.handle);
+    }
+
+    var surface: c.VkSurfaceKHR = undefined;
+    switch (builtin.target.os.tag) {
+        .windows => {
+            surface = try createWin32Surface();
+        },
+        .linux => {
+            if (platform.nativeWindowHandleType() == .wayland) {
+                surface = try createWaylandSurface();
+            } else {
+                surface = createXcbSurface() catch
+                    try createXlibSurface();
+            }
+        },
+        .macos => {
+            surface = try createCocoaSurface();
+        },
+        else => {
+            @compileError("Unsupported OS");
+        },
+    }
+
+    return surface;
+}
+
+fn destroySurface(window_context: *WindowContext) void {
+    std.debug.assert(_dispatch != null);
+
+    _dispatch.?.DestroySurfaceKHR(
+        instance.handle,
+        window_context.surface,
+        instance.allocation_callbacks,
+    );
+}
+
+fn chooseSwapSurfaceFormat(formats: []c.VkSurfaceFormatKHR) c.VkSurfaceFormatKHR {
+    for (formats) |format| {
+        if (format.format == c.VK_FORMAT_B8G8R8A8_SRGB and
+            format.colorSpace == c.VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+        {
+            return format;
+        }
+    }
+    return formats[0];
+}
+
+fn chooseSwapPresentMode(present_modes: []c.VkPresentModeKHR) c.VkPresentModeKHR {
+    for (present_modes) |present_mode| {
+        if (present_mode == c.VK_PRESENT_MODE_MAILBOX_KHR) {
+            return present_mode;
+        }
+    }
+    return c.VK_PRESENT_MODE_FIFO_KHR;
+}
+
+fn chooseSwapExtent(
+    capabilities: *c.VkSurfaceCapabilitiesKHR,
+    window_width: u32,
+    window_height: u32,
+) c.VkExtent2D {
+    if (capabilities.currentExtent.width != c.UINT32_MAX) {
+        return capabilities.currentExtent;
+    }
+
+    var actual_extent = c.VkExtent2D{
+        .width = window_width,
+        .height = window_height,
+    };
+
+    actual_extent.width = std.math.clamp(
+        actual_extent.width,
+        capabilities.minImageExtent.width,
+        capabilities.maxImageExtent.width,
+    );
+    actual_extent.height = std.math.clamp(
+        actual_extent.height,
+        capabilities.minImageExtent.height,
+        capabilities.maxImageExtent.height,
+    );
+
+    return actual_extent;
+}
+
+fn createSwapChain(
+    window_context: *WindowContext,
+    width: u32,
+    height: u32,
+) !void {
+    var swap_chain_support = try device.SwapChainSupportDetails.init(
+        arena,
+        device.physical_device,
+        window_context.surface,
+    );
+    defer swap_chain_support.deinit();
+
+    const surface_format = chooseSwapSurfaceFormat(swap_chain_support.formats);
+    const present_mode = chooseSwapPresentMode(swap_chain_support.present_modes);
+
+    const extent = chooseSwapExtent(
+        &swap_chain_support.capabilities,
+        width,
+        height,
+    );
+
+    var image_count = swap_chain_support.capabilities.minImageCount + 1;
+    if (swap_chain_support.capabilities.maxImageCount > 0 and
+        image_count > swap_chain_support.capabilities.maxImageCount)
+    {
+        image_count = swap_chain_support.capabilities.maxImageCount;
+    }
+
+    var create_info = std.mem.zeroInit(
+        c.VkSwapchainCreateInfoKHR,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+            .surface = window_context.surface,
+            .minImageCount = image_count,
+            .imageFormat = surface_format.format,
+            .imageColorSpace = surface_format.colorSpace,
+            .imageExtent = extent,
+            .imageArrayLayers = 1,
+            .imageUsage = c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+            .preTransform = swap_chain_support.capabilities.currentTransform,
+            .compositeAlpha = c.VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+            .presentMode = present_mode,
+            .clipped = c.VK_TRUE,
+            //.oldSwapchain = c.VK_NULL_HANDLE,
+        },
+    );
+
+    const queue_family_indices = device.queue_family_indices;
+    const queue_family_indices_array = [_]u32{
+        queue_family_indices.graphics_family.?,
+        queue_family_indices.present_family.?,
+    };
+
+    if (queue_family_indices.graphics_family != queue_family_indices.present_family) {
+        create_info.imageSharingMode = c.VK_SHARING_MODE_CONCURRENT;
+        create_info.queueFamilyIndexCount = 2;
+        create_info.pQueueFamilyIndices = &queue_family_indices_array;
+    } else {
+        create_info.imageSharingMode = c.VK_SHARING_MODE_EXCLUSIVE;
+    }
+
+    var swap_chain: c.VkSwapchainKHR = undefined;
+    try device.createSwapchainKHR(
+        &create_info,
+        &swap_chain,
+    );
+    errdefer device.destroySwapchainKHR(swap_chain);
+
+    log.debug("Swap chain created:", .{});
+    log.debug("  - Image count: {d}", .{image_count});
+    log.debug("  - Image format: {s}", .{c.string_VkFormat(surface_format.format)});
+    log.debug("  - Image color space: {s}", .{c.string_VkColorSpaceKHR(surface_format.colorSpace)});
+    log.debug("  - Image extent: {d}x{d}", .{ extent.width, extent.height });
+    log.debug("  - Present mode: {s}", .{c.string_VkPresentModeKHR(present_mode)});
+
+    const swap_chain_images = try device.getSwapchainImagesKHRAlloc(
+        gpa,
+        swap_chain,
+    );
+    errdefer gpa.free(swap_chain_images);
+
+    var swap_chain_image_views = try gpa.alloc(
+        c.VkImageView,
+        swap_chain_images.len,
+    );
+    errdefer gpa.free(swap_chain_image_views);
+
+    @memset(swap_chain_image_views, null);
+    errdefer {
+        for (swap_chain_image_views) |image_view| {
+            if (image_view != null) {
+                device.destroyImageView(image_view);
+            }
+        }
+    }
+
+    for (swap_chain_images, 0..) |swap_chain_image, index| {
+        const image_view_create_info = std.mem.zeroInit(
+            c.VkImageViewCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+                .image = swap_chain_image,
+                .viewType = c.VK_IMAGE_VIEW_TYPE_2D,
+                .format = surface_format.format,
+                .components = c.VkComponentMapping{
+                    .r = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .g = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .b = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                    .a = c.VK_COMPONENT_SWIZZLE_IDENTITY,
+                },
+                .subresourceRange = c.VkImageSubresourceRange{
+                    .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            },
+        );
+
+        try device.createImageView(
+            &image_view_create_info,
+            &swap_chain_image_views[index],
+        );
+    }
+
+    window_context.swap_chain = swap_chain;
+    window_context.images = swap_chain_images;
+    window_context.image_views = swap_chain_image_views;
+    window_context.extent = extent;
+    window_context.format = surface_format.format;
+}
+
+fn destroySwapChain(window_context: *WindowContext) void {
+    for (window_context.image_views) |image_view| {
+        device.destroyImageView(image_view);
+    }
+    gpa.free(window_context.image_views);
+    gpa.free(window_context.images);
+    device.destroySwapchainKHR(window_context.swap_chain);
+}
+
+fn findSupportedFormat(
+    candidates: []const c.VkFormat,
+    tiling: c.VkImageTiling,
+    features: c.VkFormatFeatureFlags,
+) !c.VkFormat {
+    for (candidates) |format| {
+        var properties: c.VkFormatProperties = undefined;
+        instance.getPhysicalDeviceFormatProperties(
+            device.physical_device,
+            format,
+            &properties,
+        );
+
+        if (tiling == c.VK_IMAGE_TILING_LINEAR and
+            (properties.linearTilingFeatures & features) == features)
+        {
+            return format;
+        }
+
+        if (tiling == c.VK_IMAGE_TILING_OPTIMAL and
+            (properties.optimalTilingFeatures & features) == features)
+        {
+            return format;
+        }
+    }
+
+    log.err("Failed to find supported format", .{});
+    return error.UnsupportedFormat;
+}
+
+fn hasStencilComponent(format: c.VkFormat) bool {
+    return format == c.VK_FORMAT_D32_SFLOAT_S8_UINT or
+        format == c.VK_FORMAT_D24_UNORM_S8_UINT;
+}
+
+fn createDepthImage(window_context: *WindowContext) !void {
+    const depth_format = try findDepthFormat();
+
+    const depth_image = try image.create(
+        window_context.extent.width,
+        window_context.extent.height,
+        1,
+        depth_format,
+        1,
+        1,
+        c.VK_IMAGE_TILING_OPTIMAL,
+        c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        c.VK_IMAGE_LAYOUT_UNDEFINED,
+        c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    );
+
+    const depth_image_view = try image.createView(
+        depth_image.image,
+        depth_format,
+        c.VK_IMAGE_VIEW_TYPE_2D,
+        c.VK_IMAGE_ASPECT_DEPTH_BIT,
+        1,
+        1,
+    );
+
+    window_context.depth_image = depth_image;
+    window_context.depth_image_view = depth_image_view;
+}
+
+fn destroyDepthImage(window_context: *WindowContext) void {
+    image.destroyView(window_context.depth_image_view);
+    image.destroy(window_context.depth_image);
+}
+
+fn createFrameBuffers(
+    window_context: *WindowContext,
+    renderpass: c.VkRenderPass,
+) !void {
+    window_context.framebuffers = try gpa.alloc(
+        c.VkFramebuffer,
+        window_context.image_views.len,
+    );
+
+    for (window_context.image_views, 0..) |image_view, index| {
+        const attachments = [2]c.VkImageView{
+            image_view,
+            window_context.depth_image_view,
+        };
+
+        const frame_buffer_create_info = std.mem.zeroInit(
+            c.VkFramebufferCreateInfo,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+                .renderPass = renderpass,
+                .attachmentCount = attachments.len,
+                .pAttachments = &attachments,
+                .width = window_context.extent.width,
+                .height = window_context.extent.height,
+                .layers = 1,
+            },
+        );
+
+        try device.createFrameBuffer(
+            &frame_buffer_create_info,
+            &window_context.framebuffers[index],
+        );
+    }
+}
+
+fn destroyFrameBuffers(window_context: *WindowContext) void {
+    for (window_context.framebuffers) |framebuffer| {
+        device.destroyFrameBuffer(framebuffer);
+    }
+    gpa.free(window_context.framebuffers);
 }
 
 // *********************************************************************************************
@@ -162,6 +684,18 @@ pub fn checkVulkanError(comptime message: []const u8, result: c.VkResult) !void 
     }
 }
 
+pub fn findDepthFormat() !c.VkFormat {
+    return findSupportedFormat(
+        &[_]c.VkFormat{
+            c.VK_FORMAT_D32_SFLOAT,
+            c.VK_FORMAT_D32_SFLOAT_S8_UINT,
+            c.VK_FORMAT_D24_UNORM_S8_UINT,
+        },
+        c.VK_IMAGE_TILING_OPTIMAL,
+        c.VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT,
+    );
+}
+
 pub fn findMemoryTypeIndex(
     memory_type_bits: u32,
     property_flags: c.VkMemoryPropertyFlags,
@@ -212,10 +746,10 @@ pub fn init(
     try debug.init(options);
     errdefer debug.deinit();
 
-    _main_surface = try surface.create();
-    errdefer surface.destroy(_main_surface);
+    _main_window_context.surface = try createSurface();
+    errdefer destroySurface(&_main_window_context);
 
-    try device.init(options, _main_surface);
+    try device.init(options, _main_window_context.surface);
     errdefer device.deinit();
 
     device.getDeviceQueue(
@@ -240,27 +774,24 @@ pub fn init(
     const framebuffer_width = framebuffer_size[0];
     const framebuffer_height = framebuffer_size[1];
 
-    _main_swap_chain = try swap_chain.create(
-        _main_surface,
+    try createSwapChain(
+        &_main_window_context,
         framebuffer_width,
         framebuffer_height,
     );
-    errdefer swap_chain.destroy(&_main_swap_chain);
+    errdefer destroySwapChain(&_main_window_context);
 
-    main_render_pass = try render_pass.create(_main_swap_chain.format);
+    main_render_pass = try render_pass.create(_main_window_context.format);
     errdefer render_pass.destroy(main_render_pass);
 
-    _main_depth_image = try depth_image.create(
-        framebuffer_width,
-        framebuffer_height,
-    );
-    errdefer depth_image.destroy(_main_depth_image);
+    try createDepthImage(&_main_window_context);
+    errdefer destroyDepthImage(&_main_window_context);
 
-    try swap_chain.createFrameBuffers(
-        &_main_swap_chain,
+    try createFrameBuffers(
+        &_main_window_context,
         main_render_pass,
-        _main_depth_image.view,
     );
+    errdefer destroyFrameBuffers(&_main_window_context);
 
     _graphics_command_pool = try command_pool.create(device.queue_family_indices.graphics_family.?);
     errdefer command_pool.destroy(_graphics_command_pool);
@@ -377,9 +908,10 @@ pub fn deinit() void {
     command_pool.destroy(_transfer_command_pool);
 
     render_pass.destroy(main_render_pass);
-    depth_image.destroy(_main_depth_image);
-    swap_chain.destroy(&_main_swap_chain);
-    surface.destroy(_main_surface);
+    destroyFrameBuffers(&_main_window_context);
+    destroyDepthImage(&_main_window_context);
+    destroySwapChain(&_main_window_context);
+    destroySurface(&_main_window_context);
     device.deinit();
     debug.deinit();
     instance.deinit();
@@ -390,8 +922,8 @@ pub fn deinit() void {
 
 pub fn swapchainSize() [2]u32 {
     return .{
-        _main_swap_chain.extent.width,
-        _main_swap_chain.extent.height,
+        _main_window_context.extent.width,
+        _main_window_context.extent.height,
     };
 }
 
@@ -504,7 +1036,7 @@ pub fn beginFrame() !bool {
     );
 
     if (try device.acquireNextImageKHR(
-        _main_swap_chain.handle,
+        _main_window_context.swap_chain,
         c.UINT64_MAX,
         _image_available_semaphores[_current_frame_in_flight],
         null,
@@ -523,8 +1055,8 @@ pub fn beginFrame() !bool {
     try command_buffers.beginRenderPass(
         _main_command_buffers[_current_frame_in_flight],
         main_render_pass,
-        _main_swap_chain.frame_buffers.?[_current_image_index],
-        _main_swap_chain.extent,
+        _main_window_context.framebuffers[_current_image_index],
+        _main_window_context.extent,
     );
 
     return true;
@@ -568,13 +1100,13 @@ pub fn endFrame() !void {
             .waitSemaphoreCount = 1,
             .pWaitSemaphores = &signal_semaphores,
             .swapchainCount = 1,
-            .pSwapchains = &_main_swap_chain.handle,
+            .pSwapchains = &_main_window_context.swap_chain,
             .pImageIndices = &_current_image_index,
         },
     );
 
     const framebuffer_size = platform.windowFramebufferSize(main_window_handle);
-    if (_main_swap_chain.extent.width != framebuffer_size[0] or _main_swap_chain.extent.height != framebuffer_size[1]) {
+    if (_main_window_context.extent.width != framebuffer_size[0] or _main_window_context.extent.height != framebuffer_size[1]) {
         _framebuffer_invalidated = true;
     }
 

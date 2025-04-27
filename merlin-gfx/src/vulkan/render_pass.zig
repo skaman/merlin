@@ -26,7 +26,7 @@ pub fn create(format: c.VkFormat) !c.VkRenderPass {
     const depth_attachment = std.mem.zeroInit(
         c.VkAttachmentDescription,
         .{
-            .format = try vk.depth_image.findDepthFormat(),
+            .format = try vk.findDepthFormat(),
             .samples = c.VK_SAMPLE_COUNT_1_BIT,
             .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,

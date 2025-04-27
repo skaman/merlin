@@ -103,6 +103,56 @@ pub var features: c.VkPhysicalDeviceFeatures2 = undefined;
 pub var properties: c.VkPhysicalDeviceProperties = undefined;
 
 // *********************************************************************************************
+// SwapChainSupportDetails
+// *********************************************************************************************
+
+pub const SwapChainSupportDetails = struct {
+    allocator: std.mem.Allocator,
+    capabilities: c.VkSurfaceCapabilitiesKHR,
+    formats: []c.VkSurfaceFormatKHR,
+    present_modes: []c.VkPresentModeKHR,
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+        phys_device: c.VkPhysicalDevice,
+        surface: c.VkSurfaceKHR,
+    ) !SwapChainSupportDetails {
+        var capabilities: c.VkSurfaceCapabilitiesKHR = undefined;
+        try vk.instance.getPhysicalDeviceSurfaceCapabilitiesKHR(
+            phys_device,
+            surface,
+            &capabilities,
+        );
+
+        const formats = try vk.instance.getPhysicalDeviceSurfaceFormatsKHRAlloc(
+            allocator,
+            phys_device,
+            surface,
+        );
+        errdefer allocator.free(formats);
+
+        const present_modes = try vk.instance.getPhysicalDeviceSurfacePresentModesKHRAlloc(
+            allocator,
+            phys_device,
+            surface,
+        );
+        errdefer allocator.free(present_modes);
+
+        return .{
+            .allocator = allocator,
+            .capabilities = capabilities,
+            .formats = formats,
+            .present_modes = present_modes,
+        };
+    }
+
+    pub fn deinit(self: *const SwapChainSupportDetails) void {
+        self.allocator.free(self.formats);
+        self.allocator.free(self.present_modes);
+    }
+};
+
+// *********************************************************************************************
 // Private API
 // *********************************************************************************************
 
@@ -158,7 +208,7 @@ fn rateDeviceSuitability(
         required_extensions,
     );
 
-    var swap_chain_support = try vk.swap_chain.SwapChainSupportDetails.init(
+    var swap_chain_support = try SwapChainSupportDetails.init(
         allocator,
         device,
         surface,
