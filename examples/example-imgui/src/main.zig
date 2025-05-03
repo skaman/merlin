@@ -39,10 +39,10 @@ pub fn deinit(context: *Context) void {
 }
 
 pub fn update(context: *Context, delta_time: f32) void {
-    const swapchain_size = gfx.swapchainSize();
+    //const swapchain_size = gfx.swapchainSize();
 
-    gfx.setViewport(.{ 0, 0 }, swapchain_size);
-    gfx.setScissor(.{ 0, 0 }, swapchain_size);
+    //gfx.setViewport(.{ 0, 0 }, swapchain_size);
+    //gfx.setScissor(.{ 0, 0 }, swapchain_size);
 
     _ = context;
 
@@ -103,6 +103,8 @@ pub fn main() !void {
     var last_current_time = start_time;
 
     while (!platform.shouldCloseWindow(window_handle)) {
+        defer _ = arena.reset(.retain_capacity);
+
         platform.pollEvents();
 
         const current_time = std.time.microTimestamp();
@@ -115,17 +117,10 @@ pub fn main() !void {
         };
         if (!result) continue;
 
-        {
-            gfx.beginDebugLabel("Frame", gfx_types.Colors.Red);
-            defer gfx.endDebugLabel();
-
-            update(&context, delta_time);
-        }
+        update(&context, delta_time);
 
         gfx.endFrame() catch |err| {
             std.log.err("Failed to end frame: {}", .{err});
         };
-
-        _ = arena.reset(.retain_capacity);
     }
 }

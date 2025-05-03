@@ -27,6 +27,7 @@ var _char_callbacks: std.ArrayList(platform.CharCallback) = undefined;
 var _window_close_callbacks: std.ArrayList(platform.WindowCloseCallback) = undefined;
 var _window_position_callbacks: std.ArrayList(platform.WindowPositionCallback) = undefined;
 var _window_size_callbacks: std.ArrayList(platform.WindowSizeCallback) = undefined;
+var _windows_to_destroy: std.ArrayList(platform.WindowHandle) = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -213,6 +214,9 @@ pub fn init(allocator: std.mem.Allocator) !void {
     _window_size_callbacks = .init(_gpa);
     errdefer _window_size_callbacks.deinit();
 
+    _windows_to_destroy = .init(_gpa);
+    errdefer _windows_to_destroy.deinit();
+
     _ = c.glfwSetErrorCallback(&glfwErrorCallback);
 
     c.glfwInitHint(c.GLFW_PLATFORM, c.GLFW_PLATFORM_X11);
@@ -243,6 +247,7 @@ pub fn deinit() void {
         c.glfwDestroyCursor(cursor_);
     }
 
+    _windows_to_destroy.deinit();
     _window_size_callbacks.deinit();
     _window_position_callbacks.deinit();
     _window_close_callbacks.deinit();
@@ -287,8 +292,9 @@ pub fn createWindow(options: *const platform.WindowOptions) !platform.WindowHand
 }
 
 pub fn destroyWindow(handle: platform.WindowHandle) void {
-    const window: ?*c.GLFWwindow = @ptrCast(@alignCast(handle.handle));
-    c.glfwDestroyWindow(window);
+    _windows_to_destroy.append(handle) catch |err| {
+        log.err("Failed to append window to destroy list: {}", .{err});
+    };
 }
 
 pub fn showWindow(handle: platform.WindowHandle) void {
@@ -466,6 +472,12 @@ pub fn setClipboardText(handle: platform.WindowHandle, text: []const u8) !void {
 
 pub fn pollEvents() void {
     _ = _arena_impl.reset(.retain_capacity);
+
+    for (_windows_to_destroy.items) |handle| {
+        const window: ?*c.GLFWwindow = @ptrCast(@alignCast(handle.handle));
+        c.glfwDestroyWindow(window);
+    }
+    _windows_to_destroy.clearRetainingCapacity();
 
     c.glfwPollEvents();
 }

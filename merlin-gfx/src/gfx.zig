@@ -13,6 +13,7 @@ const vulkan = @import("vulkan/vulkan.zig");
 
 pub const log = std.log.scoped(.gfx);
 
+pub const FramebufferHandle = packed struct { handle: *anyopaque };
 pub const ShaderHandle = packed struct { handle: *anyopaque };
 pub const ProgramHandle = packed struct { handle: *anyopaque };
 pub const BufferHandle = packed struct { handle: *anyopaque };
@@ -286,6 +287,8 @@ const VTab = struct {
     uniformAlignment: *const fn () u32,
     maxFramesInFlight: *const fn () u32,
     currentFrameInFlight: *const fn () u32,
+    createFramebuffer: *const fn (window_handle: platform.WindowHandle) anyerror!FramebufferHandle,
+    destroyFramebuffer: *const fn (handle: FramebufferHandle) void,
     createShader: *const fn (reader: std.io.AnyReader, options: ShaderOptions) anyerror!ShaderHandle,
     destroyShader: *const fn (handle: ShaderHandle) void,
     createPipelineLayout: *const fn (vertex_layout: types.VertexLayout) anyerror!PipelineLayoutHandle,
@@ -300,6 +303,8 @@ const VTab = struct {
     destroyTexture: *const fn (handle: TextureHandle) void,
     beginFrame: *const fn () anyerror!bool,
     endFrame: *const fn () anyerror!void,
+    beginRenderPass: *const fn (framebuffer: ?FramebufferHandle) anyerror!bool,
+    endRenderPass: *const fn () void,
     setViewport: *const fn (position: [2]u32, size: [2]u32) void,
     setScissor: *const fn (position: [2]u32, size: [2]u32) void,
     setDebug: *const fn (debug_options: DebugOptions) void,
@@ -344,6 +349,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .uniformAlignment = noop.uniformAlignment,
                 .maxFramesInFlight = noop.maxFramesInFlight,
                 .currentFrameInFlight = noop.currentFrameInFlight,
+                .createFramebuffer = noop.createFramebuffer,
+                .destroyFramebuffer = noop.destroyFramebuffer,
                 .createShader = noop.createShader,
                 .destroyShader = noop.destroyShader,
                 .createPipelineLayout = noop.createPipelineLayout,
@@ -358,6 +365,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .destroyTexture = noop.destroyTexture,
                 .beginFrame = noop.beginFrame,
                 .endFrame = noop.endFrame,
+                .beginRenderPass = noop.beginRenderPass,
+                .endRenderPass = noop.endRenderPass,
                 .setViewport = noop.setViewport,
                 .setScissor = noop.setScissor,
                 .setDebug = noop.setDebug,
@@ -384,6 +393,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .uniformAlignment = vulkan.uniformAlignment,
                 .maxFramesInFlight = vulkan.maxFramesInFlight,
                 .currentFrameInFlight = vulkan.currentFrameInFlight,
+                .createFramebuffer = vulkan.createFramebuffer,
+                .destroyFramebuffer = vulkan.destroyFramebuffer,
                 .createShader = vulkan.createShader,
                 .destroyShader = vulkan.destroyShader,
                 .createPipelineLayout = vulkan.createPipelineLayout,
@@ -398,6 +409,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .destroyTexture = vulkan.destroyTexture,
                 .beginFrame = vulkan.beginFrame,
                 .endFrame = vulkan.endFrame,
+                .beginRenderPass = vulkan.beginRenderPass,
+                .endRenderPass = vulkan.endRenderPass,
                 .setViewport = vulkan.setViewport,
                 .setScissor = vulkan.setScissor,
                 .setDebug = vulkan.setDebug,
@@ -473,6 +486,16 @@ pub inline fn maxFramesInFlight() u32 {
 /// This value is in the range [0, maxFramesInFlight).
 pub inline fn currentFrameInFlight() u32 {
     return v_tab.currentFrameInFlight();
+}
+
+/// Creates a framebuffer.
+pub fn createFramebuffer(window_handle: platform.WindowHandle) !FramebufferHandle {
+    return try v_tab.createFramebuffer(window_handle);
+}
+
+/// Destroys a framebuffer.
+pub inline fn destroyFramebuffer(handle: FramebufferHandle) void {
+    v_tab.destroyFramebuffer(handle);
 }
 
 /// Creates a shader from a loader.
@@ -600,6 +623,16 @@ pub inline fn beginFrame() !bool {
 pub inline fn endFrame() !void {
     defer _ = arena_impl.reset(.retain_capacity);
     return v_tab.endFrame();
+}
+
+/// Begins a render pass.
+pub inline fn beginRenderPass(framebuffer: ?FramebufferHandle) !bool {
+    return v_tab.beginRenderPass(framebuffer);
+}
+
+/// Ends a render pass.
+pub inline fn endRenderPass() void {
+    v_tab.endRenderPass();
 }
 
 /// Sets the viewport.

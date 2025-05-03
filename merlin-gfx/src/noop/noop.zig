@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const platform = @import("merlin_platform");
 const utils = @import("merlin_utils");
 const types = utils.gfx_types;
 
@@ -19,6 +20,10 @@ pub fn maxFramesInFlight() u32 {
 pub fn currentFrameInFlight() u32 {
     return 0;
 }
+pub fn createFramebuffer(_: platform.WindowHandle) !gfx.FramebufferHandle {
+    return .{ .handle = undefined };
+}
+pub fn destroyFramebuffer(_: gfx.FramebufferHandle) void {}
 pub fn createShader(_: std.io.AnyReader, _: gfx.ShaderOptions) !gfx.ShaderHandle {
     return .{ .handle = undefined };
 }
@@ -47,6 +52,10 @@ pub fn destroyTexture(_: gfx.TextureHandle) void {}
 pub fn beginFrame() !bool {
     return true;
 }
+pub fn beginRenderPass(_: ?gfx.FramebufferHandle) !bool {
+    return false;
+}
+pub fn endRenderPass() void {}
 pub fn endFrame() !void {}
 pub fn setViewport(_: [2]u32, _: [2]u32) void {}
 pub fn setScissor(_: [2]u32, _: [2]u32) void {}

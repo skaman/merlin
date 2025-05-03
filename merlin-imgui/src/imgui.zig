@@ -34,6 +34,11 @@ const FragmentConstantData = struct {
 };
 
 const ViewportData = struct {
+    vertex_buffer_handle: ?gfx.BufferHandle = null,
+    vertex_buffer_size: u32 = 0,
+    index_buffer_handle: ?gfx.BufferHandle = null,
+    index_buffer_size: u32 = 0,
+    framebuffer_handle: ?gfx.FramebufferHandle = null,
     window_owned: bool = false,
     ignore_window_pos_event_frame: c_int = 0,
     ignore_window_size_event_frame: c_int = 0,
@@ -52,10 +57,6 @@ var _frag_shader_handle: gfx.ShaderHandle = undefined;
 var _program_handle: gfx.ProgramHandle = undefined;
 var _tex_uniform_handle: gfx.NameHandle = undefined;
 var _pipeline_layout_handle: gfx.PipelineLayoutHandle = undefined;
-var _vertex_buffer_handle: ?gfx.BufferHandle = null;
-var _vertex_buffer_size: u32 = 0;
-var _index_buffer_handle: ?gfx.BufferHandle = null;
-var _index_buffer_size: u32 = 0;
 
 // *********************************************************************************************
 // Private API
@@ -190,10 +191,45 @@ fn updateMouseCursor() !void {
     }
 }
 
+fn updateMouseData() !void {
+    const io = c.igGetIO_Nil();
+    const platform_io = c.igGetPlatformIO_Nil();
+
+    var mouse_viewport_id: c.ImGuiID = 0;
+    const mouse_pos_prev = io.*.MousePos;
+    for (0..@intCast(platform_io.*.Viewports.Size)) |i| {
+        const viewport = platform_io.*.Viewports.Data[i];
+        const window_handle: platform.WindowHandle = .{ .handle = viewport.*.PlatformHandle.? };
+
+        const is_window_focused = platform.windowFocused(window_handle);
+        if (is_window_focused) {
+            if (io.*.WantSetMousePos) {
+                platform.setCursorPosition(
+                    window_handle,
+                    .{
+                        mouse_pos_prev.x - viewport.*.Pos.x,
+                        mouse_pos_prev.y - viewport.*.Pos.y,
+                    },
+                );
+            }
+        }
+
+        if (platform.windowHovered(window_handle))
+            mouse_viewport_id = viewport.*.ID;
+    }
+
+    if (io.*.BackendFlags & c.ImGuiBackendFlags_HasMouseHoveredViewport != 0) {
+        c.ImGuiIO_AddMouseViewportEvent(io, mouse_viewport_id);
+    }
+}
+
 fn windowFocusCallback(
-    _: platform.WindowHandle,
+    window_handle: platform.WindowHandle,
     focused: bool,
 ) void {
+    if (c.igFindViewportByPlatformHandle(window_handle.handle) == null)
+        return;
+
     const io = c.igGetIO_Nil();
     c.ImGuiIO_AddFocusEvent(io, focused);
 }
@@ -202,6 +238,9 @@ fn cursorPositionCallback(
     window_handle: platform.WindowHandle,
     position: [2]f32,
 ) void {
+    if (c.igFindViewportByPlatformHandle(window_handle.handle) == null)
+        return;
+
     const io = c.igGetIO_Nil();
     var position_x = position[0];
     var position_y = position[1];
@@ -222,21 +261,27 @@ fn updateKeyModifiers(modifiers: platform.KeyModifier) void {
 }
 
 fn mouseButtonCallback(
-    _: platform.WindowHandle,
+    window_handle: platform.WindowHandle,
     button: platform.MouseButton,
     action: platform.MouseButtonAction,
     modifiers: platform.KeyModifier,
 ) void {
+    if (c.igFindViewportByPlatformHandle(window_handle.handle) == null)
+        return;
+
     const io = c.igGetIO_Nil();
     c.ImGuiIO_AddMouseButtonEvent(io, @intFromEnum(button), action == .press);
     updateKeyModifiers(modifiers);
 }
 
 fn mouseScrollCallback(
-    _: platform.WindowHandle,
+    window_handle: platform.WindowHandle,
     x_scroll: f32,
     y_scroll: f32,
 ) void {
+    if (c.igFindViewportByPlatformHandle(window_handle.handle) == null)
+        return;
+
     const io = c.igGetIO_Nil();
     c.ImGuiIO_AddMouseWheelEvent(io, x_scroll, y_scroll);
 }
@@ -367,13 +412,15 @@ fn keyToImGuiKey(key: platform.Key) c.ImGuiKey {
 }
 
 fn keyCallback(
-    _: platform.WindowHandle,
+    window_handle: platform.WindowHandle,
     key: platform.Key,
     _: i32,
     action: platform.KeyAction,
     modifiers: platform.KeyModifier,
 ) void {
     if (action != .press and action != .release) return;
+    if (c.igFindViewportByPlatformHandle(window_handle.handle) == null)
+        return;
 
     const io = c.igGetIO_Nil();
     const imgui_key = keyToImGuiKey(key);
@@ -382,9 +429,12 @@ fn keyCallback(
 }
 
 fn charCallback(
-    _: platform.WindowHandle,
+    window_handle: platform.WindowHandle,
     character: u32,
 ) void {
+    if (c.igFindViewportByPlatformHandle(window_handle.handle) == null)
+        return;
+
     const io = c.igGetIO_Nil();
     c.ImGuiIO_AddInputCharacter(io, @intCast(character));
 }
@@ -393,6 +443,9 @@ fn windowCloseCallback(
     window_handle: platform.WindowHandle,
 ) void {
     const viewport = c.igFindViewportByPlatformHandle(window_handle.handle);
+    if (viewport == null)
+        return;
+
     const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.*.PlatformUserData));
     if (viewport_data) |data| {
         if (data.window_owned) {
@@ -406,6 +459,9 @@ fn windowPositionCallback(
     _: [2]i32,
 ) void {
     const viewport = c.igFindViewportByPlatformHandle(window_handle.handle);
+    if (viewport == null)
+        return;
+
     const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.*.PlatformUserData));
     if (viewport_data) |data| {
         if (data.window_owned) {
@@ -423,6 +479,9 @@ fn windowSizeCallback(
     _: [2]u32,
 ) void {
     const viewport = c.igFindViewportByPlatformHandle(window_handle.handle);
+    if (viewport == null)
+        return;
+
     const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.*.PlatformUserData));
     if (viewport_data) |data| {
         if (data.window_owned) {
@@ -435,36 +494,43 @@ fn windowSizeCallback(
     }
 }
 
-fn draw(draw_data: [*c]c.ImDrawData) !void {
+fn draw(
+    draw_data: [*c]c.ImDrawData,
+    viewport_data: *ViewportData,
+    window_handle: platform.WindowHandle,
+) !void {
+    if (!try gfx.beginRenderPass(viewport_data.framebuffer_handle)) return;
+    defer gfx.endRenderPass();
+
     if (draw_data.*.TotalVtxCount > 0) {
-        const framebuffer_size = platform.windowFramebufferSize(_main_window_handle);
+        const framebuffer_size = platform.windowFramebufferSize(window_handle);
         const vertex_size: u32 = @intCast(@sizeOf(c.ImDrawVert) * draw_data.*.TotalVtxCount);
         const index_size: u32 = @intCast(@sizeOf(c.ImDrawIdx) * draw_data.*.TotalIdxCount);
 
-        if (_vertex_buffer_handle == null or _vertex_buffer_size < vertex_size) {
-            if (_vertex_buffer_handle) |handle| {
+        if (viewport_data.vertex_buffer_handle == null or viewport_data.vertex_buffer_size < vertex_size) {
+            if (viewport_data.vertex_buffer_handle) |handle| {
                 gfx.destroyBuffer(handle);
             }
-            _vertex_buffer_handle = try gfx.createBuffer(
+            viewport_data.vertex_buffer_handle = try gfx.createBuffer(
                 vertex_size,
                 .{ .vertex = true },
                 .host,
                 .{ .debug_name = "ImGui Vertex Buffer" },
             );
-            _vertex_buffer_size = vertex_size;
+            viewport_data.vertex_buffer_size = vertex_size;
         }
 
-        if (_index_buffer_handle == null or _index_buffer_size < index_size) {
-            if (_index_buffer_handle) |handle| {
+        if (viewport_data.index_buffer_handle == null or viewport_data.index_buffer_size < index_size) {
+            if (viewport_data.index_buffer_handle) |handle| {
                 gfx.destroyBuffer(handle);
             }
-            _index_buffer_handle = try gfx.createBuffer(
+            viewport_data.index_buffer_handle = try gfx.createBuffer(
                 index_size,
                 .{ .index = true },
                 .host,
                 .{ .debug_name = "ImGui Index Buffer" },
             );
-            _index_buffer_size = index_size;
+            viewport_data.index_buffer_size = index_size;
         }
 
         var vertex_offset: u32 = 0;
@@ -476,7 +542,7 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
             const vertex_cmd_size: usize = @intCast(@sizeOf(c.ImDrawVert) * vertex_count);
             const vertex_cmd_data = cmd_list.*.VtxBuffer.Data[0..vertex_count];
             try gfx.updateBufferFromMemory(
-                _vertex_buffer_handle.?,
+                viewport_data.vertex_buffer_handle.?,
                 @ptrCast(vertex_cmd_data),
                 vertex_offset,
             );
@@ -486,7 +552,7 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
             const index_cmd_size: usize = @intCast(@sizeOf(c.ImDrawIdx) * index_count);
             const index_cmd_data = cmd_list.*.IdxBuffer.Data[0..index_count];
             try gfx.updateBufferFromMemory(
-                _index_buffer_handle.?,
+                viewport_data.index_buffer_handle.?,
                 @ptrCast(index_cmd_data),
                 index_offset,
             );
@@ -538,8 +604,8 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
             _font_texture_handle,
         );
         gfx.bindPipelineLayout(_pipeline_layout_handle);
-        gfx.bindVertexBuffer(_vertex_buffer_handle.?, 0);
-        gfx.bindIndexBuffer(_index_buffer_handle.?, 0);
+        gfx.bindVertexBuffer(viewport_data.vertex_buffer_handle.?, 0);
+        gfx.bindIndexBuffer(viewport_data.index_buffer_handle.?, 0);
 
         const clip_offset: [2]f32 = .{ draw_data.*.DisplayPos.x, draw_data.*.DisplayPos.y };
         const clip_scale: [2]f32 = .{ draw_data.*.FramebufferScale.x, draw_data.*.FramebufferScale.y };
@@ -558,8 +624,14 @@ fn draw(draw_data: [*c]c.ImDrawData) !void {
                 };
 
                 const clip_max: [2]f32 = .{
-                    @min(@as(f32, @floatFromInt(framebuffer_size[0])), (cmd.ClipRect.z - clip_offset[0]) * clip_scale[0]),
-                    @min(@as(f32, @floatFromInt(framebuffer_size[1])), (cmd.ClipRect.w - clip_offset[1]) * clip_scale[1]),
+                    @min(
+                        @as(f32, @floatFromInt(framebuffer_size[0])),
+                        (cmd.ClipRect.z - clip_offset[0]) * clip_scale[0],
+                    ),
+                    @min(
+                        @as(f32, @floatFromInt(framebuffer_size[1])),
+                        (cmd.ClipRect.w - clip_offset[1]) * clip_scale[1],
+                    ),
                 };
 
                 if (clip_min[0] >= clip_max[0] or clip_min[1] >= clip_max[1]) {
@@ -637,11 +709,25 @@ fn createWindow(viewport: ?*c.ImGuiViewport) callconv(.c) void {
 
     viewport.?.PlatformHandle = window_handle.handle;
     viewport.?.PlatformUserData = @ptrCast(viewport_data);
+
+    viewport_data.framebuffer_handle = gfx.createFramebuffer(window_handle) catch |err| {
+        log.err("Failed to create framebuffer: {}", .{err});
+        return;
+    };
 }
 
 fn destroyWindow(viewport: ?*c.ImGuiViewport) callconv(.c) void {
     const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.?.PlatformUserData));
     if (viewport_data) |data| {
+        if (data.framebuffer_handle) |handle| {
+            gfx.destroyFramebuffer(handle);
+        }
+        if (data.vertex_buffer_handle) |handle| {
+            gfx.destroyBuffer(handle);
+        }
+        if (data.index_buffer_handle) |handle| {
+            gfx.destroyBuffer(handle);
+        }
         if (data.window_owned) {
             const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
             platform.destroyWindow(window_handle);
@@ -723,8 +809,19 @@ fn setWindowAlpha(viewport: ?*c.ImGuiViewport, alpha: f32) callconv(.c) void {
 }
 
 fn renderWindow(viewport: ?*c.ImGuiViewport, _: ?*anyopaque) callconv(.c) void {
-    _ = viewport;
-    //log.debug("Render window", .{});
+    const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
+    const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.?.PlatformUserData));
+    if (viewport_data) |data| {
+        if (data.window_owned) {
+            draw(
+                viewport.?.DrawData,
+                viewport_data.?,
+                window_handle,
+            ) catch |err| {
+                log.err("Failed to render ImGui: {}", .{err});
+            };
+        }
+    }
 }
 
 // *********************************************************************************************
@@ -788,11 +885,6 @@ pub fn init(allocator: std.mem.Allocator, options: Options) !void {
     vertex_layout.add(.color_0, 4, .u8, true);
     _pipeline_layout_handle = try gfx.createPipelineLayout(vertex_layout);
     errdefer gfx.destroyPipelineLayout(_pipeline_layout_handle);
-
-    _vertex_buffer_handle = null;
-    _vertex_buffer_size = 0;
-    _index_buffer_handle = null;
-    _index_buffer_size = 0;
 
     _ = c.ImFontAtlas_AddFontDefault(io.*.Fonts, null);
 
@@ -859,12 +951,6 @@ pub fn deinit() void {
     c.igDestroyPlatformWindows();
 
     gfx.destroyPipelineLayout(_pipeline_layout_handle);
-    if (_vertex_buffer_handle) |handle| {
-        gfx.destroyBuffer(handle);
-    }
-    if (_index_buffer_handle) |handle| {
-        gfx.destroyBuffer(handle);
-    }
     gfx.destroyTexture(_font_texture_handle);
     gfx.destroyShader(_vert_shader_handle);
     gfx.destroyShader(_frag_shader_handle);
@@ -891,6 +977,7 @@ pub fn update(delta_time: f32) !void {
 
     try updateMonitors();
     try updateMouseCursor();
+    try updateMouseData();
 
     // Test window
     c.igNewFrame();
@@ -918,10 +1005,12 @@ pub fn update(delta_time: f32) !void {
     c.igRender();
 
     const draw_data = c.igGetDrawData();
-    try draw(draw_data);
+
+    const viewport = c.igGetMainViewport();
+    const viewport_data: *ViewportData = @ptrCast(@alignCast(viewport.*.PlatformUserData));
+    try draw(draw_data, viewport_data, _main_window_handle);
 
     if (io.*.ConfigFlags & c.ImGuiConfigFlags_ViewportsEnable != 0) {
-        //log.debug("Rendering viewports", .{});
         c.igUpdatePlatformWindows();
         c.igRenderPlatformWindowsDefault(
             null,
