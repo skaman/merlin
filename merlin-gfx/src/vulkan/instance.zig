@@ -194,6 +194,17 @@ pub fn init(options: *const gfx.Options) !void {
         create_info.pNext = &debug_create_info;
     }
 
+    allocation_callbacks = try vk.gpa.create(c.VkAllocationCallbacks);
+    errdefer vk.gpa.destroy(allocation_callbacks.?);
+
+    allocation_callbacks.?.* = .{
+        .pfnAllocation = vk.custom_allocator.vulkanAllocation,
+        .pfnReallocation = vk.custom_allocator.vulkanReallocation,
+        .pfnFree = vk.custom_allocator.vulkanFree,
+        .pfnInternalAllocation = vk.custom_allocator.vulkanInternalAllocation,
+        .pfnInternalFree = vk.custom_allocator.vulkanInternalFree,
+    };
+
     try vk.library.createInstance(
         &create_info,
         allocation_callbacks,
@@ -211,6 +222,7 @@ pub fn init(options: *const gfx.Options) !void {
 
 pub fn deinit() void {
     dispatch.DestroyInstance(handle, allocation_callbacks);
+    vk.gpa.destroy(allocation_callbacks.?);
 }
 
 pub inline fn createDevice(

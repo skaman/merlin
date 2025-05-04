@@ -10,6 +10,7 @@ const gfx = @import("../gfx.zig");
 pub const buffers = @import("buffers.zig");
 pub const command_buffers = @import("command_buffers.zig");
 pub const command_pool = @import("command_pool.zig");
+pub const custom_allocator = @import("custom_allocator.zig");
 pub const debug = @import("debug.zig");
 pub const device = @import("device.zig");
 pub const image = @import("image.zig");
@@ -1152,6 +1153,8 @@ pub fn destroyTexture(handle: gfx.TextureHandle) void {
 }
 
 pub fn beginFrame() !bool {
+    //log.debug("Memory usage: {d}", .{custom_allocator.vulkan_memory_usage});
+
     for (_windows.items) |window| {
         try device.waitForFences(
             1,
