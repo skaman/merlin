@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const utils = @import("merlin_utils");
+
 const c = @import("../c.zig").c;
 const vk = @import("vulkan.zig");
 
@@ -46,106 +48,31 @@ pub fn vulkanAllocation(
     alignment: usize,
     _: c.VkSystemAllocationScope,
 ) callconv(.c) ?*anyopaque {
-    if (size == 0) {
-        return null;
-    }
-
-    const totale_size = HeaderSize + size;
-
-    const ptr = vk.gpa.rawAlloc(
-        totale_size,
-        .fromByteUnits(alignment),
-        @returnAddress(),
-    );
-    if (ptr == null) {
-        vk.log.err(
-            "Vulkan allocation: failed to allocate {d} bytes",
-            .{size},
-        );
-        return null;
-    }
-
-    vulkan_memory_usage += size;
-
-    const size_ptr: *usize = @ptrCast(@alignCast(ptr));
-    const align_ptr: *usize = @ptrCast(@alignCast(ptr.? + HeaderAlignmentOffset));
-    size_ptr.* = size;
-    align_ptr.* = alignment;
-
-    return ptr.? + HeaderSize;
+    const raw_allocator = utils.RawAllocator.init(vk.gpa);
+    return raw_allocator.allocate(size, @intCast(alignment));
 }
 
 pub fn vulkanReallocation(
-    user_data: ?*anyopaque,
+    _: ?*anyopaque,
     original: ?*anyopaque,
     size: usize,
     alignment: usize,
-    allocation_scope: c.VkSystemAllocationScope,
+    _: c.VkSystemAllocationScope,
 ) callconv(.c) ?*anyopaque {
-    if (original == null) {
-        return vulkanAllocation(
-            user_data,
-            size,
-            alignment,
-            allocation_scope,
-        );
-    }
-
-    if (size == 0) {
-        vulkanFree(user_data, original);
-        return null;
-    }
-
-    const old_size = getSize(original);
-    const old_alignment = getAlignment(original);
-
-    if (alignment != old_alignment) {
-        vk.log.err(
-            "Vulkan reallocation: alignment mismatch: {d} != {d}",
-            .{ alignment, old_alignment },
-        );
-        return null;
-    }
-
-    // TODO: add remap (remember to consider vulkan_memory_usage when remap)
-    //vk.gpa.rawRemap(memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize)
-
-    const result = vulkanAllocation(
-        user_data,
+    const raw_allocator = utils.RawAllocator.init(vk.gpa);
+    return raw_allocator.reallocate(
+        @ptrCast(original),
         size,
-        alignment,
-        allocation_scope,
+        @intCast(alignment),
     );
-    if (result != null) {
-        const copy_size = @min(size, old_size);
-        const dest_ptr: [*c]u8 = @ptrCast(@alignCast(result));
-        const src_ptr: [*c]u8 = @ptrCast(@alignCast(original));
-        @memcpy(dest_ptr[0..copy_size], src_ptr[0..copy_size]);
-
-        vulkanFree(user_data, original);
-    } else {
-        vk.log.err(
-            "Vulkan reallocation: failed to allocate {d} bytes",
-            .{size},
-        );
-    }
-
-    return result;
 }
 
 pub fn vulkanFree(
     _: ?*anyopaque,
     memory: ?*anyopaque,
 ) callconv(.c) void {
-    if (memory != null) {
-        const size = getSize(memory);
-        const alignment = getAlignment(memory);
-        var ptr: [*c]u8 = @ptrCast(@alignCast(memory));
-        ptr -= HeaderSize;
-        vk.gpa.rawFree(ptr[0 .. size + HeaderSize], .fromByteUnits(alignment), @returnAddress());
-
-        vulkan_memory_usage -= size;
-    }
+    const raw_allocator = utils.RawAllocator.init(vk.gpa);
+    raw_allocator.free(@ptrCast(memory));
 }
 
 pub fn vulkanInternalAllocation(

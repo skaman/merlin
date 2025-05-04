@@ -83,6 +83,98 @@ pub fn HandleArray(comptime THandle: type, comptime TData: type, comptime size: 
     };
 }
 
+pub const RawAllocator = struct {
+    const Header = struct {
+        const HeaderAlignment = 16; // shold be fine with x86_64 and arm64
+        const AlignedSize = (@sizeOf(Header) + HeaderAlignment - 1 / HeaderAlignment) * HeaderAlignment;
+
+        size: usize,
+        alignment: u32,
+    };
+
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) RawAllocator {
+        return .{
+            .allocator = allocator,
+        };
+    }
+
+    pub fn allocate(self: RawAllocator, size: usize, alignment: u32) ?[*]u8 {
+        if (size == 0) return null;
+
+        const ptr = self.allocator.rawAlloc(
+            Header.AlignedSize + size,
+            .fromByteUnits(alignment),
+            @returnAddress(),
+        );
+        if (ptr == null) return null;
+
+        const header_ptr: *Header = @ptrCast(@alignCast(ptr));
+        header_ptr.* = .{
+            .size = size,
+            .alignment = alignment,
+        };
+        return ptr.? + Header.AlignedSize;
+    }
+
+    pub fn free(self: RawAllocator, ptr: ?[*]u8) void {
+        if (ptr == null) return;
+
+        const original_ptr = ptr.? - Header.AlignedSize;
+        const header_ptr: *Header = @ptrCast(@alignCast(original_ptr));
+        const size = header_ptr.*.size;
+        const alignment = header_ptr.*.alignment;
+
+        self.allocator.rawFree(
+            original_ptr[0 .. size + Header.AlignedSize],
+            .fromByteUnits(alignment),
+            @returnAddress(),
+        );
+    }
+
+    pub fn reallocate(
+        self: RawAllocator,
+        ptr: ?[*]u8,
+        new_size: usize,
+        alignment: u32,
+    ) ?[*]u8 {
+        if (ptr == null) {
+            return self.allocate(new_size, alignment);
+        }
+
+        const header_ptr: *Header = @ptrCast(@alignCast(ptr.? - Header.AlignedSize));
+        const old_size = header_ptr.*.size;
+        const old_alignment = header_ptr.*.alignment;
+
+        if (old_size == new_size) return ptr;
+
+        if (new_size == 0) {
+            self.free(ptr);
+            return null;
+        }
+
+        if (old_alignment != alignment) {
+            std.log.err(
+                "RawAllocator: reallocate: alignment mismatch: {} != {}",
+                .{ old_alignment, alignment },
+            );
+            return null;
+        }
+
+        const new_ptr = self.allocate(new_size, alignment);
+        if (new_ptr == null) return null;
+
+        const copy_size = @min(new_size, old_size);
+        const dest_ptr: [*c]u8 = @ptrCast(@alignCast(new_ptr));
+        const src_ptr: [*c]u8 = @ptrCast(@alignCast(ptr));
+        @memcpy(dest_ptr[0..copy_size], src_ptr[0..copy_size]);
+
+        self.free(ptr);
+        return new_ptr;
+    }
+};
+
 // From https://codeberg.org/hDS9HQLN/ztsl
 pub const Serializer = struct {
     pub const HeaderSize = @sizeOf(u32) + @sizeOf(u8);
