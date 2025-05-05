@@ -21,6 +21,8 @@ const ModelViewProj = struct {
 const Context = struct {
     gpa_allocator: std.mem.Allocator,
     arena_allocator: std.mem.Allocator,
+
+    framerate_plot_data: std.ArrayList(f32),
 };
 
 // *********************************************************************************************
@@ -31,24 +33,60 @@ pub fn init(gpa_allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator
     return Context{
         .gpa_allocator = gpa_allocator,
         .arena_allocator = arena_allocator,
+        .framerate_plot_data = .init(gpa_allocator),
     };
 }
 
 pub fn deinit(context: *Context) void {
-    _ = context;
+    context.framerate_plot_data.deinit();
 }
 
-pub fn update(context: *Context, delta_time: f32) void {
-    //const swapchain_size = gfx.swapchainSize();
+pub fn update(context: *Context, delta_time: f32) !void {
+    imgui.beginFrame(delta_time);
 
-    //gfx.setViewport(.{ 0, 0 }, swapchain_size);
-    //gfx.setScissor(.{ 0, 0 }, swapchain_size);
+    _ = imgui.begin("Statistics", null, .{});
+    imgui.text("Ciao: {d}", .{3});
+    _ = imgui.button("Test", .{});
 
-    _ = context;
+    const framerate = imgui.framerate();
+    try context.framerate_plot_data.append(framerate);
+    if (context.framerate_plot_data.items.len > 2000) {
+        _ = context.framerate_plot_data.orderedRemove(0);
+    }
 
-    imgui.update(delta_time) catch |err| {
-        std.log.err("Failed to render ImGui: {}", .{err});
-    };
+    imgui.text(
+        "Application average {d:.3} ms/frame ({d:.1} FPS)",
+        .{
+            1000.0 / framerate,
+            framerate,
+        },
+    );
+
+    imgui.plotLines("FPS", context.framerate_plot_data.items, .{
+        .scale_min = 0,
+        .graph_size = .{ 0, 40 },
+    });
+
+    imgui.end();
+
+    imgui.showDemoWindow();
+
+    //var show_demo_window: bool = true;
+    //imgui.c.igShowDemoWindow(&show_demo_window);
+    //
+    //    var showAnotherWindow: bool = true;
+    //    _ = c.igBegin("imgui Another Window", &showAnotherWindow, 0);
+    //    c.igText("Hello from imgui");
+    //    const buttonSize: c.ImVec2 = .{
+    //        .x = 0,
+    //        .y = 0,
+    //    };
+    //    if (c.igButton("Close me", buttonSize)) {
+    //        showAnotherWindow = false;
+    //    }
+    //    c.igEnd();
+
+    imgui.endFrame();
 }
 
 // *********************************************************************************************
@@ -56,13 +94,17 @@ pub fn update(context: *Context, delta_time: f32) void {
 // *********************************************************************************************
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        //.verbose_log = true,
+    }){};
     defer _ = gpa.deinit();
+
+    var statistics_allocator = utils.StatisticsAllocator.init(gpa.allocator());
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    const gpa_allocator = gpa.allocator();
+    const gpa_allocator = statistics_allocator.allocator();
     const arena_allocator = arena.allocator();
 
     try platform.init(
@@ -117,10 +159,12 @@ pub fn main() !void {
         };
         if (!result) continue;
 
-        update(&context, delta_time);
+        try update(&context, delta_time);
 
         gfx.endFrame() catch |err| {
             std.log.err("Failed to end frame: {}", .{err});
         };
+
+        //std.log.debug("Allocation count: {d}", .{statistics_allocator.alloc_count});
     }
 }

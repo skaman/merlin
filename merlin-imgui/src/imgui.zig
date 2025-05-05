@@ -5,7 +5,8 @@ const platform = @import("merlin_platform");
 const utils = @import("merlin_utils");
 const gfx_types = utils.gfx_types;
 
-const c = @import("c.zig").c;
+pub const c = @import("c.zig").c;
+const theme = @import("theme.zig");
 
 // *********************************************************************************************
 // Constants
@@ -22,6 +23,8 @@ const vert_shader_code = @embedFile("imgui.vert.bin");
 
 pub const Options = struct {
     window_handle: platform.WindowHandle,
+    theme: theme.CatppuccinTheme = .mocha,
+    ui_scale: f32 = 1.25,
 };
 
 const VertexConstantData = struct {
@@ -49,6 +52,10 @@ const ViewportData = struct {
 // *********************************************************************************************
 
 var _gpa: std.mem.Allocator = undefined;
+var _arena_impl: std.heap.ArenaAllocator = undefined;
+var _arena: std.mem.Allocator = undefined;
+var _raw_allocator: utils.RawAllocator = undefined;
+
 var _main_window_handle: platform.WindowHandle = undefined;
 var _context: ?*c.ImGuiContext = undefined;
 var _font_texture_handle: gfx.TextureHandle = undefined;
@@ -262,7 +269,7 @@ fn updateKeyModifiers(modifiers: platform.KeyModifier) void {
 
 fn mouseButtonCallback(
     window_handle: platform.WindowHandle,
-    button: platform.MouseButton,
+    btn: platform.MouseButton,
     action: platform.MouseButtonAction,
     modifiers: platform.KeyModifier,
 ) void {
@@ -270,7 +277,7 @@ fn mouseButtonCallback(
         return;
 
     const io = c.igGetIO_Nil();
-    c.ImGuiIO_AddMouseButtonEvent(io, @intFromEnum(button), action == .press);
+    c.ImGuiIO_AddMouseButtonEvent(io, @intFromEnum(btn), action == .press);
     updateKeyModifiers(modifiers);
 }
 
@@ -665,15 +672,18 @@ fn draw(
     }
 }
 
-fn setClipboardTextFn(_: ?*c.ImGuiContext, text: [*c]const u8) callconv(.c) void {
-    platform.setClipboardText(_main_window_handle, text[0..std.mem.len(text)]) catch |err| {
+fn setClipboardTextFn(_: ?*c.ImGuiContext, clipboard_text: [*c]const u8) callconv(.c) void {
+    platform.setClipboardText(
+        _main_window_handle,
+        clipboard_text[0..std.mem.len(clipboard_text)],
+    ) catch |err| {
         log.err("Failed to set clipboard text: {}", .{err});
     };
 }
 
 fn getClipboardTextFn(_: ?*c.ImGuiContext) callconv(.c) [*c]const u8 {
-    const text = platform.clipboardText(_main_window_handle);
-    if (text) |text_ptr| {
+    const clipboard_text = platform.clipboardText(_main_window_handle);
+    if (clipboard_text) |text_ptr| {
         return text_ptr.ptr;
     } else {
         return null;
@@ -824,13 +834,30 @@ fn renderWindow(viewport: ?*c.ImGuiViewport, _: ?*anyopaque) callconv(.c) void {
     }
 }
 
+const MemoryAlignment = 16; // Should be fine on x86_64 and ARM64
+fn memoryAllocFn(size: usize, _: ?*anyopaque) callconv(.c) ?*anyopaque {
+    return _raw_allocator.allocate(size, MemoryAlignment);
+}
+
+fn memoryFreeFn(ptr: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
+    _raw_allocator.free(@ptrCast(ptr));
+}
+
 // *********************************************************************************************
 // Public API
 // *********************************************************************************************
 
 pub fn init(allocator: std.mem.Allocator, options: Options) !void {
     _gpa = allocator;
+    _raw_allocator = .init(allocator);
+
+    _arena_impl = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    errdefer _arena_impl.deinit();
+    _arena = _arena_impl.allocator();
+
     _main_window_handle = options.window_handle;
+
+    c.igSetAllocatorFunctions(memoryAllocFn, memoryFreeFn, null);
 
     _context = c.igCreateContext(null);
 
@@ -886,7 +913,7 @@ pub fn init(allocator: std.mem.Allocator, options: Options) !void {
     _pipeline_layout_handle = try gfx.createPipelineLayout(vertex_layout);
     errdefer gfx.destroyPipelineLayout(_pipeline_layout_handle);
 
-    _ = c.ImFontAtlas_AddFontDefault(io.*.Fonts, null);
+    theme.setup(options.theme, options.ui_scale);
 
     _tex_uniform_handle = gfx.nameHandle("s_tex");
     _font_texture_handle = try createFontsTexture();
@@ -956,9 +983,11 @@ pub fn deinit() void {
     gfx.destroyShader(_frag_shader_handle);
     gfx.destroyProgram(_program_handle);
     c.igDestroyContext(_context);
+
+    _arena_impl.deinit();
 }
 
-pub fn update(delta_time: f32) !void {
+pub fn beginFrame(delta_time: f32) void {
     const window_size = platform.windowSize(_main_window_handle);
     const framebuffer_size = platform.windowFramebufferSize(_main_window_handle);
 
@@ -975,31 +1004,24 @@ pub fn update(delta_time: f32) !void {
     }
     io.*.DeltaTime = delta_time;
 
-    try updateMonitors();
-    try updateMouseCursor();
-    try updateMouseData();
-
-    // Test window
-    c.igNewFrame();
-    _ = c.igBegin("TEST", null, 0);
-    c.igText("Test");
-    _ = c.igButton("Test", .{ .x = 0, .y = 0 });
-    c.igEnd();
-
-    var show_demo_window: bool = true;
-    c.igShowDemoWindow(&show_demo_window);
-
-    var showAnotherWindow: bool = true;
-    _ = c.igBegin("imgui Another Window", &showAnotherWindow, 0);
-    c.igText("Hello from imgui");
-    const buttonSize: c.ImVec2 = .{
-        .x = 0,
-        .y = 0,
+    updateMonitors() catch |err| {
+        log.err("Failed to update monitors: {}", .{err});
     };
-    if (c.igButton("Close me", buttonSize)) {
-        showAnotherWindow = false;
-    }
-    c.igEnd();
+
+    updateMouseCursor() catch |err| {
+        log.err("Failed to update mouse cursor: {}", .{err});
+    };
+
+    updateMouseData() catch |err| {
+        log.err("Failed to update mouse data: {}", .{err});
+    };
+
+    c.igNewFrame();
+}
+
+pub fn endFrame() void {
+    _ = _arena_impl.reset(.retain_capacity);
+
     c.igEndFrame();
 
     c.igRender();
@@ -1008,8 +1030,11 @@ pub fn update(delta_time: f32) !void {
 
     const viewport = c.igGetMainViewport();
     const viewport_data: *ViewportData = @ptrCast(@alignCast(viewport.*.PlatformUserData));
-    try draw(draw_data, viewport_data, _main_window_handle);
+    draw(draw_data, viewport_data, _main_window_handle) catch |err| {
+        log.err("Failed to render ImGui: {}", .{err});
+    };
 
+    const io = c.igGetIO_Nil();
     if (io.*.ConfigFlags & c.ImGuiConfigFlags_ViewportsEnable != 0) {
         c.igUpdatePlatformWindows();
         c.igRenderPlatformWindowsDefault(
@@ -1017,4 +1042,114 @@ pub fn update(delta_time: f32) !void {
             null,
         );
     }
+}
+
+// *********************************************************************************************
+// Public API Wrapper
+// *********************************************************************************************
+pub const ImGuiWindowFlags = packed struct {
+    no_title_bar: bool = false,
+    no_resize: bool = false,
+    no_move: bool = false,
+    no_scrollbar: bool = false,
+    no_scroll_with_mouse: bool = false,
+    no_collapse: bool = false,
+    always_auto_resize: bool = false,
+    no_background: bool = false,
+    no_saved_settings: bool = false,
+    no_mouse_inputs: bool = false,
+    menu_bar: bool = false,
+    horizontal_scrollbar: bool = false,
+    no_focus_on_appearing: bool = false,
+    no_bring_to_front_on_focus: bool = false,
+    always_vertical_scrollbar: bool = false,
+    always_horizontal_scrollbar: bool = false,
+    no_nav_inputs: bool = false,
+    no_nav_focus: bool = false,
+    unsaved_document: bool = false,
+    no_docking: bool = false,
+    not_used_0: u3 = 0,
+    dock_node_host: bool = false,
+    child_window: bool = false,
+    tooltip: bool = false,
+    popup: bool = false,
+    modal: bool = false,
+    child_menu: bool = false,
+    not_used_1: u3 = 0,
+
+    pub inline fn as_c_uint(self: ImGuiWindowFlags) c_uint {
+        return @bitCast(self);
+    }
+};
+
+pub inline fn begin(name: [:0]const u8, p_open: ?*bool, flags: ImGuiWindowFlags) bool {
+    return c.igBegin(name.ptr, p_open, flags.as_c_uint());
+}
+
+pub inline fn end() void {
+    c.igEnd();
+}
+
+pub fn text(comptime fmt: []const u8, args: anytype) void {
+    const value = std.fmt.allocPrint(_arena, fmt, args) catch |err| {
+        log.err("Failed to format text: {}", .{err});
+        return;
+    };
+
+    c.igTextUnformatted(value.ptr, value.ptr + value.len);
+}
+
+pub inline fn textUnformatted(value: [:0]const u8) void {
+    c.igTextUnformatted(value.ptr, value.ptr + value.len);
+}
+
+pub const ButtonOptions = struct {
+    size: [2]f32 = .{ 0, 0 },
+};
+
+pub inline fn button(label: [:0]const u8, options: ButtonOptions) bool {
+    return c.igButton(
+        label.ptr,
+        .{
+            .x = options.size[0],
+            .y = options.size[1],
+        },
+    );
+}
+
+pub inline fn showDemoWindow() void {
+    c.igShowDemoWindow(null);
+}
+
+pub inline fn framerate() f32 {
+    const io = c.igGetIO_Nil();
+    return io.*.Framerate;
+}
+
+pub const PlotLinesOptions = struct {
+    overlay_text: ?[:0]const u8 = null,
+    scale_min: f32 = std.math.floatMax(f32),
+    scale_max: f32 = std.math.floatMax(f32),
+    graph_size: [2]f32 = .{ 0, 0 },
+};
+
+pub fn plotLines(
+    label: [:0]const u8,
+    values: []f32,
+    options: PlotLinesOptions,
+) void {
+    c.igPlotLines_FloatPtr(
+        label.ptr,
+        values.ptr,
+        @intCast(values.len),
+        0,
+        if (options.overlay_text) |value| value.len else null,
+        options.scale_min,
+        options.scale_max,
+        .{
+            .x = options.graph_size[0],
+            .y = options.graph_size[1],
+        },
+        0.0,
+    );
 }
