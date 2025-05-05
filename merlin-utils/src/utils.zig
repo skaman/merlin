@@ -162,16 +162,100 @@ pub const RawAllocator = struct {
             return null;
         }
 
+        const original_ptr = ptr.? - Header.AlignedSize;
+        if (self.allocator.rawRemap(
+            original_ptr[0 .. old_size + Header.AlignedSize],
+            .fromByteUnits(alignment),
+            new_size + Header.AlignedSize,
+            @returnAddress(),
+        )) |p| {
+            const new_header_ptr: *Header = @ptrCast(@alignCast(p));
+            new_header_ptr.* = .{
+                .size = new_size,
+                .alignment = alignment,
+            };
+            return p + Header.AlignedSize;
+        }
+
         const new_ptr = self.allocate(new_size, alignment);
         if (new_ptr == null) return null;
 
         const copy_size = @min(new_size, old_size);
         const dest_ptr: [*c]u8 = @ptrCast(@alignCast(new_ptr));
-        const src_ptr: [*c]u8 = @ptrCast(@alignCast(ptr));
-        @memcpy(dest_ptr[0..copy_size], src_ptr[0..copy_size]);
+        @memcpy(dest_ptr[0..copy_size], ptr.?[0..copy_size]);
 
         self.free(ptr);
         return new_ptr;
+    }
+};
+
+pub const StatisticsAllocator = struct {
+    child_allocator: std.mem.Allocator,
+    alloc_count: u32,
+    alloc_size: usize,
+
+    pub fn init(child_allocator: std.mem.Allocator) StatisticsAllocator {
+        return .{
+            .child_allocator = child_allocator,
+            .alloc_count = 0,
+            .alloc_size = 0,
+        };
+    }
+
+    pub fn allocator(self: *StatisticsAllocator) std.mem.Allocator {
+        return .{
+            .ptr = self,
+            .vtable = &.{
+                .alloc = alloc,
+                .resize = resize,
+                .remap = remap,
+                .free = free,
+            },
+        };
+    }
+
+    fn alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
+        const self: *StatisticsAllocator = @ptrCast(@alignCast(ctx));
+        self.alloc_count += 1;
+        return self.child_allocator.vtable.alloc(
+            self.child_allocator.ptr,
+            len,
+            alignment,
+            ret_addr,
+        );
+    }
+
+    fn resize(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
+        const self: *StatisticsAllocator = @ptrCast(@alignCast(ctx));
+        return self.child_allocator.vtable.resize(
+            self.child_allocator.ptr,
+            memory,
+            alignment,
+            new_len,
+            ret_addr,
+        );
+    }
+
+    fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+        const self: *StatisticsAllocator = @ptrCast(@alignCast(ctx));
+        return self.child_allocator.vtable.remap(
+            self.child_allocator.ptr,
+            memory,
+            alignment,
+            new_len,
+            ret_addr,
+        );
+    }
+
+    fn free(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
+        const self: *StatisticsAllocator = @ptrCast(@alignCast(ctx));
+        self.alloc_count -= 1;
+        return self.child_allocator.vtable.free(
+            self.child_allocator.ptr,
+            memory,
+            alignment,
+            ret_addr,
+        );
     }
 };
 
