@@ -8,13 +8,15 @@ const platform = @import("platform.zig");
 
 const log = std.log.scoped(.plat_glfw);
 
+const MemoryAlignment = 16; // Should be fine on x86_64 and ARM64
+
 // *********************************************************************************************
 // Globals
 // *********************************************************************************************
 
 pub var _gpa: std.mem.Allocator = undefined;
 var _arena_impl: std.heap.ArenaAllocator = undefined;
-pub var _arena: std.mem.Allocator = undefined;
+var _arena: std.mem.Allocator = undefined;
 
 var _cursors: [@typeInfo(platform.Cursor).@"enum".fields.len]?*c.GLFWcursor = undefined;
 
@@ -32,6 +34,32 @@ var _windows_to_destroy: std.ArrayList(platform.WindowHandle) = undefined;
 // *********************************************************************************************
 // Private API
 // *********************************************************************************************
+
+fn glfwAllocateCallback(size: usize, _: ?*anyopaque) callconv(.c) ?*anyopaque {
+    const raw_allocator = utils.RawAllocator.init(_gpa);
+    return raw_allocator.allocate(size, MemoryAlignment);
+}
+
+fn glfwReallocateCallback(
+    original: ?*anyopaque,
+    size: usize,
+    _: ?*anyopaque,
+) callconv(.c) ?*anyopaque {
+    const raw_allocator = utils.RawAllocator.init(_gpa);
+    return raw_allocator.reallocate(
+        @ptrCast(original),
+        size,
+        MemoryAlignment,
+    );
+}
+
+fn glfwDeallocateCallback(
+    ptr: ?*anyopaque,
+    _: ?*anyopaque,
+) callconv(.c) void {
+    const raw_allocator = utils.RawAllocator.init(_gpa);
+    raw_allocator.free(@ptrCast(ptr));
+}
 
 fn parseModifiers(mod: c_int) platform.KeyModifier {
     return platform.KeyModifier{
@@ -219,7 +247,15 @@ pub fn init(allocator: std.mem.Allocator) !void {
 
     _ = c.glfwSetErrorCallback(&glfwErrorCallback);
 
-    c.glfwInitHint(c.GLFW_PLATFORM, c.GLFW_PLATFORM_X11);
+    const glfw_allocator = c.GLFWallocator{
+        .user = null,
+        .allocate = &glfwAllocateCallback,
+        .reallocate = &glfwReallocateCallback,
+        .deallocate = &glfwDeallocateCallback,
+    };
+    c.glfwInitAllocator(&glfw_allocator);
+
+    //c.glfwInitHint(c.GLFW_PLATFORM, c.GLFW_PLATFORM_X11);
 
     if (c.glfwInit() != c.GLFW_TRUE) {
         log.err("Failed to initialize GLFW", .{});
