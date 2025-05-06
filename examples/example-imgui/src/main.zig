@@ -44,47 +44,39 @@ pub fn deinit(context: *Context) void {
 pub fn update(context: *Context, delta_time: f32) !void {
     imgui.beginFrame(delta_time);
 
-    _ = imgui.begin("Statistics", null, .{});
-    imgui.text("Ciao: {d}", .{3});
-    _ = imgui.button("Test", .{});
+    _ = imgui.c.igBegin("Statistics", null, imgui.c.ImGuiWindowFlags_None);
 
-    const framerate = imgui.framerate();
-    try context.framerate_plot_data.append(framerate);
+    const io = imgui.c.igGetIO_Nil();
+    try context.framerate_plot_data.append(io.*.Framerate);
     if (context.framerate_plot_data.items.len > 2000) {
         _ = context.framerate_plot_data.orderedRemove(0);
     }
 
-    imgui.text(
-        "Application average {d:.3} ms/frame ({d:.1} FPS)",
+    const text = try std.fmt.allocPrintZ(
+        context.arena_allocator,
+        "{d:.3} ms/frame ({d:.1} FPS)",
         .{
-            1000.0 / framerate,
-            framerate,
+            1000.0 / io.*.Framerate,
+            io.*.Framerate,
         },
     );
 
-    imgui.plotLines("FPS", context.framerate_plot_data.items, .{
-        .scale_min = 0,
-        .graph_size = .{ 0, 40 },
-    });
+    imgui.c.igPlotLines_FloatPtr(
+        text.ptr,
+        context.framerate_plot_data.items.ptr,
+        @intCast(context.framerate_plot_data.items.len),
+        0,
+        null,
+        0.0,
+        std.math.floatMax(f32),
+        .{ .x = 0, .y = 0 },
+        0,
+    );
 
-    imgui.end();
+    imgui.c.igEnd();
 
-    imgui.showDemoWindow();
-
-    //var show_demo_window: bool = true;
-    //imgui.c.igShowDemoWindow(&show_demo_window);
-    //
-    //    var showAnotherWindow: bool = true;
-    //    _ = c.igBegin("imgui Another Window", &showAnotherWindow, 0);
-    //    c.igText("Hello from imgui");
-    //    const buttonSize: c.ImVec2 = .{
-    //        .x = 0,
-    //        .y = 0,
-    //    };
-    //    if (c.igButton("Close me", buttonSize)) {
-    //        showAnotherWindow = false;
-    //    }
-    //    c.igEnd();
+    var show_demo_window: bool = true;
+    imgui.c.igShowDemoWindow(&show_demo_window);
 
     imgui.endFrame();
 }

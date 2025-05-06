@@ -518,26 +518,28 @@ fn draw(
             if (viewport_data.vertex_buffer_handle) |handle| {
                 gfx.destroyBuffer(handle);
             }
+            const buffer_size = vertex_size * 2; // we double the buffer so we have some margin when it grow up
             viewport_data.vertex_buffer_handle = try gfx.createBuffer(
-                vertex_size,
+                buffer_size,
                 .{ .vertex = true },
                 .host,
                 .{ .debug_name = "ImGui Vertex Buffer" },
             );
-            viewport_data.vertex_buffer_size = vertex_size;
+            viewport_data.vertex_buffer_size = buffer_size;
         }
 
         if (viewport_data.index_buffer_handle == null or viewport_data.index_buffer_size < index_size) {
             if (viewport_data.index_buffer_handle) |handle| {
                 gfx.destroyBuffer(handle);
             }
+            const buffer_size = index_size * 2; // we double the buffer so we have some margin when it grow up
             viewport_data.index_buffer_handle = try gfx.createBuffer(
-                index_size,
+                buffer_size,
                 .{ .index = true },
                 .host,
                 .{ .debug_name = "ImGui Index Buffer" },
             );
-            viewport_data.index_buffer_size = index_size;
+            viewport_data.index_buffer_size = buffer_size;
         }
 
         var vertex_offset: u32 = 0;
@@ -1042,114 +1044,4 @@ pub fn endFrame() void {
             null,
         );
     }
-}
-
-// *********************************************************************************************
-// Public API Wrapper
-// *********************************************************************************************
-pub const ImGuiWindowFlags = packed struct {
-    no_title_bar: bool = false,
-    no_resize: bool = false,
-    no_move: bool = false,
-    no_scrollbar: bool = false,
-    no_scroll_with_mouse: bool = false,
-    no_collapse: bool = false,
-    always_auto_resize: bool = false,
-    no_background: bool = false,
-    no_saved_settings: bool = false,
-    no_mouse_inputs: bool = false,
-    menu_bar: bool = false,
-    horizontal_scrollbar: bool = false,
-    no_focus_on_appearing: bool = false,
-    no_bring_to_front_on_focus: bool = false,
-    always_vertical_scrollbar: bool = false,
-    always_horizontal_scrollbar: bool = false,
-    no_nav_inputs: bool = false,
-    no_nav_focus: bool = false,
-    unsaved_document: bool = false,
-    no_docking: bool = false,
-    not_used_0: u3 = 0,
-    dock_node_host: bool = false,
-    child_window: bool = false,
-    tooltip: bool = false,
-    popup: bool = false,
-    modal: bool = false,
-    child_menu: bool = false,
-    not_used_1: u3 = 0,
-
-    pub inline fn as_c_uint(self: ImGuiWindowFlags) c_uint {
-        return @bitCast(self);
-    }
-};
-
-pub inline fn begin(name: [:0]const u8, p_open: ?*bool, flags: ImGuiWindowFlags) bool {
-    return c.igBegin(name.ptr, p_open, flags.as_c_uint());
-}
-
-pub inline fn end() void {
-    c.igEnd();
-}
-
-pub fn text(comptime fmt: []const u8, args: anytype) void {
-    const value = std.fmt.allocPrint(_arena, fmt, args) catch |err| {
-        log.err("Failed to format text: {}", .{err});
-        return;
-    };
-
-    c.igTextUnformatted(value.ptr, value.ptr + value.len);
-}
-
-pub inline fn textUnformatted(value: [:0]const u8) void {
-    c.igTextUnformatted(value.ptr, value.ptr + value.len);
-}
-
-pub const ButtonOptions = struct {
-    size: [2]f32 = .{ 0, 0 },
-};
-
-pub inline fn button(label: [:0]const u8, options: ButtonOptions) bool {
-    return c.igButton(
-        label.ptr,
-        .{
-            .x = options.size[0],
-            .y = options.size[1],
-        },
-    );
-}
-
-pub inline fn showDemoWindow() void {
-    c.igShowDemoWindow(null);
-}
-
-pub inline fn framerate() f32 {
-    const io = c.igGetIO_Nil();
-    return io.*.Framerate;
-}
-
-pub const PlotLinesOptions = struct {
-    overlay_text: ?[:0]const u8 = null,
-    scale_min: f32 = std.math.floatMax(f32),
-    scale_max: f32 = std.math.floatMax(f32),
-    graph_size: [2]f32 = .{ 0, 0 },
-};
-
-pub fn plotLines(
-    label: [:0]const u8,
-    values: []f32,
-    options: PlotLinesOptions,
-) void {
-    c.igPlotLines_FloatPtr(
-        label.ptr,
-        values.ptr,
-        @intCast(values.len),
-        0,
-        if (options.overlay_text) |value| value.len else null,
-        options.scale_min,
-        options.scale_max,
-        .{
-            .x = options.graph_size[0],
-            .y = options.graph_size[1],
-        },
-        0.0,
-    );
 }
