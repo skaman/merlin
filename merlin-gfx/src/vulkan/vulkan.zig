@@ -1131,7 +1131,9 @@ pub fn updateBuffer(
 pub fn createTexture(reader: std.io.AnyReader, size: u32, options: gfx.TextureOptions) !gfx.TextureHandle {
     return textures.create(
         _transfer_command_pool,
+        _graphics_command_pool,
         _transfer_queue,
+        _graphics_queue,
         reader,
         size,
         options,

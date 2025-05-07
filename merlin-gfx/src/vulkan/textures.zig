@@ -533,8 +533,10 @@ pub fn deinit() void {
 }
 
 pub fn create(
-    command_pool: c.VkCommandPool,
+    transfer_command_pool: c.VkCommandPool,
+    graphics_command_pool: c.VkCommandPool,
     transfer_queue: c.VkQueue,
+    graphics_queue: c.VkQueue,
     reader: std.io.AnyReader,
     size: u32,
     options: gfx.TextureOptions,
@@ -550,6 +552,16 @@ pub fn create(
         .is_array = options.is_array,
         .generate_mipmaps = options.generate_mipmaps,
     });
+
+    const command_pool = if (options.generate_mipmaps)
+        graphics_command_pool
+    else
+        transfer_command_pool;
+
+    const queue = if (options.generate_mipmaps)
+        graphics_queue
+    else
+        transfer_queue;
 
     var image: vk.image.Image = undefined;
     if (params.tiling == c.VK_IMAGE_TILING_OPTIMAL) {
@@ -595,7 +607,7 @@ pub fn create(
         defer vk.command_buffers.endSingleTimeCommands(
             command_pool,
             command_buffer,
-            transfer_queue,
+            queue,
         );
 
         var region = std.mem.zeroes(c.VkBufferImageCopy);
@@ -650,6 +662,20 @@ pub fn create(
                 params.blit_filter,
                 c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             );
+
+            try vk.image.setImageLayout(
+                command_buffer,
+                image.image,
+                c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                params.final_layout,
+                c.VkImageSubresourceRange{
+                    .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = params.num_image_levels,
+                    .baseArrayLayer = 0,
+                    .layerCount = params.num_image_layers,
+                },
+            );
         } else {
             // Transition image layout to finalLayout after all mip levels
             // have been copied.
@@ -697,7 +723,7 @@ pub fn create(
         defer vk.command_buffers.endSingleTimeCommands(
             command_pool,
             command_buffer,
-            transfer_queue,
+            queue,
         );
 
         if (options.generate_mipmaps) {
@@ -711,6 +737,20 @@ pub fn create(
                 params.num_image_levels,
                 params.blit_filter,
                 c.VK_IMAGE_LAYOUT_PREINITIALIZED,
+            );
+
+            try vk.image.setImageLayout(
+                command_buffer,
+                image.image,
+                c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                params.final_layout,
+                c.VkImageSubresourceRange{
+                    .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = params.num_image_levels,
+                    .baseArrayLayer = 0,
+                    .layerCount = params.num_image_layers,
+                },
             );
         } else {
             const subresource_range = c.VkImageSubresourceRange{
