@@ -92,6 +92,7 @@ pub fn main() !void {
     defer _ = gpa.deinit();
 
     var statistics_allocator = utils.StatisticsAllocator.init(gpa.allocator());
+    //defer statistics_allocator.deinit();
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -155,8 +156,12 @@ pub fn main() !void {
 
         gfx.endFrame() catch |err| {
             std.log.err("Failed to end frame: {}", .{err});
+            @panic("Failed to end frame");
         };
 
-        //std.log.debug("Allocation count: {d}", .{statistics_allocator.alloc_count});
+        const alloc_count = @atomicLoad(usize, &statistics_allocator.alloc_count, .unordered);
+        const alloc_size = @atomicLoad(usize, &statistics_allocator.alloc_size, .unordered);
+        std.log.debug("Allocation count: {d}", .{alloc_count});
+        std.log.debug("Allocation memory: {d}", .{alloc_size});
     }
 }

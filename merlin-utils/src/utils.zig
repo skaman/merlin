@@ -191,7 +191,7 @@ pub const RawAllocator = struct {
 
 pub const StatisticsAllocator = struct {
     child_allocator: std.mem.Allocator,
-    alloc_count: u32,
+    alloc_count: usize,
     alloc_size: usize,
 
     pub fn init(child_allocator: std.mem.Allocator) StatisticsAllocator {
@@ -216,46 +216,74 @@ pub const StatisticsAllocator = struct {
 
     fn alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
         const self: *StatisticsAllocator = @ptrCast(@alignCast(ctx));
-        self.alloc_count += 1;
-        return self.child_allocator.vtable.alloc(
+        const ptr = self.child_allocator.vtable.alloc(
             self.child_allocator.ptr,
             len,
             alignment,
             ret_addr,
         );
+
+        //std.log.debug("Allocating {} bytes at {*}", .{ len, ptr.? });
+
+        _ = @atomicRmw(usize, &self.alloc_count, .Add, 1, .acq_rel);
+        _ = @atomicRmw(usize, &self.alloc_size, .Add, len, .acq_rel);
+
+        return ptr;
     }
 
     fn resize(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
         const self: *StatisticsAllocator = @ptrCast(@alignCast(ctx));
-        return self.child_allocator.vtable.resize(
+        const result = self.child_allocator.vtable.resize(
             self.child_allocator.ptr,
             memory,
             alignment,
             new_len,
             ret_addr,
         );
+
+        //std.log.debug("Resizing {} bytes at {*}", .{ new_len, memory.ptr });
+
+        if (result) {
+            _ = @atomicRmw(usize, &self.alloc_size, .Sub, memory.len, .acq_rel);
+            _ = @atomicRmw(usize, &self.alloc_size, .Add, new_len, .acq_rel);
+        }
+
+        return result;
     }
 
     fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
         const self: *StatisticsAllocator = @ptrCast(@alignCast(ctx));
-        return self.child_allocator.vtable.remap(
+        const result = self.child_allocator.vtable.remap(
             self.child_allocator.ptr,
             memory,
             alignment,
             new_len,
             ret_addr,
         );
+
+        //std.log.debug("Remapping {} bytes at {*}", .{ new_len, memory.ptr });
+
+        if (result != null) {
+            _ = @atomicRmw(usize, &self.alloc_size, .Sub, memory.len, .acq_rel);
+            _ = @atomicRmw(usize, &self.alloc_size, .Add, new_len, .acq_rel);
+        }
+
+        return result;
     }
 
     fn free(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
         const self: *StatisticsAllocator = @ptrCast(@alignCast(ctx));
-        self.alloc_count -= 1;
-        return self.child_allocator.vtable.free(
+        self.child_allocator.vtable.free(
             self.child_allocator.ptr,
             memory,
             alignment,
             ret_addr,
         );
+
+        //std.log.debug("Freeing {} bytes at {*}", .{ memory.len, memory.ptr });
+
+        _ = @atomicRmw(usize, &self.alloc_count, .Sub, 1, .acq_rel);
+        _ = @atomicRmw(usize, &self.alloc_size, .Sub, memory.len, .acq_rel);
     }
 };
 
