@@ -53,6 +53,7 @@ fn allocateMemory(
         &allocate_info,
         &memory,
     );
+    std.debug.assert(memory != null);
     return memory;
 }
 
@@ -66,7 +67,11 @@ fn copyBuffer(
     dst_offset: u32,
     debug_label: ?[]const u8,
 ) !void {
+    std.debug.assert(command_pool != null);
+    std.debug.assert(queue != null);
     std.debug.assert(src_buffer != null);
+    std.debug.assert(dst_buffer != null);
+    std.debug.assert(size > 0);
 
     const command_buffer =
         try vk.command_buffers.beginSingleTimeCommands(command_pool);
@@ -75,6 +80,7 @@ fn copyBuffer(
         command_buffer,
         queue,
     );
+    std.debug.assert(command_buffer != null);
 
     vk.debug.beginCommandBufferLabel(
         command_buffer,
@@ -129,6 +135,8 @@ pub fn create(
     location: gfx.BufferLocation,
     options: gfx.BufferOptions,
 ) !gfx.BufferHandle {
+    std.debug.assert(size > 0);
+
     var buffer_usage_flags: c.VkBufferUsageFlags = 0;
     if (usage.vertex) buffer_usage_flags |= c.VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
     if (usage.index) buffer_usage_flags |= c.VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
@@ -185,8 +193,8 @@ pub fn create(
     return .{ .handle = @ptrCast(buffer) };
 }
 
-pub fn destroy(handle: gfx.BufferHandle) void {
-    const buffer = bufferFromHandle(handle);
+pub fn destroy(buffer_handle: gfx.BufferHandle) void {
+    const buffer = get(buffer_handle);
     _buffers_to_destroy.append(buffer) catch |err| {
         vk.log.err("Failed to append buffer to destroy list: {any}", .{err});
         return;
@@ -212,19 +220,23 @@ pub fn destroyPendingResources() void {
     _buffers_to_destroy.clearRetainingCapacity();
 }
 
-pub inline fn bufferFromHandle(handle: gfx.BufferHandle) *Buffer {
-    return @ptrCast(@alignCast(handle.handle));
+pub inline fn get(buffer_handle: gfx.BufferHandle) *Buffer {
+    return @ptrCast(@alignCast(buffer_handle.handle));
 }
 
 pub fn update(
     command_pool: c.VkCommandPool,
     queue: c.VkQueue,
-    handle: gfx.BufferHandle,
+    buffer_handle: gfx.BufferHandle,
     reader: std.io.AnyReader,
     offset: u32,
     size: u32,
 ) !void {
-    const buffer = bufferFromHandle(handle);
+    std.debug.assert(command_pool != null);
+    std.debug.assert(queue != null);
+    std.debug.assert(size > 0);
+
+    const buffer = get(buffer_handle);
     if (buffer.property_flags & c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT != 0) {
         _ = try reader.readAll(buffer.mapped_data[offset .. size + offset]);
     } else {
@@ -267,6 +279,8 @@ pub fn createBuffer(
     property_flags: c.VkMemoryPropertyFlags,
     debug_name: ?[]const u8,
 ) !Buffer {
+    std.debug.assert(size > 0);
+
     const buffer_info = std.mem.zeroInit(
         c.VkBufferCreateInfo,
         .{
@@ -283,6 +297,7 @@ pub fn createBuffer(
         &buffer,
     );
     errdefer vk.device.destroyBuffer(buffer);
+    std.debug.assert(buffer != null);
 
     var requirements: c.VkMemoryRequirements = undefined;
     vk.device.getBufferMemoryRequirements(buffer, &requirements);
@@ -292,6 +307,7 @@ pub fn createBuffer(
         property_flags,
     );
     errdefer vk.device.freeMemory(memory);
+    std.debug.assert(memory != null);
 
     try vk.device.bindBufferMemory(buffer, memory, 0);
 
