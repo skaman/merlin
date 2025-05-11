@@ -46,7 +46,7 @@ pub fn deinit() void {
 pub fn create(vertex_layout: types.VertexLayout) !gfx.PipelineLayoutHandle {
     var pipeline_layout_handle = _pipeline_layouts_map.get(vertex_layout);
     if (pipeline_layout_handle) |handle| {
-        var pipeline_layout = pipelineLayoutFromHandle(handle);
+        var pipeline_layout = get(handle);
         pipeline_layout.ref_count += 1;
         return handle;
     }
@@ -68,7 +68,7 @@ pub fn create(vertex_layout: types.VertexLayout) !gfx.PipelineLayoutHandle {
 }
 
 pub fn destroy(handle: gfx.PipelineLayoutHandle) void {
-    var pipeline_layout = pipelineLayoutFromHandle(handle);
+    var pipeline_layout = get(handle);
     if (pipeline_layout.ref_count == 1) {
         _ = _pipeline_layouts_map.remove(pipeline_layout.layout);
         vk.gpa.destroy(pipeline_layout);
@@ -77,6 +77,6 @@ pub fn destroy(handle: gfx.PipelineLayoutHandle) void {
     }
 }
 
-pub inline fn pipelineLayoutFromHandle(handle: gfx.PipelineLayoutHandle) *PipelineLayout {
+pub inline fn get(handle: gfx.PipelineLayoutHandle) *PipelineLayout {
     return @ptrCast(@alignCast(handle.handle));
 }

@@ -70,9 +70,9 @@ const AttributeType = [@typeInfo(types.VertexComponentType).@"enum".fields.len][
 // *********************************************************************************************
 
 const PipelineKey = struct {
-    program: gfx.ProgramHandle,
-    layout: gfx.PipelineLayoutHandle,
-    render_pass: gfx.RenderPassHandle,
+    program_handle: gfx.ProgramHandle,
+    pipeline_layout_handle: gfx.PipelineLayoutHandle,
+    render_pass_handle: gfx.RenderPassHandle,
     debug_options: gfx.DebugOptions,
     render_options: gfx.RenderOptions,
 };
@@ -119,6 +119,8 @@ fn create(
     debug_options: gfx.DebugOptions,
     render_options: gfx.RenderOptions,
 ) !c.VkPipeline {
+    std.debug.assert(render_pass != null);
+
     const binding_description = std.mem.zeroInit(
         c.VkVertexInputBindingDescription,
         .{
@@ -327,6 +329,7 @@ fn create(
         &pipeline_create_info,
         &graphics_pipeline,
     );
+    std.debug.assert(graphics_pipeline != null);
 
     vk.log.debug("Pipeline created:", .{});
     vk.log.debug(
@@ -371,7 +374,7 @@ pub fn deinit() void {
     _pipelines.deinit();
 }
 
-pub fn pipeline(
+pub fn getOrCreate(
     program_handle: gfx.ProgramHandle,
     layout_handle: gfx.PipelineLayoutHandle,
     render_pass_handle: gfx.RenderPassHandle,
@@ -379,9 +382,9 @@ pub fn pipeline(
     render_options: gfx.RenderOptions,
 ) !c.VkPipeline {
     const key = PipelineKey{
-        .program = program_handle,
-        .layout = layout_handle,
-        .render_pass = render_pass_handle,
+        .program_handle = program_handle,
+        .pipeline_layout_handle = layout_handle,
+        .render_pass_handle = render_pass_handle,
         .debug_options = debug_options,
         .render_options = render_options,
     };
@@ -390,7 +393,7 @@ pub fn pipeline(
         return pipeline_value.?;
     }
 
-    const pipeline_layout = vk.pipeline_layouts.pipelineLayoutFromHandle(layout_handle);
+    const pipeline_layout = vk.pipeline_layouts.get(layout_handle);
     pipeline_value = try create(
         program_handle,
         vk.render_pass.get(render_pass_handle),

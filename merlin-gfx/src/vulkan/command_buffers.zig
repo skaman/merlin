@@ -105,7 +105,7 @@ fn handleBindPipeline(
         return;
     }
 
-    const pipeline = try vk.pipeline.pipeline(
+    const pipeline = try vk.pipeline.getOrCreate(
         program_handle,
         pipeline_layout_handle,
         render_pass_handle,
