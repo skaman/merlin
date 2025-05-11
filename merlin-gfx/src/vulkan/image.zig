@@ -32,6 +32,13 @@ pub fn create(
     initial_layout: c.VkImageLayout,
     properties: c.VkMemoryPropertyFlags,
 ) !Image {
+    std.debug.assert(width > 0);
+    std.debug.assert(height > 0);
+    std.debug.assert(depth > 0);
+    std.debug.assert(format != c.VK_FORMAT_UNDEFINED);
+    std.debug.assert(mip_levels > 0);
+    std.debug.assert(array_layers > 0);
+
     const image_info = std.mem.zeroInit(
         c.VkImageCreateInfo,
         .{
@@ -56,6 +63,7 @@ pub fn create(
     var image: c.VkImage = undefined;
     try vk.device.createImage(&image_info, &image);
     errdefer vk.device.destroyImage(image);
+    std.debug.assert(image != null);
 
     var memory_requirements: c.VkMemoryRequirements = undefined;
     vk.device.getImageMemoryRequirements(
@@ -80,6 +88,7 @@ pub fn create(
     var memory: c.VkDeviceMemory = undefined;
     try vk.device.allocateMemory(&alloc_info, &memory);
     errdefer vk.device.freeMemory(memory);
+    std.debug.assert(memory != null);
 
     try vk.device.bindImageMemory(image, memory, 0);
 
@@ -104,6 +113,11 @@ pub fn createView(
     level_count: u32,
     layer_count: u32,
 ) !c.VkImageView {
+    std.debug.assert(image != null);
+    std.debug.assert(format != c.VK_FORMAT_UNDEFINED);
+    std.debug.assert(level_count > 0);
+    std.debug.assert(layer_count > 0);
+
     const view_info = std.mem.zeroInit(
         c.VkImageViewCreateInfo,
         .{
@@ -129,10 +143,12 @@ pub fn createView(
 
     var view: c.VkImageView = undefined;
     try vk.device.createImageView(&view_info, &view);
+    std.debug.assert(view != null);
     return view;
 }
 
 pub fn destroyView(view: c.VkImageView) void {
+    std.debug.assert(view != null);
     vk.device.destroyImageView(view);
 }
 
@@ -143,6 +159,10 @@ pub fn setImageLayout(
     new_image_layout: c.VkImageLayout,
     subresource_range: c.VkImageSubresourceRange,
 ) !void {
+    std.debug.assert(command_buffer != null);
+    std.debug.assert(image != null);
+    std.debug.assert(old_image_layout != new_image_layout);
+
     var barrier = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
         .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
         .oldLayout = old_image_layout,
