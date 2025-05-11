@@ -24,10 +24,12 @@ pub fn create(queue_family_index: u32) !c.VkCommandPool {
         &command_pool,
     );
     errdefer vk.device.destroyCommandPool(command_pool);
+    std.debug.assert(command_pool != null);
 
     return command_pool;
 }
 
 pub fn destroy(command_pool: c.VkCommandPool) void {
+    std.debug.assert(command_pool != null);
     vk.device.destroyCommandPool(command_pool);
 }
