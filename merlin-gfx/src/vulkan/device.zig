@@ -4,6 +4,10 @@ const c = @import("../c.zig").c;
 const gfx = @import("../gfx.zig");
 const vk = @import("vulkan.zig");
 
+// *********************************************************************************************
+// Structs
+// *********************************************************************************************
+
 const Dispatch = struct {
     AcquireNextImageKHR: std.meta.Child(c.PFN_vkAcquireNextImageKHR) = undefined,
     AllocateCommandBuffers: std.meta.Child(c.PFN_vkAllocateCommandBuffers) = undefined,
@@ -164,7 +168,9 @@ fn rateDeviceSuitability(
 ) !u32 {
     std.debug.assert(device != null);
 
-    var queue_family_properties = std.ArrayList(c.VkQueueFamilyProperties).init(
+    var queue_family_properties = std.ArrayList(
+        c.VkQueueFamilyProperties,
+    ).init(
         allocator,
     );
     defer queue_family_properties.deinit();
@@ -172,7 +178,9 @@ fn rateDeviceSuitability(
     var score: u32 = 0;
 
     // Device properties
-    var device_properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
+    var device_properties = std.mem.zeroes(
+        c.VkPhysicalDeviceProperties,
+    );
     vk.instance.getPhysicalDeviceProperties(
         device,
         &device_properties,

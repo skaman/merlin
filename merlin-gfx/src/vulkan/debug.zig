@@ -26,9 +26,17 @@ pub fn init(options: *const gfx.Options) !void {
         c.VkDebugUtilsMessengerCreateInfoEXT,
         .{
             .sType = c.VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT,
-            .messageSeverity = c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
-            .messageType = c.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
-            .pfnUserCallback = @as(c.PFN_vkDebugUtilsMessengerCallbackEXT, @ptrCast(&debugCallback)),
+            .messageSeverity = c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
+                c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
+                c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT,
+            .messageType = c.VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                c.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                c.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT,
+            .pfnUserCallback = @as(
+                c.PFN_vkDebugUtilsMessengerCallbackEXT,
+                @ptrCast(&debugCallback),
+            ),
         },
     );
 
@@ -37,6 +45,8 @@ pub fn init(options: *const gfx.Options) !void {
         &create_info,
         &debug_utils_messenger,
     );
+    std.debug.assert(debug_utils_messenger != null);
+
     _debug_messenger = debug_utils_messenger;
 }
 
@@ -47,7 +57,11 @@ pub fn deinit() void {
     }
 }
 
-pub fn setObjectName(object_type: c.VkObjectType, object_handle: anytype, name: []const u8) !void {
+pub fn setObjectName(
+    object_type: c.VkObjectType,
+    object_handle: anytype,
+    name: []const u8,
+) !void {
     if (_debug_messenger == null) {
         return;
     }
@@ -62,7 +76,10 @@ pub fn setObjectName(object_type: c.VkObjectType, object_handle: anytype, name: 
         },
     );
 
-    try vk.instance.setDebugUtilsObjectNameEXT(vk.device.handle, &object_name_info);
+    try vk.instance.setDebugUtilsObjectNameEXT(
+        vk.device.handle,
+        &object_name_info,
+    );
 }
 
 pub fn beginCommandBufferLabel(
@@ -88,7 +105,10 @@ pub fn beginCommandBufferLabel(
         },
     );
 
-    vk.instance.cmdBeginDebugUtilsLabelEXT(command_buffer, &label_info);
+    vk.instance.cmdBeginDebugUtilsLabelEXT(
+        command_buffer,
+        &label_info,
+    );
 }
 
 pub fn endCommandBufferLabel(command_buffer: c.VkCommandBuffer) void {
@@ -122,7 +142,10 @@ pub fn insertCommandBufferLabel(
         },
     );
 
-    vk.instance.cmdInsertDebugUtilsLabelEXT(command_buffer, &label_info);
+    vk.instance.cmdInsertDebugUtilsLabelEXT(
+        command_buffer,
+        &label_info,
+    );
 }
 
 pub fn debugCallback(
@@ -133,18 +156,24 @@ pub fn debugCallback(
 ) callconv(.c) c.VkBool32 {
     _ = p_user_data;
 
-    const allowed_flags = c.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | c.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    const allowed_flags = c.VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+        c.VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     if (message_type & allowed_flags == 0) {
         return c.VK_FALSE;
     }
 
-    if (message_severity & c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT == c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+    const ErrorBit = c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    const WarningBit = c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;
+    const InfoBit = c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;
+    const VerboseBit = c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+
+    if (message_severity & ErrorBit == ErrorBit) {
         vk.log.err("{s}", .{p_callback_data.*.pMessage});
-    } else if (message_severity & c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT == c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+    } else if (message_severity & WarningBit == WarningBit) {
         vk.log.warn("{s}", .{p_callback_data.*.pMessage});
-    } else if (message_severity & c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT == c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+    } else if (message_severity & InfoBit == InfoBit) {
         vk.log.info("{s}", .{p_callback_data.*.pMessage});
-    } else if (message_severity & c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT == c.VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT) {
+    } else if (message_severity & VerboseBit == VerboseBit) {
         vk.log.debug("{s}", .{p_callback_data.*.pMessage});
     }
 

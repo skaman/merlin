@@ -29,7 +29,7 @@ pub const Framebuffer = struct {
     framebuffer_invalidated: bool,
     render_pass: c.VkRenderPass,
 
-    command_buffers: [vk.MaxFramesInFlight]gfx.CommandBufferHandle,
+    command_buffer_handles: [vk.MaxFramesInFlight]gfx.CommandBufferHandle,
 
     image_available_semaphores: [vk.MaxFramesInFlight]c.VkSemaphore,
     render_finished_semaphores: [vk.MaxFramesInFlight]c.VkSemaphore,
@@ -245,7 +245,8 @@ fn createXcbSurface(window_handle: platform.WindowHandle) !c.VkSurfaceKHR {
     return surface;
 }
 
-// Something is wront with HWND alignment, so we need to use a pointer and bypass the c includes
+// Something is wrong with HWND alignment, so we need to use a opaque pointer and bypass
+// the c includes
 pub const struct_VkWin32SurfaceCreateInfoKHR = extern struct {
     sType: c.VkStructureType = std.mem.zeroes(c.VkStructureType),
     pNext: ?*const anyopaque = std.mem.zeroes(?*const anyopaque),
@@ -863,12 +864,12 @@ pub fn create(
     try createFences(&in_flight_fences);
     errdefer destroyFences(&in_flight_fences);
 
-    var command_buffers: [vk.MaxFramesInFlight]gfx.CommandBufferHandle = undefined;
+    var command_buffer_handles: [vk.MaxFramesInFlight]gfx.CommandBufferHandle = undefined;
     try createCommandBuffers(
         command_pool,
-        &command_buffers,
+        &command_buffer_handles,
     );
-    errdefer destroyCommandBuffers(&command_buffers);
+    errdefer destroyCommandBuffers(&command_buffer_handles);
 
     const framebuffer = try vk.gpa.create(Framebuffer);
     errdefer vk.gpa.destroy(framebuffer);
@@ -887,7 +888,7 @@ pub fn create(
         .framebuffer_invalidated = false,
         .render_pass = render_pass,
 
-        .command_buffers = command_buffers,
+        .command_buffer_handles = command_buffer_handles,
 
         .image_available_semaphores = image_available_semaphores,
         .render_finished_semaphores = render_finished_semaphores,
@@ -927,7 +928,7 @@ pub fn destroyPendingResources() !void {
 
         try vk.device.deviceWaitIdle();
 
-        destroyCommandBuffers(&framebuffer.command_buffers);
+        destroyCommandBuffers(&framebuffer.command_buffer_handles);
         destroyFences(&framebuffer.in_flight_fences);
         destroySemaphores(&framebuffer.image_available_semaphores);
         destroySemaphores(&framebuffer.render_finished_semaphores);
@@ -1058,7 +1059,7 @@ pub fn recreateSwapchain(framebuffer: *Framebuffer) !void {
     framebuffer.framebuffers = framebuffers;
 }
 
-pub fn swapchainSize(handle: gfx.FramebufferHandle) [2]u32 {
+pub fn getSwapchainSize(handle: gfx.FramebufferHandle) [2]u32 {
     const framebuffer = get(handle);
     return .{
         framebuffer.extent.width,

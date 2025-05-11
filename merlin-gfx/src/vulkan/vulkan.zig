@@ -267,7 +267,7 @@ pub fn deinit() void {
 }
 
 pub fn swapchainSize(handle: gfx.FramebufferHandle) [2]u32 {
-    return framebuffers.swapchainSize(handle);
+    return framebuffers.getSwapchainSize(handle);
 }
 
 pub fn uniformAlignment() u32 {
@@ -441,8 +441,8 @@ pub fn beginFrame() !bool {
             &framebuffer.in_flight_fences[_current_frame_in_flight],
         );
 
-        try command_buffers.reset(framebuffer.command_buffers[_current_frame_in_flight]);
-        try command_buffers.begin(framebuffer.command_buffers[_current_frame_in_flight]);
+        try command_buffers.reset(framebuffer.command_buffer_handles[_current_frame_in_flight]);
+        try command_buffers.begin(framebuffer.command_buffer_handles[_current_frame_in_flight]);
         framebuffer.is_buffer_recording = true;
     }
 
@@ -463,7 +463,7 @@ pub fn endFrame() !void {
         if (!framebuffer.is_image_acquired) continue;
 
         if (framebuffer.is_buffer_recording) {
-            try command_buffers.end(framebuffer.command_buffers[_current_frame_in_flight]);
+            try command_buffers.end(framebuffer.command_buffer_handles[_current_frame_in_flight]);
             framebuffer.is_buffer_recording = false;
         }
 
@@ -474,7 +474,7 @@ pub fn endFrame() !void {
         const signal_semaphores =
             [_]c.VkSemaphore{framebuffer.render_finished_semaphores[_current_frame_in_flight]};
         const command_buffer =
-            command_buffers.get(framebuffer.command_buffers[_current_frame_in_flight]);
+            command_buffers.get(framebuffer.command_buffer_handles[_current_frame_in_flight]);
         const submit_info = std.mem.zeroInit(
             c.VkSubmitInfo,
             .{
@@ -533,7 +533,7 @@ pub fn beginRenderPass(framebuffer_handle: gfx.FramebufferHandle, render_pass_ha
     }
 
     try command_buffers.beginRenderPass(
-        framebuffer.command_buffers[_current_frame_in_flight],
+        framebuffer.command_buffer_handles[_current_frame_in_flight],
         render_pass_handle,
         framebuffer.framebuffers[framebuffer.current_image_index],
         framebuffer.extent,
@@ -545,7 +545,7 @@ pub fn beginRenderPass(framebuffer_handle: gfx.FramebufferHandle, render_pass_ha
 }
 
 pub fn endRenderPass() void {
-    command_buffers.endRenderPass(_current_framebuffer.command_buffers[_current_frame_in_flight]);
+    command_buffers.endRenderPass(_current_framebuffer.command_buffer_handles[_current_frame_in_flight]);
 }
 
 pub fn setViewport(position: [2]u32, size: [2]u32) void {
@@ -562,7 +562,7 @@ pub fn setViewport(position: [2]u32, size: [2]u32) void {
     );
 
     command_buffers.setViewport(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         &vk_viewport,
     );
 }
@@ -582,42 +582,42 @@ pub fn setScissor(position: [2]u32, size: [2]u32) void {
         },
     );
     command_buffers.setScissor(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         &vk_scissor,
     );
 }
 
 pub fn setDebug(debug_options: gfx.DebugOptions) void {
     command_buffers.setDebug(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         debug_options,
     );
 }
 
 pub fn setRender(render_options: gfx.RenderOptions) void {
     command_buffers.setRender(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         render_options,
     );
 }
 
 pub fn bindPipelineLayout(pipeline_layout: gfx.PipelineLayoutHandle) void {
     command_buffers.bindPipelineLayout(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         pipeline_layout,
     );
 }
 
 pub fn bindProgram(program: gfx.ProgramHandle) void {
     command_buffers.bindProgram(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         program,
     );
 }
 
 pub fn bindVertexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
     command_buffers.bindVertexBuffer(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         buffer,
         offset,
     );
@@ -625,7 +625,7 @@ pub fn bindVertexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
 
 pub fn bindIndexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
     command_buffers.bindIndexBuffer(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         buffer,
         offset,
     );
@@ -633,7 +633,7 @@ pub fn bindIndexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
 
 pub fn bindUniformBuffer(name: gfx.NameHandle, buffer: gfx.BufferHandle, offset: u32) void {
     command_buffers.bindUniformBuffer(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         name,
         buffer,
         offset,
@@ -642,7 +642,7 @@ pub fn bindUniformBuffer(name: gfx.NameHandle, buffer: gfx.BufferHandle, offset:
 
 pub fn bindCombinedSampler(name: gfx.NameHandle, texture: gfx.TextureHandle) void {
     command_buffers.bindCombinedSampler(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         name,
         texture,
     );
@@ -654,7 +654,7 @@ pub fn pushConstants(
     data: []const u8,
 ) void {
     command_buffers.pushConstants(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         shader_stage,
         offset,
         @intCast(data.len),
@@ -669,7 +669,7 @@ pub fn draw(
     first_instance: u32,
 ) void {
     command_buffers.draw(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         vertex_count,
         instance_count,
         first_vertex,
@@ -686,7 +686,7 @@ pub fn drawIndexed(
     index_type: types.IndexType,
 ) void {
     command_buffers.drawIndexed(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         index_count,
         instance_count,
         first_index,
@@ -701,7 +701,7 @@ pub fn beginDebugLabel(
     color: [4]f32,
 ) void {
     command_buffers.beginDebugLabel(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         label_name,
         color,
     );
@@ -709,7 +709,7 @@ pub fn beginDebugLabel(
 
 pub fn endDebugLabel() void {
     command_buffers.endDebugLabel(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
     );
 }
 
@@ -718,7 +718,7 @@ pub fn insertDebugLabel(
     color: [4]f32,
 ) void {
     command_buffers.insertDebugLabel(
-        _current_framebuffer.command_buffers[_current_frame_in_flight],
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         label_name,
         color,
     );
