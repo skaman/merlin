@@ -14,6 +14,7 @@ const vulkan = @import("vulkan/vulkan.zig");
 pub const log = std.log.scoped(.gfx);
 
 pub const FramebufferHandle = packed struct { handle: *anyopaque };
+pub const RenderPassHandle = packed struct { handle: *anyopaque };
 pub const ShaderHandle = packed struct { handle: *anyopaque };
 pub const ProgramHandle = packed struct { handle: *anyopaque };
 pub const BufferHandle = packed struct { handle: *anyopaque };
@@ -283,38 +284,40 @@ pub fn UniformArray(comptime THandle: type) type {
 const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
-    swapchainSize: *const fn () [2]u32,
+    swapchainSize: *const fn (framebuffer_handle: FramebufferHandle) [2]u32,
     uniformAlignment: *const fn () u32,
     maxFramesInFlight: *const fn () u32,
     currentFrameInFlight: *const fn () u32,
-    createFramebuffer: *const fn (window_handle: platform.WindowHandle) anyerror!FramebufferHandle,
-    destroyFramebuffer: *const fn (handle: FramebufferHandle) void,
+    createFramebuffer: *const fn (window_handle: platform.WindowHandle, render_pass_handle: RenderPassHandle) anyerror!FramebufferHandle,
+    destroyFramebuffer: *const fn (framebuffer_handle: FramebufferHandle) void,
+    createRenderPass: *const fn () anyerror!RenderPassHandle,
+    destroyRenderPass: *const fn (render_pass_handle: RenderPassHandle) void,
     createShader: *const fn (reader: std.io.AnyReader, options: ShaderOptions) anyerror!ShaderHandle,
-    destroyShader: *const fn (handle: ShaderHandle) void,
+    destroyShader: *const fn (shader_handle: ShaderHandle) void,
     createPipelineLayout: *const fn (vertex_layout: types.VertexLayout) anyerror!PipelineLayoutHandle,
-    destroyPipelineLayout: *const fn (handle: PipelineLayoutHandle) void,
-    createProgram: *const fn (vertex_shader: ShaderHandle, fragment_shader: ShaderHandle, options: ProgramOptions) anyerror!ProgramHandle,
-    destroyProgram: *const fn (handle: ProgramHandle) void,
+    destroyPipelineLayout: *const fn (pipeline_layout_handle: PipelineLayoutHandle) void,
+    createProgram: *const fn (vertex_shader_handle: ShaderHandle, fragment_shader_handle: ShaderHandle, options: ProgramOptions) anyerror!ProgramHandle,
+    destroyProgram: *const fn (program_handle: ProgramHandle) void,
     createBuffer: *const fn (size: u32, usage: BufferUsage, location: BufferLocation, options: BufferOptions) anyerror!BufferHandle,
-    destroyBuffer: *const fn (handle: BufferHandle) void,
-    updateBuffer: *const fn (handle: BufferHandle, reader: std.io.AnyReader, offset: u32, size: u32) anyerror!void,
+    destroyBuffer: *const fn (buffer_handle: BufferHandle) void,
+    updateBuffer: *const fn (buffer_handle: BufferHandle, reader: std.io.AnyReader, offset: u32, size: u32) anyerror!void,
     createTexture: *const fn (reader: std.io.AnyReader, size: u32, options: TextureOptions) anyerror!TextureHandle,
     createTextureFromKTX: *const fn (reader: std.io.AnyReader, size: u32, options: TextureKTXOptions) anyerror!TextureHandle,
-    destroyTexture: *const fn (handle: TextureHandle) void,
+    destroyTexture: *const fn (texture_handle: TextureHandle) void,
     beginFrame: *const fn () anyerror!bool,
     endFrame: *const fn () anyerror!void,
-    beginRenderPass: *const fn (framebuffer: ?FramebufferHandle) anyerror!bool,
+    beginRenderPass: *const fn (framebuffer_handle: FramebufferHandle, render_pass_handle: RenderPassHandle) anyerror!bool,
     endRenderPass: *const fn () void,
     setViewport: *const fn (position: [2]u32, size: [2]u32) void,
     setScissor: *const fn (position: [2]u32, size: [2]u32) void,
     setDebug: *const fn (debug_options: DebugOptions) void,
     setRender: *const fn (render_options: RenderOptions) void,
-    bindPipelineLayout: *const fn (handle: PipelineLayoutHandle) void,
-    bindProgram: *const fn (program: ProgramHandle) void,
-    bindVertexBuffer: *const fn (buffer: BufferHandle, offset: u32) void,
-    bindIndexBuffer: *const fn (buffer: BufferHandle, offset: u32) void,
-    bindUniformBuffer: *const fn (name: NameHandle, buffer: BufferHandle, offset: u32) void,
-    bindCombinedSampler: *const fn (name: NameHandle, texture: TextureHandle) void,
+    bindPipelineLayout: *const fn (pipeline_layout_handle: PipelineLayoutHandle) void,
+    bindProgram: *const fn (program_handle: ProgramHandle) void,
+    bindVertexBuffer: *const fn (buffer_handle: BufferHandle, offset: u32) void,
+    bindIndexBuffer: *const fn (buffer_handle: BufferHandle, offset: u32) void,
+    bindUniformBuffer: *const fn (name_handle: NameHandle, buffer_handle: BufferHandle, offset: u32) void,
+    bindCombinedSampler: *const fn (name_handle: NameHandle, texture_handle: TextureHandle) void,
     pushConstants: *const fn (shader_stage: types.ShaderType, offset: u32, data: []const u8) void,
     draw: *const fn (vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void,
     drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32, index_type: types.IndexType) void,
@@ -351,6 +354,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .currentFrameInFlight = noop.currentFrameInFlight,
                 .createFramebuffer = noop.createFramebuffer,
                 .destroyFramebuffer = noop.destroyFramebuffer,
+                .createRenderPass = noop.createRenderPass,
+                .destroyRenderPass = noop.destroyRenderPass,
                 .createShader = noop.createShader,
                 .destroyShader = noop.destroyShader,
                 .createPipelineLayout = noop.createPipelineLayout,
@@ -395,6 +400,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .currentFrameInFlight = vulkan.currentFrameInFlight,
                 .createFramebuffer = vulkan.createFramebuffer,
                 .destroyFramebuffer = vulkan.destroyFramebuffer,
+                .createRenderPass = vulkan.createRenderPass,
+                .destroyRenderPass = vulkan.destroyRenderPass,
                 .createShader = vulkan.createShader,
                 .destroyShader = vulkan.destroyShader,
                 .createPipelineLayout = vulkan.createPipelineLayout,
@@ -489,13 +496,23 @@ pub inline fn currentFrameInFlight() u32 {
 }
 
 /// Creates a framebuffer.
-pub fn createFramebuffer(window_handle: platform.WindowHandle) !FramebufferHandle {
-    return try v_tab.createFramebuffer(window_handle);
+pub fn createFramebuffer(window_handle: platform.WindowHandle, render_pass_handle: RenderPassHandle) !FramebufferHandle {
+    return try v_tab.createFramebuffer(window_handle, render_pass_handle);
 }
 
 /// Destroys a framebuffer.
 pub inline fn destroyFramebuffer(handle: FramebufferHandle) void {
     v_tab.destroyFramebuffer(handle);
+}
+
+/// Creates a render pass.
+pub fn createRenderPass() !RenderPassHandle {
+    return try v_tab.createRenderPass();
+}
+
+/// Destroys a render pass.
+pub inline fn destroyRenderPass(handle: RenderPassHandle) void {
+    v_tab.destroyRenderPass(handle);
 }
 
 /// Creates a shader from a loader.
@@ -626,8 +643,8 @@ pub inline fn endFrame() !void {
 }
 
 /// Begins a render pass.
-pub inline fn beginRenderPass(framebuffer: ?FramebufferHandle) !bool {
-    return v_tab.beginRenderPass(framebuffer);
+pub inline fn beginRenderPass(framebuffer_handle: FramebufferHandle, render_pass_handle: RenderPassHandle) !bool {
+    return v_tab.beginRenderPass(framebuffer_handle, render_pass_handle);
 }
 
 /// Ends a render pass.

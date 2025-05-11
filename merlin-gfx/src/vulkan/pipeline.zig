@@ -72,6 +72,7 @@ const AttributeType = [@typeInfo(types.VertexComponentType).@"enum".fields.len][
 const PipelineKey = struct {
     program: gfx.ProgramHandle,
     layout: gfx.PipelineLayoutHandle,
+    render_pass: gfx.RenderPassHandle,
     debug_options: gfx.DebugOptions,
     render_options: gfx.RenderOptions,
 };
@@ -373,12 +374,14 @@ pub fn deinit() void {
 pub fn pipeline(
     program_handle: gfx.ProgramHandle,
     layout_handle: gfx.PipelineLayoutHandle,
+    render_pass_handle: gfx.RenderPassHandle,
     debug_options: gfx.DebugOptions,
     render_options: gfx.RenderOptions,
 ) !c.VkPipeline {
     const key = PipelineKey{
         .program = program_handle,
         .layout = layout_handle,
+        .render_pass = render_pass_handle,
         .debug_options = debug_options,
         .render_options = render_options,
     };
@@ -390,7 +393,7 @@ pub fn pipeline(
     const pipeline_layout = vk.pipeline_layouts.pipelineLayoutFromHandle(layout_handle);
     pipeline_value = try create(
         program_handle,
-        vk.main_render_pass,
+        vk.render_pass.get(render_pass_handle),
         pipeline_layout.layout,
         debug_options,
         render_options,

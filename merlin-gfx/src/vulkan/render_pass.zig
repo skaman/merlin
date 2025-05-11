@@ -5,10 +5,25 @@ const gfx = @import("../gfx.zig");
 const vk = @import("vulkan.zig");
 
 // *********************************************************************************************
+// Globals
+// *********************************************************************************************
+
+var _render_passes_to_destroy: std.ArrayList(c.VkRenderPass) = undefined;
+
+// *********************************************************************************************
 // Public API
 // *********************************************************************************************
 
-pub fn create(format: c.VkFormat) !c.VkRenderPass {
+pub fn init() void {
+    _render_passes_to_destroy = .init(vk.gpa);
+    errdefer _render_passes_to_destroy.deinit();
+}
+
+pub fn deinit() void {
+    _render_passes_to_destroy.deinit();
+}
+
+pub fn create(format: c.VkFormat) !gfx.RenderPassHandle {
     const color_attachment = std.mem.zeroInit(
         c.VkAttachmentDescription,
         .{
@@ -26,7 +41,7 @@ pub fn create(format: c.VkFormat) !c.VkRenderPass {
     const depth_attachment = std.mem.zeroInit(
         c.VkAttachmentDescription,
         .{
-            .format = try vk.findDepthFormat(),
+            .format = try vk.framebuffers.findDepthFormat(),
             .samples = c.VK_SAMPLE_COUNT_1_BIT,
             .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
@@ -98,9 +113,24 @@ pub fn create(format: c.VkFormat) !c.VkRenderPass {
         &render_pass_info,
         &render_pass,
     );
-    return render_pass;
+    return .{ .handle = @ptrCast(render_pass) };
 }
 
-pub fn destroy(render_pass: c.VkRenderPass) void {
-    vk.device.destroyRenderPass(render_pass);
+pub fn destroy(render_pass_handle: gfx.RenderPassHandle) void {
+    const render_pass = get(render_pass_handle);
+    _render_passes_to_destroy.append(render_pass) catch |err| {
+        vk.log.err("Failed to append render pass to destroy list: {any}", .{err});
+        return;
+    };
+}
+
+pub fn destroyPendingResources() void {
+    for (_render_passes_to_destroy.items) |render_pass| {
+        vk.device.destroyRenderPass(render_pass);
+    }
+    _render_passes_to_destroy.clearRetainingCapacity();
+}
+
+pub fn get(render_pass: gfx.RenderPassHandle) c.VkRenderPass {
+    return @ptrCast(render_pass.handle);
 }

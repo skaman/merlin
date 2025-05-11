@@ -85,7 +85,50 @@ pub fn update(context: *Context, delta_time: f32) !void {
 // Main
 // *********************************************************************************************
 
+const AnsiColorRed = "\x1b[31m";
+const AnsiColorYellow = "\x1b[33m";
+const AnsiColorWhite = "\x1b[37m";
+const AnsiColorGray = "\x1b[90m";
+const AnsiColorLightGray = "\x1b[37;1m";
+const AnsiColorReset = "\x1b[0m";
+
+pub fn customLog(
+    comptime level: std.log.Level,
+    comptime scope: @Type(.enum_literal),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const level_txt = comptime level.asText();
+    const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
+    const stderr = std.io.getStdErr().writer();
+    var bw = std.io.bufferedWriter(stderr);
+    const writer = bw.writer();
+
+    const color = comptime switch (level) {
+        .info => AnsiColorWhite,
+        .warn => AnsiColorYellow,
+        .err => AnsiColorRed,
+        .debug => AnsiColorGray,
+    };
+
+    std.debug.lockStdErr();
+    defer std.debug.unlockStdErr();
+    nosuspend {
+        writer.print(
+            color ++ level_txt ++ prefix2 ++ format ++ AnsiColorReset ++ "\n",
+            args,
+        ) catch return;
+        bw.flush() catch return;
+    }
+}
+
+pub const std_options: std.Options = .{
+    .logFn = customLog,
+};
+
 pub fn main() !void {
+    //std.options.logFn = customLog;
+
     var gpa = std.heap.GeneralPurposeAllocator(.{
         //.verbose_log = true,
     }){};
@@ -123,12 +166,26 @@ pub fn main() !void {
     );
     defer gfx.deinit();
 
+    const render_pass_handle = try gfx.createRenderPass();
+    defer gfx.destroyRenderPass(render_pass_handle);
+
+    const framebuffer_handle = try gfx.createFramebuffer(
+        window_handle,
+        render_pass_handle,
+    );
+    defer gfx.destroyFramebuffer(framebuffer_handle);
+
     try assets.init(gpa_allocator);
     defer assets.deinit();
 
-    try imgui.init(gpa_allocator, .{
-        .window_handle = window_handle,
-    });
+    try imgui.init(
+        gpa_allocator,
+        render_pass_handle,
+        framebuffer_handle,
+        .{
+            .window_handle = window_handle,
+        },
+    );
     defer imgui.deinit();
 
     var context = try init(gpa_allocator, arena_allocator);
@@ -159,9 +216,9 @@ pub fn main() !void {
             @panic("Failed to end frame");
         };
 
-        const alloc_count = @atomicLoad(usize, &statistics_allocator.alloc_count, .unordered);
-        const alloc_size = @atomicLoad(usize, &statistics_allocator.alloc_size, .unordered);
-        std.log.debug("Allocation count: {d}", .{alloc_count});
-        std.log.debug("Allocation memory: {d}", .{alloc_size});
+        //const alloc_count = @atomicLoad(usize, &statistics_allocator.alloc_count, .unordered);
+        //const alloc_size = @atomicLoad(usize, &statistics_allocator.alloc_size, .unordered);
+        //std.log.debug("Allocation count: {d}", .{alloc_count});
+        //std.log.debug("Allocation memory: {d}", .{alloc_size});
     }
 }

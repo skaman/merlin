@@ -8,7 +8,7 @@ const gfx = @import("../gfx.zig");
 
 pub fn init(_: std.mem.Allocator, _: *const gfx.Options) !void {}
 pub fn deinit() void {}
-pub fn swapchainSize() [2]u32 {
+pub fn swapchainSize(_: gfx.FramebufferHandle) [2]u32 {
     return .{ 0, 0 };
 }
 pub fn uniformAlignment() u32 {
@@ -20,10 +20,14 @@ pub fn maxFramesInFlight() u32 {
 pub fn currentFrameInFlight() u32 {
     return 0;
 }
-pub fn createFramebuffer(_: platform.WindowHandle) !gfx.FramebufferHandle {
+pub fn createFramebuffer(_: platform.WindowHandle, _: gfx.RenderPassHandle) !gfx.FramebufferHandle {
     return .{ .handle = undefined };
 }
 pub fn destroyFramebuffer(_: gfx.FramebufferHandle) void {}
+pub fn createRenderPass() !gfx.RenderPassHandle {
+    return .{ .handle = undefined };
+}
+pub fn destroyRenderPass(_: gfx.RenderPassHandle) void {}
 pub fn createShader(_: std.io.AnyReader, _: gfx.ShaderOptions) !gfx.ShaderHandle {
     return .{ .handle = undefined };
 }
@@ -52,7 +56,7 @@ pub fn destroyTexture(_: gfx.TextureHandle) void {}
 pub fn beginFrame() !bool {
     return true;
 }
-pub fn beginRenderPass(_: ?gfx.FramebufferHandle) !bool {
+pub fn beginRenderPass(_: gfx.FramebufferHandle, _: gfx.RenderPassHandle) !bool {
     return false;
 }
 pub fn endRenderPass() void {}

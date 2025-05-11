@@ -1078,6 +1078,7 @@ pub fn destroyPendingResources() void {
         }
         vk.gpa.destroy(texture);
     }
+    _textures_to_destroy.clearRetainingCapacity();
 }
 
 pub inline fn textureFromHandle(handle: gfx.TextureHandle) *Texture {

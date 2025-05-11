@@ -40,6 +40,7 @@ pub const CommandBuffer = struct {
     current_debug_options: gfx.DebugOptions = .{},
     current_render_options: gfx.RenderOptions = .{},
     current_program: ?gfx.ProgramHandle = null,
+    current_render_pass: ?gfx.RenderPassHandle = null,
     current_vertex_buffer: ?gfx.BufferHandle = null,
     current_vertex_buffer_offset: u32 = 0,
     current_index_buffer: ?gfx.BufferHandle = null,
@@ -49,6 +50,7 @@ pub const CommandBuffer = struct {
 
     last_pipeline_layout: ?gfx.PipelineLayoutHandle = null,
     last_pipeline_program: ?gfx.ProgramHandle = null,
+    last_pipeline_render_pass: ?gfx.RenderPassHandle = null,
     last_pipeline_debug_options: gfx.DebugOptions = .{},
     last_pipeline_render_options: gfx.RenderOptions = .{},
     last_vertex_buffer: ?gfx.BufferHandle = null,
@@ -65,12 +67,14 @@ fn handleBindPipeline(
     handle: gfx.CommandBufferHandle,
     program_handle: gfx.ProgramHandle,
     layout_handle: gfx.PipelineLayoutHandle,
+    render_pass_handle: gfx.RenderPassHandle,
     debug_options: gfx.DebugOptions,
     render_options: gfx.RenderOptions,
 ) !void {
     var command_buffer = commandBufferFromHandle(handle);
     if (command_buffer.last_pipeline_program == program_handle and
         command_buffer.last_pipeline_layout == layout_handle and
+        command_buffer.last_pipeline_render_pass == render_pass_handle and
         command_buffer.last_pipeline_debug_options == debug_options and
         command_buffer.last_pipeline_render_options == render_options)
     {
@@ -80,6 +84,7 @@ fn handleBindPipeline(
     const pipeline = try vk.pipeline.pipeline(
         program_handle,
         layout_handle,
+        render_pass_handle,
         debug_options,
         render_options,
     );
@@ -92,6 +97,7 @@ fn handleBindPipeline(
 
     command_buffer.last_pipeline_program = program_handle;
     command_buffer.last_pipeline_layout = layout_handle;
+    command_buffer.last_pipeline_render_pass = render_pass_handle;
     command_buffer.last_pipeline_debug_options = debug_options;
     command_buffer.last_pipeline_render_options = render_options;
 }
@@ -404,13 +410,12 @@ pub fn end(handle: gfx.CommandBufferHandle) !void {
 }
 
 pub fn beginRenderPass(
-    handle: gfx.CommandBufferHandle,
-    render_pass: c.VkRenderPass,
+    command_buffer_handle: gfx.CommandBufferHandle,
+    render_pass_handle: gfx.RenderPassHandle,
     framebuffer: c.VkFramebuffer,
     extent: c.VkExtent2D,
 ) !void {
     std.debug.assert(framebuffer != null);
-    std.debug.assert(render_pass != null);
 
     const clear_values = [_]c.VkClearValue{
         .{
@@ -430,7 +435,7 @@ pub fn beginRenderPass(
         c.VkRenderPassBeginInfo,
         .{
             .sType = c.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass = render_pass,
+            .renderPass = vk.render_pass.get(render_pass_handle),
             .framebuffer = framebuffer,
             .renderArea = .{
                 .offset = .{ .x = 0, .y = 0 },
@@ -440,7 +445,8 @@ pub fn beginRenderPass(
             .pClearValues = &clear_values,
         },
     );
-    const command_buffer = commandBufferFromHandle(handle);
+    const command_buffer = commandBufferFromHandle(command_buffer_handle);
+    command_buffer.current_render_pass = render_pass_handle;
 
     try vk.device.cmdBeginRenderPass(
         command_buffer.handle,
@@ -587,6 +593,7 @@ pub fn draw(
     const command_buffer = commandBufferFromHandle(handle);
     const current_layout = command_buffer.current_pipeline_layout;
     const current_program = command_buffer.current_program;
+    const current_render_pass = command_buffer.current_render_pass;
     const current_debug_options = command_buffer.current_debug_options;
     const current_render_options = command_buffer.current_render_options;
 
@@ -594,6 +601,7 @@ pub fn draw(
         handle,
         current_program.?,
         current_layout.?,
+        current_render_pass.?,
         current_debug_options,
         current_render_options,
     ) catch {
@@ -637,6 +645,7 @@ pub fn drawIndexed(
     const command_buffer = commandBufferFromHandle(handle);
     const current_layout = command_buffer.current_pipeline_layout;
     const current_program = command_buffer.current_program;
+    const current_render_pass = command_buffer.current_render_pass;
     const current_debug_options = command_buffer.current_debug_options;
     const current_render_options = command_buffer.current_render_options;
 
@@ -644,6 +653,7 @@ pub fn drawIndexed(
         handle,
         current_program.?,
         current_layout.?,
+        current_render_pass.?,
         current_debug_options,
         current_render_options,
     ) catch {

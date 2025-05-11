@@ -57,6 +57,7 @@ var _arena: std.mem.Allocator = undefined;
 var _raw_allocator: utils.RawAllocator = undefined;
 
 var _main_window_handle: platform.WindowHandle = undefined;
+var _main_framebuffer_handle: gfx.FramebufferHandle = undefined;
 var _context: ?*c.ImGuiContext = undefined;
 var _font_texture_handle: gfx.TextureHandle = undefined;
 var _vert_shader_handle: gfx.ShaderHandle = undefined;
@@ -64,6 +65,7 @@ var _frag_shader_handle: gfx.ShaderHandle = undefined;
 var _program_handle: gfx.ProgramHandle = undefined;
 var _tex_uniform_handle: gfx.NameHandle = undefined;
 var _pipeline_layout_handle: gfx.PipelineLayoutHandle = undefined;
+var _render_pass_handle: gfx.RenderPassHandle = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -505,8 +507,13 @@ fn draw(
     draw_data: [*c]c.ImDrawData,
     viewport_data: *ViewportData,
     window_handle: platform.WindowHandle,
+    render_pass_handle: gfx.RenderPassHandle,
 ) !void {
-    if (!try gfx.beginRenderPass(viewport_data.framebuffer_handle)) return;
+    const framebuffer_handle = viewport_data.framebuffer_handle orelse _main_framebuffer_handle;
+    if (!try gfx.beginRenderPass(
+        framebuffer_handle,
+        render_pass_handle,
+    )) return;
     defer gfx.endRenderPass();
 
     if (draw_data.*.TotalVtxCount > 0) {
@@ -693,14 +700,6 @@ fn getClipboardTextFn(_: ?*c.ImGuiContext) callconv(.c) [*c]const u8 {
 }
 
 fn createWindow(viewport: ?*c.ImGuiViewport) callconv(.c) void {
-    const viewport_data = _gpa.create(ViewportData) catch |err| {
-        log.err("Failed to create viewport data: {}", .{err});
-        return;
-    };
-    viewport_data.* = .{
-        .window_owned = true,
-    };
-
     const window_handle = platform.createWindow(.{
         .title = "No Title Yet",
         .width = @intFromFloat(viewport.?.Size.x),
@@ -719,13 +718,27 @@ fn createWindow(viewport: ?*c.ImGuiViewport) callconv(.c) void {
         @intFromFloat(viewport.?.Pos.y),
     });
 
-    viewport.?.PlatformHandle = window_handle.handle;
-    viewport.?.PlatformUserData = @ptrCast(viewport_data);
-
-    viewport_data.framebuffer_handle = gfx.createFramebuffer(window_handle) catch |err| {
+    const framebuffer_handle = gfx.createFramebuffer(
+        window_handle,
+        _render_pass_handle,
+    ) catch |err| {
         log.err("Failed to create framebuffer: {}", .{err});
         return;
     };
+
+    const viewport_data = _gpa.create(ViewportData) catch |err| {
+        log.err("Failed to create viewport data: {}", .{err});
+        return;
+    };
+    errdefer _gpa.destroy(viewport_data);
+
+    viewport_data.* = .{
+        .window_owned = true,
+        .framebuffer_handle = framebuffer_handle,
+    };
+
+    viewport.?.PlatformHandle = window_handle.handle;
+    viewport.?.PlatformUserData = @ptrCast(viewport_data);
 }
 
 fn destroyWindow(viewport: ?*c.ImGuiViewport) callconv(.c) void {
@@ -829,6 +842,7 @@ fn renderWindow(viewport: ?*c.ImGuiViewport, _: ?*anyopaque) callconv(.c) void {
                 viewport.?.DrawData,
                 viewport_data.?,
                 window_handle,
+                _render_pass_handle,
             ) catch |err| {
                 log.err("Failed to render ImGui: {}", .{err});
             };
@@ -849,7 +863,12 @@ fn memoryFreeFn(ptr: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
 // Public API
 // *********************************************************************************************
 
-pub fn init(allocator: std.mem.Allocator, options: Options) !void {
+pub fn init(
+    allocator: std.mem.Allocator,
+    render_pass_handle: gfx.RenderPassHandle,
+    framebuffer_handle: gfx.FramebufferHandle,
+    options: Options,
+) !void {
     _gpa = allocator;
     _raw_allocator = .init(allocator);
 
@@ -858,6 +877,8 @@ pub fn init(allocator: std.mem.Allocator, options: Options) !void {
     _arena = _arena_impl.allocator();
 
     _main_window_handle = options.window_handle;
+    _main_framebuffer_handle = framebuffer_handle;
+    _render_pass_handle = render_pass_handle;
 
     c.igSetAllocatorFunctions(memoryAllocFn, memoryFreeFn, null);
 
@@ -1032,7 +1053,7 @@ pub fn endFrame() void {
 
     const viewport = c.igGetMainViewport();
     const viewport_data: *ViewportData = @ptrCast(@alignCast(viewport.*.PlatformUserData));
-    draw(draw_data, viewport_data, _main_window_handle) catch |err| {
+    draw(draw_data, viewport_data, _main_window_handle, _render_pass_handle) catch |err| {
         log.err("Failed to render ImGui: {}", .{err});
     };
 

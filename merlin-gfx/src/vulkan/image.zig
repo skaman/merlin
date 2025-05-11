@@ -13,6 +13,7 @@ pub const Image = struct {
     image: c.VkImage,
     memory: c.VkDeviceMemory,
     size: u64,
+    format: c.VkFormat,
 };
 
 // *********************************************************************************************
@@ -86,6 +87,7 @@ pub fn create(
         .image = image,
         .memory = memory,
         .size = memory_requirements.size,
+        .format = format,
     };
 }
 
