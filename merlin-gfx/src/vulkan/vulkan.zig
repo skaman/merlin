@@ -474,7 +474,7 @@ pub fn endFrame() !void {
         const signal_semaphores =
             [_]c.VkSemaphore{framebuffer.render_finished_semaphores[_current_frame_in_flight]};
         const command_buffer =
-            command_buffers.commandBufferFromHandle(framebuffer.command_buffers[_current_frame_in_flight]);
+            command_buffers.get(framebuffer.command_buffers[_current_frame_in_flight]);
         const submit_info = std.mem.zeroInit(
             c.VkSubmitInfo,
             .{
