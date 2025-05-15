@@ -1056,7 +1056,7 @@ pub fn createFromKTX(
 }
 
 pub fn destroy(handle: gfx.TextureHandle) void {
-    const texture = textureFromHandle(handle);
+    const texture = get(handle);
     _textures_to_destroy.append(texture) catch |err| {
         vk.log.err("Failed to append texture to destroy list: {any}", .{err});
         return;
@@ -1081,6 +1081,6 @@ pub fn destroyPendingResources() void {
     _textures_to_destroy.clearRetainingCapacity();
 }
 
-pub inline fn textureFromHandle(handle: gfx.TextureHandle) *Texture {
+pub inline fn get(handle: gfx.TextureHandle) *Texture {
     return @ptrCast(@alignCast(handle.handle));
 }

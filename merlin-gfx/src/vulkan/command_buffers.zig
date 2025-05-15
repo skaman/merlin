@@ -188,7 +188,7 @@ fn handlePushDescriptorSet(
     program_handle: gfx.ProgramHandle,
 ) !void {
     var command_buffer = get(command_buffer_handle);
-    const program = vk.programs.programFromHandle(program_handle);
+    const program = vk.programs.get(program_handle);
     const pipeline_layout = program.pipeline_layout;
     const layout_count = program.layout_count;
     var write_descriptor_sets = &program.write_descriptor_sets;
@@ -222,7 +222,7 @@ fn handlePushDescriptorSet(
             c.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER => {
                 std.debug.assert(uniform_binding == .combined_sampler);
                 const texture_handle = uniform_binding.combined_sampler.texture_handle;
-                const texture = vk.textures.textureFromHandle(texture_handle);
+                const texture = vk.textures.get(texture_handle);
                 image_infos[binding_index] = .{
                     .imageLayout = texture.image_layout,
                     .imageView = texture.image_view,
@@ -255,7 +255,7 @@ fn handlePushConstants(
     program_handle: gfx.ProgramHandle,
 ) !void {
     var command_buffer = get(command_buffer_handle);
-    const program = vk.programs.programFromHandle(program_handle);
+    const program = vk.programs.get(program_handle);
     const pipeline_layout = program.pipeline_layout;
     const push_constants = command_buffer.current_push_constants.items;
 

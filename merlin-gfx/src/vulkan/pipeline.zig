@@ -130,7 +130,7 @@ fn create(
         },
     );
 
-    const program = vk.programs.programFromHandle(program_handle);
+    const program = vk.programs.get(program_handle);
     const vertex_shader = program.vertex_shader;
     const fragment_shader = program.fragment_shader;
 

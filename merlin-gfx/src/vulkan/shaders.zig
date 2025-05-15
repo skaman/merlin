@@ -159,7 +159,7 @@ pub fn create(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderH
 }
 
 pub fn destroy(handle: gfx.ShaderHandle) void {
-    const shader = shaderFromHandle(handle);
+    const shader = get(handle);
     _shaders_to_destroy.append(shader) catch |err| {
         vk.log.err("Failed to append shader to destroy list: {any}", .{err});
         return;
@@ -185,6 +185,6 @@ pub fn destroyPendingResources() void {
     _shaders_to_destroy.clearRetainingCapacity();
 }
 
-pub inline fn shaderFromHandle(handle: gfx.ShaderHandle) *Shader {
+pub inline fn get(handle: gfx.ShaderHandle) *Shader {
     return @ptrCast(@alignCast(handle.handle));
 }

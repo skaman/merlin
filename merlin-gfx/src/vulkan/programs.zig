@@ -74,13 +74,15 @@ pub fn create(
     descriptor_pool: c.VkDescriptorPool,
     options: gfx.ProgramOptions,
 ) !gfx.ProgramHandle {
+    std.debug.assert(descriptor_pool != null);
+
     var layouts: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorSetLayoutBinding = undefined;
     var layout_names: [vk.pipeline.MaxDescriptorSetBindings][]const u8 = undefined;
     var layout_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32 = undefined;
     var layout_count: u32 = 0;
 
-    const vertex_shader = vk.shaders.shaderFromHandle(vertex_shader_handle);
-    const fragment_shader = vk.shaders.shaderFromHandle(fragment_shader_handle);
+    const vertex_shader = vk.shaders.get(vertex_shader_handle);
+    const fragment_shader = vk.shaders.get(fragment_shader_handle);
 
     for (vertex_shader.descriptor_sets) |descriptor_set| {
         if (descriptor_set.set != 0) {
@@ -195,6 +197,7 @@ pub fn create(
         &pipeline_layout,
     );
     errdefer vk.device.destroyPipelineLayout(pipeline_layout);
+    std.debug.assert(pipeline_layout != null);
 
     var descriptor_set_layouts: [vk.MaxFramesInFlight]c.VkDescriptorSetLayout = undefined;
     for (0..vk.MaxFramesInFlight) |i| {
@@ -257,8 +260,8 @@ pub fn create(
     return .{ .handle = @ptrCast(program) };
 }
 
-pub fn destroy(handle: gfx.ProgramHandle) void {
-    const program = programFromHandle(handle);
+pub fn destroy(program_handle: gfx.ProgramHandle) void {
+    const program = get(program_handle);
     _programs_to_destroy.append(program) catch |err| {
         vk.log.err("Failed to append program to destroy list: {any}", .{err});
         return;
@@ -284,6 +287,6 @@ pub fn destroyPendingResources() void {
     _programs_to_destroy.clearRetainingCapacity();
 }
 
-pub inline fn programFromHandle(handle: gfx.ProgramHandle) *Program {
+pub inline fn get(handle: gfx.ProgramHandle) *Program {
     return @ptrCast(@alignCast(handle.handle));
 }
