@@ -473,8 +473,8 @@ pub fn deinit() void {
 }
 
 /// Returns the size of the swapchain.
-pub inline fn getSwapchainSize() [2]u32 {
-    return v_tab.getSwapchainSize();
+pub inline fn getSwapchainSize(framebuffer_handle: FramebufferHandle) [2]u32 {
+    return v_tab.getSwapchainSize(framebuffer_handle);
 }
 
 /// Returns the stride of a uniform buffer.

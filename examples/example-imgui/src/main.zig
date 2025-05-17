@@ -127,15 +127,12 @@ pub const std_options: std.Options = .{
 };
 
 pub fn main() !void {
-    //std.options.logFn = customLog;
-
     var gpa = std.heap.GeneralPurposeAllocator(.{
         //.verbose_log = true,
     }){};
     defer _ = gpa.deinit();
 
     var statistics_allocator = utils.StatisticsAllocator.init(gpa.allocator());
-    //defer statistics_allocator.deinit();
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();

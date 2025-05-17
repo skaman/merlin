@@ -34,6 +34,7 @@ const Context = struct {
     mvp_uniform_buffer_handle: gfx.BufferHandle,
     texture_handle: gfx.TextureHandle,
     meshes: std.ArrayList(MeshInstance),
+    time: f32,
 };
 
 // *********************************************************************************************
@@ -119,7 +120,7 @@ pub fn init(gpa_allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator
     const mvp_uniform_handle = gfx.nameHandle("u_mvp");
     const tex_sampler_uniform_handle = gfx.nameHandle("u_tex_sampler");
 
-    const max_frames_in_flight = gfx.maxFramesInFlight();
+    const max_frames_in_flight = gfx.getMaxFramesInFlight();
     const mvp_uniform_buffer_handle = try gfx.createBuffer(
         @sizeOf(ModelViewProj) * max_frames_in_flight,
         .{ .uniform = true },
@@ -201,6 +202,7 @@ pub fn init(gpa_allocator: std.mem.Allocator, arena_allocator: std.mem.Allocator
         .mvp_uniform_buffer_handle = mvp_uniform_buffer_handle,
         .texture_handle = texture_handle,
         .meshes = meshes,
+        .time = 0,
     };
 }
 
@@ -214,12 +216,19 @@ pub fn deinit(context: *Context) void {
     gfx.destroyTexture(context.texture_handle);
 }
 
-pub fn update(context: *Context, time: f32) void {
-    const swapchain_size = gfx.swapchainSize();
+pub fn update(
+    context: *Context,
+    delta_time: f32,
+    framebuffer_handle: gfx.FramebufferHandle,
+    render_pass_handle: gfx.RenderPassHandle,
+) !void {
+    const swapchain_size = gfx.getSwapchainSize(framebuffer_handle);
     const aspect_ratio = @as(f32, @floatFromInt(swapchain_size[0])) / @as(f32, @floatFromInt(swapchain_size[1]));
 
+    context.time += delta_time;
+
     const mvp = ModelViewProj{
-        .model = zm.rotationY(std.math.rad_per_deg * 90.0 * time),
+        .model = zm.rotationY(std.math.rad_per_deg * 90.0 * context.time),
         .view = zm.lookAtLh(
             zm.f32x4(1.0, 1.0, 1.0, 1.0),
             zm.f32x4(0.0, 0.3, 0.0, 1.0),
@@ -233,18 +242,22 @@ pub fn update(context: *Context, time: f32) void {
         ),
     };
     const mvp_ptr: [*]const u8 = @ptrCast(&mvp);
-    const current_frame_in_flight = gfx.currentFrameInFlight();
+    const current_frame_in_flight = gfx.getCurrentFrameInFlight();
     const mvp_offset = current_frame_in_flight * @sizeOf(ModelViewProj);
-    gfx.updateBufferFromMemory(
+    try gfx.updateBufferFromMemory(
         context.mvp_uniform_buffer_handle,
         mvp_ptr[0..@sizeOf(ModelViewProj)],
         mvp_offset,
-    ) catch |err| {
-        std.log.err("Failed to update MVP uniform buffer: {}", .{err});
-    };
+    );
 
-    gfx.beginDebugLabel("Render geometries", gfx_types.Colors.DarkGreen);
-    defer gfx.endDebugLabel();
+    // gfx.beginDebugLabel("Render geometries", gfx_types.Colors.DarkGreen);
+    // defer gfx.endDebugLabel();
+
+    if (!try gfx.beginRenderPass(
+        framebuffer_handle,
+        render_pass_handle,
+    )) return;
+    defer gfx.endRenderPass();
 
     gfx.setViewport(.{ 0, 0 }, swapchain_size);
     gfx.setScissor(.{ 0, 0 }, swapchain_size);
@@ -305,14 +318,59 @@ pub fn update(context: *Context, time: f32) void {
 // Main
 // *********************************************************************************************
 
+const AnsiColorRed = "\x1b[31m";
+const AnsiColorYellow = "\x1b[33m";
+const AnsiColorWhite = "\x1b[37m";
+const AnsiColorGray = "\x1b[90m";
+const AnsiColorLightGray = "\x1b[37;1m";
+const AnsiColorReset = "\x1b[0m";
+
+pub fn customLog(
+    comptime level: std.log.Level,
+    comptime scope: @Type(.enum_literal),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const level_txt = comptime level.asText();
+    const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
+    const stderr = std.io.getStdErr().writer();
+    var bw = std.io.bufferedWriter(stderr);
+    const writer = bw.writer();
+
+    const color = comptime switch (level) {
+        .info => AnsiColorWhite,
+        .warn => AnsiColorYellow,
+        .err => AnsiColorRed,
+        .debug => AnsiColorGray,
+    };
+
+    std.debug.lockStdErr();
+    defer std.debug.unlockStdErr();
+    nosuspend {
+        writer.print(
+            color ++ level_txt ++ prefix2 ++ format ++ AnsiColorReset ++ "\n",
+            args,
+        ) catch return;
+        bw.flush() catch return;
+    }
+}
+
+pub const std_options: std.Options = .{
+    .logFn = customLog,
+};
+
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        //.verbose_log = true,
+    }){};
     defer _ = gpa.deinit();
+
+    var statistics_allocator = utils.StatisticsAllocator.init(gpa.allocator());
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    const gpa_allocator = gpa.allocator();
+    const gpa_allocator = statistics_allocator.allocator();
     const arena_allocator = arena.allocator();
 
     try platform.init(
@@ -338,6 +396,15 @@ pub fn main() !void {
     );
     defer gfx.deinit();
 
+    const render_pass_handle = try gfx.createRenderPass();
+    defer gfx.destroyRenderPass(render_pass_handle);
+
+    const framebuffer_handle = try gfx.createFramebuffer(
+        window_handle,
+        render_pass_handle,
+    );
+    defer gfx.destroyFramebuffer(framebuffer_handle);
+
     try assets.init(gpa_allocator);
     defer assets.deinit();
 
@@ -347,23 +414,14 @@ pub fn main() !void {
     const start_time = std.time.microTimestamp();
     var last_current_time = start_time;
 
-    var fps_counter: u32 = 0;
-    var fps_timer: f32 = 0.0;
-
     while (!platform.shouldCloseWindow(window_handle)) {
+        defer _ = arena.reset(.retain_capacity);
+
         platform.pollEvents();
 
         const current_time = std.time.microTimestamp();
         const delta_time = @as(f32, @floatFromInt(current_time - last_current_time)) / 1_000_000.0;
         last_current_time = current_time;
-
-        fps_counter += 1;
-        fps_timer += delta_time;
-        if (fps_timer >= 1.0) {
-            std.debug.print("FPS: {d}\n", .{fps_counter});
-            fps_counter = 0;
-            fps_timer -= 1.0;
-        }
 
         const result = gfx.beginFrame() catch |err| {
             std.log.err("Failed to begin frame: {}", .{err});
@@ -371,17 +429,15 @@ pub fn main() !void {
         };
         if (!result) continue;
 
-        gfx.beginDebugLabel("Frame", gfx_types.Colors.Red);
-        defer gfx.endDebugLabel();
-
-        const time = @as(f32, @floatFromInt(current_time - start_time)) / 1_000_000.0;
-
-        update(&context, time);
+        try update(
+            &context,
+            delta_time,
+            framebuffer_handle,
+            render_pass_handle,
+        );
 
         gfx.endFrame() catch |err| {
             std.log.err("Failed to end frame: {}", .{err});
         };
-
-        _ = arena.reset(.retain_capacity);
     }
 }
