@@ -8,16 +8,16 @@ const gfx = @import("../gfx.zig");
 
 pub fn init(_: std.mem.Allocator, _: *const gfx.Options) !void {}
 pub fn deinit() void {}
-pub fn swapchainSize(_: gfx.FramebufferHandle) [2]u32 {
+pub fn getSwapchainSize(_: gfx.FramebufferHandle) [2]u32 {
     return .{ 0, 0 };
 }
-pub fn uniformAlignment() u32 {
+pub fn getUniformAlignment() u32 {
     return 0;
 }
-pub fn maxFramesInFlight() u32 {
+pub fn getMaxFramesInFlight() u32 {
     return 0;
 }
-pub fn currentFrameInFlight() u32 {
+pub fn getCurrentFrameInFlight() u32 {
     return 0;
 }
 pub fn createFramebuffer(_: platform.WindowHandle, _: gfx.RenderPassHandle) !gfx.FramebufferHandle {

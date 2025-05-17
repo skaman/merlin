@@ -266,19 +266,19 @@ pub fn deinit() void {
     _arena_impl.deinit();
 }
 
-pub fn swapchainSize(handle: gfx.FramebufferHandle) [2]u32 {
+pub fn getSwapchainSize(handle: gfx.FramebufferHandle) [2]u32 {
     return framebuffers.getSwapchainSize(handle);
 }
 
-pub fn uniformAlignment() u32 {
+pub fn getUniformAlignment() u32 {
     return @intCast(device.properties.limits.minUniformBufferOffsetAlignment);
 }
 
-pub fn maxFramesInFlight() u32 {
+pub fn getMaxFramesInFlight() u32 {
     return MaxFramesInFlight;
 }
 
-pub fn currentFrameInFlight() u32 {
+pub fn getCurrentFrameInFlight() u32 {
     return _current_frame_in_flight;
 }
 

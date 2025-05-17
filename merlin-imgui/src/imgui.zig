@@ -517,7 +517,7 @@ fn draw(
     defer gfx.endRenderPass();
 
     if (draw_data.*.TotalVtxCount > 0) {
-        const framebuffer_size = platform.windowFramebufferSize(window_handle);
+        const framebuffer_size = platform.windowFramebufferSize(window_handle); // TODO: this should be the swapchain size? (from gfx)
         const vertex_size: u32 = @intCast(@sizeOf(c.ImDrawVert) * draw_data.*.TotalVtxCount);
         const index_size: u32 = @intCast(@sizeOf(c.ImDrawIdx) * draw_data.*.TotalIdxCount);
 

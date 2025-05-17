@@ -275,7 +275,7 @@ pub fn UniformArray(comptime THandle: type) type {
         }
 
         fn stride() u32 {
-            const alignment = uniformAlignment();
+            const alignment = getUniformAlignment();
             return ((@sizeOf(THandle) + alignment - 1) / alignment) * alignment;
         }
     };
@@ -284,10 +284,10 @@ pub fn UniformArray(comptime THandle: type) type {
 const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
-    swapchainSize: *const fn (framebuffer_handle: FramebufferHandle) [2]u32,
-    uniformAlignment: *const fn () u32,
-    maxFramesInFlight: *const fn () u32,
-    currentFrameInFlight: *const fn () u32,
+    getSwapchainSize: *const fn (framebuffer_handle: FramebufferHandle) [2]u32,
+    getUniformAlignment: *const fn () u32,
+    getMaxFramesInFlight: *const fn () u32,
+    getCurrentFrameInFlight: *const fn () u32,
     createFramebuffer: *const fn (window_handle: platform.WindowHandle, render_pass_handle: RenderPassHandle) anyerror!FramebufferHandle,
     destroyFramebuffer: *const fn (framebuffer_handle: FramebufferHandle) void,
     createRenderPass: *const fn () anyerror!RenderPassHandle,
@@ -348,10 +348,10 @@ fn getVTab(renderer_type: RendererType) !VTab {
             return .{
                 .init = noop.init,
                 .deinit = noop.deinit,
-                .swapchainSize = noop.swapchainSize,
-                .uniformAlignment = noop.uniformAlignment,
-                .maxFramesInFlight = noop.maxFramesInFlight,
-                .currentFrameInFlight = noop.currentFrameInFlight,
+                .getSwapchainSize = noop.getSwapchainSize,
+                .getUniformAlignment = noop.getUniformAlignment,
+                .getMaxFramesInFlight = noop.getMaxFramesInFlight,
+                .getCurrentFrameInFlight = noop.getCurrentFrameInFlight,
                 .createFramebuffer = noop.createFramebuffer,
                 .destroyFramebuffer = noop.destroyFramebuffer,
                 .createRenderPass = noop.createRenderPass,
@@ -394,10 +394,10 @@ fn getVTab(renderer_type: RendererType) !VTab {
             return .{
                 .init = vulkan.init,
                 .deinit = vulkan.deinit,
-                .swapchainSize = vulkan.swapchainSize,
-                .uniformAlignment = vulkan.uniformAlignment,
-                .maxFramesInFlight = vulkan.maxFramesInFlight,
-                .currentFrameInFlight = vulkan.currentFrameInFlight,
+                .getSwapchainSize = vulkan.getSwapchainSize,
+                .getUniformAlignment = vulkan.getUniformAlignment,
+                .getMaxFramesInFlight = vulkan.getMaxFramesInFlight,
+                .getCurrentFrameInFlight = vulkan.getCurrentFrameInFlight,
                 .createFramebuffer = vulkan.createFramebuffer,
                 .destroyFramebuffer = vulkan.destroyFramebuffer,
                 .createRenderPass = vulkan.createRenderPass,
@@ -473,26 +473,26 @@ pub fn deinit() void {
 }
 
 /// Returns the size of the swapchain.
-pub inline fn swapchainSize() [2]u32 {
-    return v_tab.swapchainSize();
+pub inline fn getSwapchainSize() [2]u32 {
+    return v_tab.getSwapchainSize();
 }
 
 /// Returns the stride of a uniform buffer.
-pub inline fn uniformAlignment() u32 {
-    return v_tab.uniformAlignment();
+pub inline fn getUniformAlignment() u32 {
+    return v_tab.getUniformAlignment();
 }
 
 /// Returns the maximum number of frames in flight.
 /// This is the number of frames that can be rendered simultaneously.
-pub inline fn maxFramesInFlight() u32 {
-    return v_tab.maxFramesInFlight();
+pub inline fn getMaxFramesInFlight() u32 {
+    return v_tab.getMaxFramesInFlight();
 }
 
 /// Returns the current frame in flight.
 /// This is the index of the current frame being rendered.
 /// This value is in the range [0, maxFramesInFlight).
-pub inline fn currentFrameInFlight() u32 {
-    return v_tab.currentFrameInFlight();
+pub inline fn getCurrentFrameInFlight() u32 {
+    return v_tab.getCurrentFrameInFlight();
 }
 
 /// Creates a framebuffer.
