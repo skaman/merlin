@@ -472,7 +472,7 @@ pub fn endFrame() !void {
         const wait_semaphores =
             [_]c.VkSemaphore{framebuffer.image_available_semaphores[_current_frame_in_flight]};
         const signal_semaphores =
-            [_]c.VkSemaphore{framebuffer.render_finished_semaphores[_current_frame_in_flight]};
+            [_]c.VkSemaphore{framebuffer.render_finished_semaphores[framebuffer.current_image_index]};
         const command_buffer =
             command_buffers.get(framebuffer.command_buffer_handles[_current_frame_in_flight]);
         const submit_info = std.mem.zeroInit(

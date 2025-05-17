@@ -32,7 +32,7 @@ pub const Framebuffer = struct {
     command_buffer_handles: [vk.MaxFramesInFlight]gfx.CommandBufferHandle,
 
     image_available_semaphores: [vk.MaxFramesInFlight]c.VkSemaphore,
-    render_finished_semaphores: [vk.MaxFramesInFlight]c.VkSemaphore,
+    render_finished_semaphores: []c.VkSemaphore,
     in_flight_fences: [vk.MaxFramesInFlight]c.VkFence,
 
     current_image_index: u32,
@@ -856,9 +856,13 @@ pub fn create(
     try createSemaphores(&image_available_semaphores);
     errdefer destroySemaphores(&image_available_semaphores);
 
-    var render_finished_semaphores: [vk.MaxFramesInFlight]c.VkSemaphore = undefined;
-    try createSemaphores(&render_finished_semaphores);
-    errdefer destroySemaphores(&render_finished_semaphores);
+    const render_finished_semaphores = try vk.gpa.alloc(
+        c.VkSemaphore,
+        images.len,
+    );
+    errdefer vk.gpa.free(render_finished_semaphores);
+    try createSemaphores(render_finished_semaphores);
+    errdefer destroySemaphores(render_finished_semaphores);
 
     var in_flight_fences: [vk.MaxFramesInFlight]c.VkFence = undefined;
     try createFences(&in_flight_fences);
@@ -931,7 +935,8 @@ pub fn destroyPendingResources() !void {
         destroyCommandBuffers(&framebuffer.command_buffer_handles);
         destroyFences(&framebuffer.in_flight_fences);
         destroySemaphores(&framebuffer.image_available_semaphores);
-        destroySemaphores(&framebuffer.render_finished_semaphores);
+        destroySemaphores(framebuffer.render_finished_semaphores);
+        vk.gpa.free(framebuffer.render_finished_semaphores);
         destroyFrameBuffers(framebuffer.framebuffers);
         destroyDepthImageView(framebuffer.depth_image_view);
         destroyDepthImage(framebuffer.depth_image);
