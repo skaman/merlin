@@ -140,6 +140,40 @@ pub fn findMemoryTypeIndex(
     return error.MemoryTypeNotFound;
 }
 
+pub fn vulkanFormatFromGfxImageFormat(format: gfx.ImageFormat) c.VkFormat {
+    switch (format) {
+        .rgba8 => return c.VK_FORMAT_R8G8B8A8_UNORM,
+        .rgba8_srgb => return c.VK_FORMAT_R8G8B8A8_SRGB,
+        .bgra8 => return c.VK_FORMAT_B8G8R8A8_UNORM,
+        .bgra8_srgb => return c.VK_FORMAT_B8G8R8A8_SRGB,
+        .rg8 => return c.VK_FORMAT_R8G8_UNORM,
+        .r8 => return c.VK_FORMAT_R8_UNORM,
+        .rgba16f => return c.VK_FORMAT_R16G16B16A16_SFLOAT,
+        .d32f => return c.VK_FORMAT_D32_SFLOAT,
+        .d32f_s8 => return c.VK_FORMAT_D32_SFLOAT_S8_UINT,
+        .d24_s8 => return c.VK_FORMAT_D24_UNORM_S8_UINT,
+    }
+}
+
+pub fn gfxImageFormatFromVulkanFormat(format: c.VkFormat) !gfx.ImageFormat {
+    switch (format) {
+        c.VK_FORMAT_R8G8B8A8_UNORM => return gfx.ImageFormat.rgba8,
+        c.VK_FORMAT_R8G8B8A8_SRGB => return gfx.ImageFormat.rgba8_srgb,
+        c.VK_FORMAT_B8G8R8A8_UNORM => return gfx.ImageFormat.bgra8,
+        c.VK_FORMAT_B8G8R8A8_SRGB => return gfx.ImageFormat.bgra8_srgb,
+        c.VK_FORMAT_R8G8_UNORM => return gfx.ImageFormat.rg8,
+        c.VK_FORMAT_R8_UNORM => return gfx.ImageFormat.r8,
+        c.VK_FORMAT_R16G16B16A16_SFLOAT => return gfx.ImageFormat.rgba16f,
+        c.VK_FORMAT_D32_SFLOAT => return gfx.ImageFormat.d32f,
+        c.VK_FORMAT_D32_SFLOAT_S8_UINT => return gfx.ImageFormat.d32f_s8,
+        c.VK_FORMAT_D24_UNORM_S8_UINT => return gfx.ImageFormat.d24_s8,
+        else => {
+            log.err("Unknown Vulkan format: {s}", .{c.string_VkFormat(format)});
+            return error.UnknownVulkanFormat;
+        },
+    }
+}
+
 // *********************************************************************************************
 // Public Renderer API
 // *********************************************************************************************
@@ -270,6 +304,14 @@ pub fn getSwapchainSize(handle: gfx.FramebufferHandle) [2]u32 {
     return framebuffers.getSwapchainSize(handle);
 }
 
+pub fn getSurfaceColorFormat() !gfx.ImageFormat {
+    return try gfxImageFormatFromVulkanFormat(_surface_format.format);
+}
+
+pub fn getSurfaceDepthFormat() !gfx.ImageFormat {
+    return try gfxImageFormatFromVulkanFormat(try framebuffers.findDepthFormat());
+}
+
 pub fn getUniformAlignment() u32 {
     return @intCast(device.properties.limits.minUniformBufferOffsetAlignment);
 }
@@ -297,8 +339,8 @@ pub fn destroyFramebuffer(handle: gfx.FramebufferHandle) void {
     framebuffers.destroy(handle);
 }
 
-pub fn createRenderPass() !gfx.RenderPassHandle {
-    return render_pass.create(_surface_format.format);
+pub fn createRenderPass(options: gfx.RenderPassOptions) !gfx.RenderPassHandle {
+    return render_pass.create(options);
 }
 
 pub fn destroyRenderPass(handle: gfx.RenderPassHandle) void {

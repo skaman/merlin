@@ -61,19 +61,87 @@ pub const BufferLocation = enum(u8) {
 pub const ImageFormat = enum(u8) {
     rgba8,
     rgba8_srgb,
+    bgra8,
+    bgra8_srgb,
     rg8,
     r8,
     rgba16f,
+    d32f,
+    d32f_s8,
+    d24_s8,
 
     pub fn name(self: ImageFormat) []const u8 {
         return switch (self) {
             .rgba8 => "rgba8",
             .rgba8_srgb => "rgba8_srgb",
+            .bgra8 => "bgra8",
+            .bgra8_srgb => "bgra8_srgb",
             .rg8 => "rg8",
             .r8 => "r8",
             .rgba16f => "rgba16f",
+            .d32f => "d32f",
+            .d32f_s8 => "d32f_s8",
+            .d24_s8 => "d24_s8",
         };
     }
+};
+
+pub const AttachmentLoadOp = enum(u8) {
+    load,
+    clear,
+    dont_care,
+
+    pub fn name(self: AttachmentLoadOp) []const u8 {
+        return switch (self) {
+            .load => "load",
+            .clear => "clear",
+            .dont_care => "dont_care",
+        };
+    }
+};
+
+pub const AttachmentStoreOp = enum(u8) {
+    store,
+    dont_care,
+
+    pub fn name(self: AttachmentStoreOp) []const u8 {
+        return switch (self) {
+            .store => "store",
+            .dont_care => "dont_care",
+        };
+    }
+};
+
+pub const AttachmentLayout = enum(u8) {
+    undefined,
+    color_attachment,
+    depth_stencil_attachment,
+    present_src,
+
+    pub fn name(self: AttachmentLayout) []const u8 {
+        return switch (self) {
+            .undefined => "undefined",
+            .color_attachment => "color_attachment",
+            .depth_stencil_attachment => "depth_stencil_attachment",
+            .present_src => "present",
+        };
+    }
+};
+
+pub const Attachment = packed struct {
+    format: ImageFormat,
+    load_op: AttachmentLoadOp,
+    store_op: AttachmentStoreOp,
+    stencil_load_op: AttachmentLoadOp,
+    stencil_store_op: AttachmentStoreOp,
+    initial_layout: AttachmentLayout,
+    final_layout: AttachmentLayout,
+};
+
+pub const RenderPassOptions = struct {
+    color_attachments: []const Attachment,
+    depth_attachment: ?Attachment = null,
+    debug_name: ?[]const u8 = null,
 };
 
 pub const TextureTiling = enum(u8) {
@@ -285,12 +353,14 @@ const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
     getSwapchainSize: *const fn (framebuffer_handle: FramebufferHandle) [2]u32,
+    getSurfaceColorFormat: *const fn () anyerror!ImageFormat,
+    getSurfaceDepthFormat: *const fn () anyerror!ImageFormat,
     getUniformAlignment: *const fn () u32,
     getMaxFramesInFlight: *const fn () u32,
     getCurrentFrameInFlight: *const fn () u32,
     createFramebuffer: *const fn (window_handle: platform.WindowHandle, render_pass_handle: RenderPassHandle) anyerror!FramebufferHandle,
     destroyFramebuffer: *const fn (framebuffer_handle: FramebufferHandle) void,
-    createRenderPass: *const fn () anyerror!RenderPassHandle,
+    createRenderPass: *const fn (options: RenderPassOptions) anyerror!RenderPassHandle,
     destroyRenderPass: *const fn (render_pass_handle: RenderPassHandle) void,
     createShader: *const fn (reader: std.io.AnyReader, options: ShaderOptions) anyerror!ShaderHandle,
     destroyShader: *const fn (shader_handle: ShaderHandle) void,
@@ -349,6 +419,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .init = noop.init,
                 .deinit = noop.deinit,
                 .getSwapchainSize = noop.getSwapchainSize,
+                .getSurfaceColorFormat = noop.getSurfaceColorFormat,
+                .getSurfaceDepthFormat = noop.getSurfaceDepthFormat,
                 .getUniformAlignment = noop.getUniformAlignment,
                 .getMaxFramesInFlight = noop.getMaxFramesInFlight,
                 .getCurrentFrameInFlight = noop.getCurrentFrameInFlight,
@@ -395,6 +467,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .init = vulkan.init,
                 .deinit = vulkan.deinit,
                 .getSwapchainSize = vulkan.getSwapchainSize,
+                .getSurfaceColorFormat = vulkan.getSurfaceColorFormat,
+                .getSurfaceDepthFormat = vulkan.getSurfaceDepthFormat,
                 .getUniformAlignment = vulkan.getUniformAlignment,
                 .getMaxFramesInFlight = vulkan.getMaxFramesInFlight,
                 .getCurrentFrameInFlight = vulkan.getCurrentFrameInFlight,
@@ -477,6 +551,16 @@ pub inline fn getSwapchainSize(framebuffer_handle: FramebufferHandle) [2]u32 {
     return v_tab.getSwapchainSize(framebuffer_handle);
 }
 
+/// Returns the color format of the swapchain.
+pub inline fn getSurfaceColorFormat() !ImageFormat {
+    return v_tab.getSurfaceColorFormat();
+}
+
+/// Returns the depth format of the swapchain.
+pub inline fn getSurfaceDepthFormat() !ImageFormat {
+    return v_tab.getSurfaceDepthFormat();
+}
+
 /// Returns the stride of a uniform buffer.
 pub inline fn getUniformAlignment() u32 {
     return v_tab.getUniformAlignment();
@@ -506,8 +590,8 @@ pub inline fn destroyFramebuffer(handle: FramebufferHandle) void {
 }
 
 /// Creates a render pass.
-pub fn createRenderPass() !RenderPassHandle {
-    return try v_tab.createRenderPass();
+pub fn createRenderPass(options: RenderPassOptions) !RenderPassHandle {
+    return try v_tab.createRenderPass(options);
 }
 
 /// Destroys a render pass.

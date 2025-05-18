@@ -469,7 +469,7 @@ pub fn beginRenderPass(
         c.VkRenderPassBeginInfo,
         .{
             .sType = c.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass = vk.render_pass.get(render_pass_handle),
+            .renderPass = vk.render_pass.get(render_pass_handle).handle,
             .framebuffer = framebuffer,
             .renderArea = .{
                 .offset = .{ .x = 0, .y = 0 },

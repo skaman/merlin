@@ -409,16 +409,6 @@ fn prepareTextureParams(args: PrepareTextureParams) !TextureParams {
     };
 }
 
-fn formatFromGfxTextureFormat(format: gfx.ImageFormat) c.VkFormat {
-    switch (format) {
-        .rgba8 => return c.VK_FORMAT_R8G8B8A8_UNORM,
-        .rgba8_srgb => return c.VK_FORMAT_R8G8B8A8_SRGB,
-        .rg8 => return c.VK_FORMAT_R8G8_UNORM,
-        .r8 => return c.VK_FORMAT_R8_UNORM,
-        .rgba16f => return c.VK_FORMAT_R16G16B16A16_SFLOAT,
-    }
-}
-
 fn tilingFromGfxTextureTiling(tiling: gfx.TextureTiling) c.VkImageTiling {
     switch (tiling) {
         .optimal => return c.VK_IMAGE_TILING_OPTIMAL,
@@ -542,7 +532,7 @@ pub fn create(
     options: gfx.TextureOptions,
 ) !gfx.TextureHandle {
     const params = try prepareTextureParams(.{
-        .format = formatFromGfxTextureFormat(options.format),
+        .format = vk.vulkanFormatFromGfxImageFormat(options.format),
         .width = options.width,
         .height = options.height,
         .depth = options.depth,

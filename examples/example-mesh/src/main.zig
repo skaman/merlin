@@ -356,6 +356,7 @@ pub fn customLog(
 }
 
 pub const std_options: std.Options = .{
+    .log_level = .info,
     .logFn = customLog,
 };
 
@@ -396,7 +397,31 @@ pub fn main() !void {
     );
     defer gfx.deinit();
 
-    const render_pass_handle = try gfx.createRenderPass();
+    const render_pass_handle = try gfx.createRenderPass(
+        .{
+            .color_attachments = &[_]gfx.Attachment{
+                .{
+                    .format = try gfx.getSurfaceColorFormat(),
+                    .load_op = .clear,
+                    .store_op = .store,
+                    .stencil_load_op = .dont_care,
+                    .stencil_store_op = .dont_care,
+                    .initial_layout = .undefined,
+                    .final_layout = .present_src,
+                },
+            },
+            .depth_attachment = .{
+                .format = try gfx.getSurfaceDepthFormat(),
+                .load_op = .clear,
+                .store_op = .dont_care,
+                .stencil_load_op = .dont_care,
+                .stencil_store_op = .dont_care,
+                .initial_layout = .undefined,
+                .final_layout = .depth_stencil_attachment,
+            },
+            .debug_name = "Main Render Pass",
+        },
+    );
     defer gfx.destroyRenderPass(render_pass_handle);
 
     const framebuffer_handle = try gfx.createFramebuffer(

@@ -396,7 +396,7 @@ pub fn getOrCreate(
     const pipeline_layout = vk.pipeline_layouts.get(layout_handle);
     pipeline_value = try create(
         program_handle,
-        vk.render_pass.get(render_pass_handle),
+        vk.render_pass.get(render_pass_handle).handle,
         pipeline_layout.layout,
         debug_options,
         render_options,

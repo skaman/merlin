@@ -5,10 +5,52 @@ const gfx = @import("../gfx.zig");
 const vk = @import("vulkan.zig");
 
 // *********************************************************************************************
+// Structs
+// *********************************************************************************************
+
+pub const DepthImageInfo = struct {
+    format: c.VkFormat,
+};
+
+pub const RenderPass = struct {
+    handle: c.VkRenderPass,
+    depth_image: ?DepthImageInfo,
+    debug_name: ?[]const u8,
+};
+
+// *********************************************************************************************
 // Globals
 // *********************************************************************************************
 
-var _render_passes_to_destroy: std.ArrayList(c.VkRenderPass) = undefined;
+var _render_passes_to_destroy: std.ArrayList(*const RenderPass) = undefined;
+
+// *********************************************************************************************
+// Private API
+// *********************************************************************************************
+
+fn gfxLoadOpToVulkanLoadOp(load_op: gfx.AttachmentLoadOp) c.VkAttachmentLoadOp {
+    switch (load_op) {
+        .clear => return c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .load => return c.VK_ATTACHMENT_LOAD_OP_LOAD,
+        .dont_care => return c.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+    }
+}
+
+fn gfxStoreOpToVulkanStoreOp(store_op: gfx.AttachmentStoreOp) c.VkAttachmentStoreOp {
+    switch (store_op) {
+        .store => return c.VK_ATTACHMENT_STORE_OP_STORE,
+        .dont_care => return c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+    }
+}
+
+fn gfxLayoutToVulkanLayout(layout: gfx.AttachmentLayout) c.VkImageLayout {
+    switch (layout) {
+        .undefined => return c.VK_IMAGE_LAYOUT_UNDEFINED,
+        .color_attachment => return c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+        .depth_stencil_attachment => return c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+        .present_src => return c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+    }
+}
 
 // *********************************************************************************************
 // Public API
@@ -23,34 +65,30 @@ pub fn deinit() void {
     _render_passes_to_destroy.deinit();
 }
 
-pub fn create(format: c.VkFormat) !gfx.RenderPassHandle {
-    const color_attachment = std.mem.zeroInit(
-        c.VkAttachmentDescription,
-        .{
-            .format = format,
-            .samples = c.VK_SAMPLE_COUNT_1_BIT,
-            .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp = c.VK_ATTACHMENT_STORE_OP_STORE,
-            .stencilLoadOp = c.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-        },
-    );
+pub fn create(options: gfx.RenderPassOptions) !gfx.RenderPassHandle {
+    var attachments_count = options.color_attachments.len;
+    if (options.depth_attachment != null) {
+        attachments_count += 1;
+    }
 
-    const depth_attachment = std.mem.zeroInit(
-        c.VkAttachmentDescription,
-        .{
-            .format = try vk.framebuffers.findDepthFormat(),
-            .samples = c.VK_SAMPLE_COUNT_1_BIT,
-            .loadOp = c.VK_ATTACHMENT_LOAD_OP_CLEAR,
-            .storeOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .stencilLoadOp = c.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
-            .stencilStoreOp = c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
-            .initialLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
-            .finalLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        },
-    );
+    const attachments =
+        try vk.arena.alloc(c.VkAttachmentDescription, attachments_count);
+
+    for (options.color_attachments, 0..) |attachment, i| {
+        attachments[i] = std.mem.zeroInit(
+            c.VkAttachmentDescription,
+            .{
+                .format = vk.vulkanFormatFromGfxImageFormat(attachment.format),
+                .samples = c.VK_SAMPLE_COUNT_1_BIT,
+                .loadOp = gfxLoadOpToVulkanLoadOp(attachment.load_op),
+                .storeOp = gfxStoreOpToVulkanStoreOp(attachment.store_op),
+                .stencilLoadOp = gfxLoadOpToVulkanLoadOp(attachment.stencil_load_op),
+                .stencilStoreOp = gfxStoreOpToVulkanStoreOp(attachment.stencil_store_op),
+                .initialLayout = gfxLayoutToVulkanLayout(attachment.initial_layout),
+                .finalLayout = gfxLayoutToVulkanLayout(attachment.final_layout),
+            },
+        );
+    }
 
     const color_attachment_ref = std.mem.zeroInit(
         c.VkAttachmentReference,
@@ -60,23 +98,47 @@ pub fn create(format: c.VkFormat) !gfx.RenderPassHandle {
         },
     );
 
-    const depth_attachment_ref = std.mem.zeroInit(
-        c.VkAttachmentReference,
-        .{
-            .attachment = 1,
-            .layout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        },
-    );
-
-    const subpass = std.mem.zeroInit(
+    var subpass = std.mem.zeroInit(
         c.VkSubpassDescription,
         .{
             .pipelineBindPoint = c.VK_PIPELINE_BIND_POINT_GRAPHICS,
-            .colorAttachmentCount = 1,
+            .colorAttachmentCount = @as(u32, @intCast(options.color_attachments.len)),
             .pColorAttachments = &color_attachment_ref,
-            .pDepthStencilAttachment = &depth_attachment_ref,
         },
     );
+
+    var depth_image_info: ?DepthImageInfo = null;
+    if (options.depth_attachment) |depth_attachment| {
+        const depth_attachment_format =
+            vk.vulkanFormatFromGfxImageFormat(depth_attachment.format);
+        const depth_attachment_descriptor = std.mem.zeroInit(
+            c.VkAttachmentDescription,
+            .{
+                .format = depth_attachment_format,
+                .samples = c.VK_SAMPLE_COUNT_1_BIT,
+                .loadOp = gfxLoadOpToVulkanLoadOp(depth_attachment.load_op),
+                .storeOp = gfxStoreOpToVulkanStoreOp(depth_attachment.store_op),
+                .stencilLoadOp = gfxLoadOpToVulkanLoadOp(depth_attachment.stencil_load_op),
+                .stencilStoreOp = gfxStoreOpToVulkanStoreOp(depth_attachment.stencil_store_op),
+                .initialLayout = gfxLayoutToVulkanLayout(depth_attachment.initial_layout),
+                .finalLayout = gfxLayoutToVulkanLayout(depth_attachment.final_layout),
+            },
+        );
+        attachments[attachments_count - 1] = depth_attachment_descriptor;
+
+        const depth_attachment_ref = std.mem.zeroInit(
+            c.VkAttachmentReference,
+            .{
+                .attachment = @as(u32, @intCast(attachments_count - 1)),
+                .layout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            },
+        );
+        subpass.pDepthStencilAttachment = &depth_attachment_ref;
+
+        depth_image_info = .{
+            .format = depth_attachment_format,
+        };
+    }
 
     const dependency = std.mem.zeroInit(
         c.VkSubpassDependency,
@@ -93,14 +155,12 @@ pub fn create(format: c.VkFormat) !gfx.RenderPassHandle {
         },
     );
 
-    const attachments = [_]c.VkAttachmentDescription{ color_attachment, depth_attachment };
-
     const render_pass_info = std.mem.zeroInit(
         c.VkRenderPassCreateInfo,
         .{
             .sType = c.VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-            .attachmentCount = attachments.len,
-            .pAttachments = &attachments,
+            .attachmentCount = @as(u32, @intCast(attachments.len)),
+            .pAttachments = attachments.ptr,
             .subpassCount = 1,
             .pSubpasses = &subpass,
             .dependencyCount = 1,
@@ -108,11 +168,52 @@ pub fn create(format: c.VkFormat) !gfx.RenderPassHandle {
         },
     );
 
-    var render_pass: c.VkRenderPass = undefined;
+    var render_pass_handle: c.VkRenderPass = undefined;
     try vk.device.createRenderPass(
         &render_pass_info,
-        &render_pass,
+        &render_pass_handle,
     );
+
+    const render_pass = try vk.gpa.create(RenderPass);
+    errdefer vk.gpa.destroy(render_pass);
+
+    render_pass.* = .{
+        .handle = render_pass_handle,
+        .depth_image = depth_image_info,
+        .debug_name = null,
+    };
+
+    vk.log.debug("Created render pass:", .{});
+    if (options.debug_name) |name| {
+        render_pass.debug_name = try vk.gpa.dupe(u8, name);
+        try vk.debug.setObjectName(c.VK_OBJECT_TYPE_RENDER_PASS, render_pass_handle, name);
+        vk.log.debug("  - Name: {s}", .{name});
+    }
+
+    for (options.color_attachments, 0..) |_, i| {
+        const attachment = attachments[i];
+        vk.log.debug("  - Color attachment {d} format: {s}", .{ i, c.string_VkFormat(attachment.format) });
+        vk.log.debug("  - Color attachment {d} samples: {s}", .{ i, c.string_VkSampleCountFlagBits(attachment.samples) });
+        vk.log.debug("  - Color attachment {d} load op: {s}", .{ i, c.string_VkAttachmentLoadOp(attachment.loadOp) });
+        vk.log.debug("  - Color attachment {d} store op: {s}", .{ i, c.string_VkAttachmentStoreOp(attachment.storeOp) });
+        vk.log.debug("  - Color attachment {d} stencil load op: {s}", .{ i, c.string_VkAttachmentLoadOp(attachment.stencilLoadOp) });
+        vk.log.debug("  - Color attachment {d} stencil store op: {s}", .{ i, c.string_VkAttachmentStoreOp(attachment.stencilStoreOp) });
+        vk.log.debug("  - Color attachment {d} initial layout: {s}", .{ i, c.string_VkImageLayout(attachment.initialLayout) });
+        vk.log.debug("  - Color attachment {d} final layout: {s}", .{ i, c.string_VkImageLayout(attachment.finalLayout) });
+    }
+
+    if (options.depth_attachment != null) {
+        const depth_attachment = attachments[attachments_count - 1];
+        vk.log.debug("  - Depth attachment format: {s}", .{c.string_VkFormat(depth_attachment.format)});
+        vk.log.debug("  - Depth attachment samples: {s}", .{c.string_VkSampleCountFlagBits(depth_attachment.samples)});
+        vk.log.debug("  - Depth attachment load op: {s}", .{c.string_VkAttachmentLoadOp(depth_attachment.loadOp)});
+        vk.log.debug("  - Depth attachment store op: {s}", .{c.string_VkAttachmentStoreOp(depth_attachment.storeOp)});
+        vk.log.debug("  - Depth attachment stencil load op: {s}", .{c.string_VkAttachmentLoadOp(depth_attachment.stencilLoadOp)});
+        vk.log.debug("  - Depth attachment stencil store op: {s}", .{c.string_VkAttachmentStoreOp(depth_attachment.stencilStoreOp)});
+        vk.log.debug("  - Depth attachment initial layout: {s}", .{c.string_VkImageLayout(depth_attachment.initialLayout)});
+        vk.log.debug("  - Depth attachment final layout: {s}", .{c.string_VkImageLayout(depth_attachment.finalLayout)});
+    }
+
     return .{ .handle = @ptrCast(render_pass) };
 }
 
@@ -122,15 +223,24 @@ pub fn destroy(render_pass_handle: gfx.RenderPassHandle) void {
         vk.log.err("Failed to append render pass to destroy list: {any}", .{err});
         return;
     };
+
+    if (render_pass.debug_name) |name| {
+        vk.log.debug("Render Pass '{s}' queued for destruction", .{name});
+    }
 }
 
 pub fn destroyPendingResources() void {
     for (_render_passes_to_destroy.items) |render_pass| {
-        vk.device.destroyRenderPass(render_pass);
+        vk.device.destroyRenderPass(render_pass.handle);
+        if (render_pass.debug_name) |name| {
+            vk.log.debug("Render Pass '{s}' destroyed", .{name});
+            vk.gpa.free(name);
+        }
+        vk.gpa.destroy(render_pass);
     }
     _render_passes_to_destroy.clearRetainingCapacity();
 }
 
-pub fn get(render_pass: gfx.RenderPassHandle) c.VkRenderPass {
-    return @ptrCast(render_pass.handle);
+pub fn get(render_pass: gfx.RenderPassHandle) *const RenderPass {
+    return @ptrCast(@alignCast(render_pass.handle));
 }

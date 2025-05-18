@@ -11,6 +11,12 @@ pub fn deinit() void {}
 pub fn getSwapchainSize(_: gfx.FramebufferHandle) [2]u32 {
     return .{ 0, 0 };
 }
+pub fn getSurfaceColorFormat() !gfx.ImageFormat {
+    return gfx.ImageFormat.r8;
+}
+pub fn getSurfaceDepthFormat() !gfx.ImageFormat {
+    return gfx.ImageFormat.r8;
+}
 pub fn getUniformAlignment() u32 {
     return 0;
 }
@@ -24,7 +30,7 @@ pub fn createFramebuffer(_: platform.WindowHandle, _: gfx.RenderPassHandle) !gfx
     return .{ .handle = undefined };
 }
 pub fn destroyFramebuffer(_: gfx.FramebufferHandle) void {}
-pub fn createRenderPass() !gfx.RenderPassHandle {
+pub fn createRenderPass(_: gfx.RenderPassOptions) !gfx.RenderPassHandle {
     return .{ .handle = undefined };
 }
 pub fn destroyRenderPass(_: gfx.RenderPassHandle) void {}

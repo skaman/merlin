@@ -24,7 +24,7 @@ pub const Framebuffer = struct {
     extent: c.VkExtent2D,
     format: c.VkFormat,
     framebuffers: []c.VkFramebuffer,
-    depth_image: vk.image.Image,
+    depth_image: ?vk.image.Image,
     depth_image_view: c.VkImageView,
     framebuffer_invalidated: bool,
     render_pass: c.VkRenderPass,
@@ -498,17 +498,14 @@ fn destroyImageViews(image_views: []c.VkImageView) void {
     vk.log.debug("Image views destroyed", .{});
 }
 
-fn createDepthImage(extent: c.VkExtent2D) !vk.image.Image {
+fn createDepthImage(extent: c.VkExtent2D, format: c.VkFormat) !vk.image.Image {
     std.debug.assert(extent.width > 0 and extent.height > 0);
-
-    const depth_format = try findDepthFormat();
-    std.debug.assert(depth_format != c.VK_FORMAT_UNDEFINED);
 
     const depth_image = try vk.image.create(
         extent.width,
         extent.height,
         1,
-        depth_format,
+        format,
         1,
         1,
         c.VK_IMAGE_TILING_OPTIMAL,
@@ -563,7 +560,6 @@ fn createFrameBuffers(
         image_views,
         &[_]c.VkImageView{null},
     ) == null);
-    std.debug.assert(depth_image_view != null);
     std.debug.assert(extent.width > 0 and extent.height > 0);
     std.debug.assert(render_pass != null);
 
@@ -583,18 +579,20 @@ fn createFrameBuffers(
     }
 
     for (image_views, 0..) |image_view, index| {
-        const attachments = [2]c.VkImageView{
-            image_view,
-            depth_image_view,
-        };
+        const attachments_count: usize = if (depth_image_view != null) 2 else 1;
+        const attachments = try vk.arena.alloc(c.VkImageView, attachments_count);
+        attachments[0] = image_view;
+        if (depth_image_view != null) {
+            attachments[1] = depth_image_view;
+        }
 
         const frame_buffer_create_info = std.mem.zeroInit(
             c.VkFramebufferCreateInfo,
             .{
                 .sType = c.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
                 .renderPass = render_pass,
-                .attachmentCount = attachments.len,
-                .pAttachments = &attachments,
+                .attachmentCount = @as(u32, @intCast(attachments.len)),
+                .pAttachments = attachments.ptr,
                 .width = extent.width,
                 .height = extent.height,
                 .layers = 1,
@@ -828,21 +826,24 @@ pub fn create(
         &[_]c.VkImageView{null},
     ) == null);
 
-    const depth_image = try createDepthImage(extent);
-    errdefer destroyDepthImage(depth_image);
+    var depth_image: ?vk.image.Image = null;
+    errdefer if (depth_image != null) destroyDepthImage(depth_image.?);
 
-    const depth_image_view = try createDepthImageView(depth_image);
-    errdefer destroyDepthImageView(depth_image_view);
-    std.debug.assert(depth_image_view != null);
+    var depth_image_view: c.VkImageView = null;
+    errdefer if (depth_image_view != null) destroyDepthImageView(depth_image_view);
 
     const render_pass = vk.render_pass.get(render_pass_handle);
-    std.debug.assert(render_pass != null);
+    if (render_pass.depth_image) |depth_image_info| {
+        depth_image = try createDepthImage(extent, depth_image_info.format);
+        depth_image_view = try createDepthImageView(depth_image.?);
+        std.debug.assert(depth_image_view != null);
+    }
 
     const framebuffers = try createFrameBuffers(
         image_views,
         depth_image_view,
         extent,
-        render_pass,
+        render_pass.handle,
     );
     errdefer destroyFrameBuffers(framebuffers);
     std.debug.assert(framebuffers.len == image_views.len);
@@ -890,7 +891,7 @@ pub fn create(
         .depth_image = depth_image,
         .depth_image_view = depth_image_view,
         .framebuffer_invalidated = false,
-        .render_pass = render_pass,
+        .render_pass = render_pass.handle,
 
         .command_buffer_handles = command_buffer_handles,
 
@@ -938,8 +939,12 @@ pub fn destroyPendingResources() !void {
         destroySemaphores(framebuffer.render_finished_semaphores);
         vk.gpa.free(framebuffer.render_finished_semaphores);
         destroyFrameBuffers(framebuffer.framebuffers);
-        destroyDepthImageView(framebuffer.depth_image_view);
-        destroyDepthImage(framebuffer.depth_image);
+        if (framebuffer.depth_image_view != null) {
+            destroyDepthImageView(framebuffer.depth_image_view);
+        }
+        if (framebuffer.depth_image != null) {
+            destroyDepthImage(framebuffer.depth_image.?);
+        }
         destroyImageViews(framebuffer.image_views);
         destroySwapchainImages(framebuffer.images);
         destroySwapchain(framebuffer.swap_chain);
@@ -978,8 +983,17 @@ pub fn recreateSwapchain(framebuffer: *Framebuffer) !void {
     try vk.device.deviceWaitIdle();
 
     destroyFrameBuffers(framebuffer.framebuffers);
-    destroyDepthImageView(framebuffer.depth_image_view);
-    destroyDepthImage(framebuffer.depth_image);
+
+    if (framebuffer.depth_image_view != null) {
+        destroyDepthImageView(framebuffer.depth_image_view);
+    }
+
+    var depth_image_format: ?c.VkFormat = null;
+    if (framebuffer.depth_image != null) {
+        depth_image_format = framebuffer.depth_image.?.format;
+        destroyDepthImage(framebuffer.depth_image.?);
+    }
+
     destroyImageViews(framebuffer.image_views);
     destroySwapchainImages(framebuffer.images);
     destroySwapchain(framebuffer.swap_chain);
@@ -1033,12 +1047,17 @@ pub fn recreateSwapchain(framebuffer: *Framebuffer) !void {
         &[_]c.VkImageView{null},
     ) == null);
 
-    const depth_image = try createDepthImage(extent);
-    errdefer destroyDepthImage(depth_image);
+    var depth_image: ?vk.image.Image = null;
+    errdefer if (depth_image != null) destroyDepthImage(depth_image.?);
 
-    const depth_image_view = try createDepthImageView(depth_image);
-    errdefer destroyDepthImageView(depth_image_view);
-    std.debug.assert(depth_image_view != null);
+    var depth_image_view: c.VkImageView = null;
+    errdefer if (depth_image_view != null) destroyDepthImageView(depth_image_view);
+
+    if (depth_image_format) |format| {
+        depth_image = try createDepthImage(extent, format);
+        depth_image_view = try createDepthImageView(depth_image.?);
+        std.debug.assert(depth_image_view != null);
+    }
 
     const framebuffers = try createFrameBuffers(
         image_views,
