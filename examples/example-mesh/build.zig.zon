@@ -13,6 +13,9 @@
         .merlin_gfx = .{
             .path = "../../merlin-gfx",
         },
+        .merlin_imgui = .{
+            .path = "../../merlin-imgui",
+        },
         .merlin_shaderc = .{
             .path = "../../merlin-shaderc",
         },

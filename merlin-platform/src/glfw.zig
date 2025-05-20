@@ -255,7 +255,7 @@ pub fn init(allocator: std.mem.Allocator) !void {
     };
     c.glfwInitAllocator(&glfw_allocator);
 
-    //c.glfwInitHint(c.GLFW_PLATFORM, c.GLFW_PLATFORM_X11);
+    // c.glfwInitHint(c.GLFW_PLATFORM, c.GLFW_PLATFORM_X11);
 
     if (c.glfwInit() != c.GLFW_TRUE) {
         log.err("Failed to initialize GLFW", .{});

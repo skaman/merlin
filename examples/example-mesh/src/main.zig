@@ -2,6 +2,7 @@ const std = @import("std");
 
 const assets = @import("merlin_assets");
 const gfx = @import("merlin_gfx");
+const imgui = @import("merlin_imgui");
 const platform = @import("merlin_platform");
 const utils = @import("merlin_utils");
 const gfx_types = utils.gfx_types;
@@ -253,65 +254,110 @@ pub fn update(
     // gfx.beginDebugLabel("Render geometries", gfx_types.Colors.DarkGreen);
     // defer gfx.endDebugLabel();
 
-    if (!try gfx.beginRenderPass(
+    {
+        if (!try gfx.beginRenderPass(
+            framebuffer_handle,
+            render_pass_handle,
+        )) return;
+        defer gfx.endRenderPass();
+
+        gfx.setViewport(.{ 0, 0 }, swapchain_size);
+        gfx.setScissor(.{ 0, 0 }, swapchain_size);
+
+        gfx.bindProgram(context.program_handle);
+        gfx.bindUniformBuffer(
+            context.mvp_uniform_handle,
+            context.mvp_uniform_buffer_handle,
+            mvp_offset,
+        );
+
+        for (context.meshes.items) |mesh_instance| {
+            const mesh = assets.mesh(mesh_instance.mesh);
+            const material = assets.material(mesh_instance.material);
+
+            gfx.insertDebugLabel(
+                mesh_instance.name,
+                gfx_types.Colors.LightGray,
+            );
+
+            gfx.bindUniformBuffer(
+                assets.materialUniformHandle(),
+                assets.materialUniformBufferHandle(),
+                assets.materialUniformBufferOffset(mesh_instance.material),
+            );
+
+            switch (material.pbr) {
+                .pbr_metallic_roughness => |pbr| {
+                    gfx.bindCombinedSampler(
+                        context.tex_sampler_uniform_handle,
+                        pbr.base_color_texture_handle,
+                    );
+                },
+                .pbr_specular_glossiness => |pbr| {
+                    _ = pbr;
+                    //gfx.bindCombinedSampler(
+                    //    context.tex_sampler_uniform_handle,
+                    //    pbr.diffuse_texture_handle,
+                    //);
+                },
+            }
+
+            gfx.bindPipelineLayout(mesh.pipeline_handle);
+            gfx.bindVertexBuffer(mesh.buffer_handle, mesh.vertex_buffer_offset);
+            gfx.bindIndexBuffer(mesh.buffer_handle, mesh.index_buffer_offset);
+            gfx.drawIndexed(
+                mesh.indices_count,
+                1,
+                0,
+                0,
+                0,
+                mesh.index_type,
+            );
+        }
+    }
+
+    try gfx.waitRenderPass(
         framebuffer_handle,
         render_pass_handle,
-    )) return;
-    defer gfx.endRenderPass();
-
-    gfx.setViewport(.{ 0, 0 }, swapchain_size);
-    gfx.setScissor(.{ 0, 0 }, swapchain_size);
-
-    gfx.bindProgram(context.program_handle);
-    gfx.bindUniformBuffer(
-        context.mvp_uniform_handle,
-        context.mvp_uniform_buffer_handle,
-        mvp_offset,
     );
 
-    for (context.meshes.items) |mesh_instance| {
-        const mesh = assets.mesh(mesh_instance.mesh);
-        const material = assets.material(mesh_instance.material);
+    imgui.beginFrame(delta_time);
 
-        gfx.insertDebugLabel(
-            mesh_instance.name,
-            gfx_types.Colors.LightGray,
-        );
+    // _ = imgui.c.igBegin("Statistics", null, imgui.c.ImGuiWindowFlags_None);
+    //
+    // const io = imgui.c.igGetIO_Nil();
+    // try context.framerate_plot_data.append(io.*.Framerate);
+    // if (context.framerate_plot_data.items.len > 2000) {
+    //     _ = context.framerate_plot_data.orderedRemove(0);
+    // }
+    //
+    // const text = try std.fmt.allocPrintZ(
+    //     context.arena_allocator,
+    //     "{d:.3} ms/frame ({d:.1} FPS)",
+    //     .{
+    //         1000.0 / io.*.Framerate,
+    //         io.*.Framerate,
+    //     },
+    // );
+    //
+    // imgui.c.igPlotLines_FloatPtr(
+    //     text.ptr,
+    //     context.framerate_plot_data.items.ptr,
+    //     @intCast(context.framerate_plot_data.items.len),
+    //     0,
+    //     null,
+    //     0.0,
+    //     std.math.floatMax(f32),
+    //     .{ .x = 0, .y = 0 },
+    //     0,
+    // );
+    //
+    // imgui.c.igEnd();
 
-        gfx.bindUniformBuffer(
-            assets.materialUniformHandle(),
-            assets.materialUniformBufferHandle(),
-            assets.materialUniformBufferOffset(mesh_instance.material),
-        );
+    var show_demo_window: bool = true;
+    imgui.c.igShowDemoWindow(&show_demo_window);
 
-        switch (material.pbr) {
-            .pbr_metallic_roughness => |pbr| {
-                gfx.bindCombinedSampler(
-                    context.tex_sampler_uniform_handle,
-                    pbr.base_color_texture_handle,
-                );
-            },
-            .pbr_specular_glossiness => |pbr| {
-                _ = pbr;
-                //gfx.bindCombinedSampler(
-                //    context.tex_sampler_uniform_handle,
-                //    pbr.diffuse_texture_handle,
-                //);
-            },
-        }
-
-        gfx.bindPipelineLayout(mesh.pipeline_handle);
-        gfx.bindVertexBuffer(mesh.buffer_handle, mesh.vertex_buffer_offset);
-        gfx.bindIndexBuffer(mesh.buffer_handle, mesh.index_buffer_offset);
-        gfx.drawIndexed(
-            mesh.indices_count,
-            1,
-            0,
-            0,
-            0,
-            mesh.index_type,
-        );
-    }
+    imgui.endFrame();
 }
 
 // *********************************************************************************************
@@ -424,6 +470,33 @@ pub fn main() !void {
     );
     defer gfx.destroyRenderPass(render_pass_handle);
 
+    const imgui_render_pass_handle = try gfx.createRenderPass(
+        .{
+            .color_attachments = &[_]gfx.Attachment{
+                .{
+                    .format = try gfx.getSurfaceColorFormat(),
+                    .load_op = .load,
+                    .store_op = .store,
+                    .stencil_load_op = .dont_care,
+                    .stencil_store_op = .dont_care,
+                    .initial_layout = .present_src,
+                    .final_layout = .present_src,
+                },
+            },
+            .depth_attachment = .{
+                .format = try gfx.getSurfaceDepthFormat(),
+                .load_op = .dont_care,
+                .store_op = .dont_care,
+                .stencil_load_op = .dont_care,
+                .stencil_store_op = .dont_care,
+                .initial_layout = .undefined,
+                .final_layout = .depth_stencil_attachment,
+            },
+            .debug_name = "ImGui Render Pass",
+        },
+    );
+    defer gfx.destroyRenderPass(imgui_render_pass_handle);
+
     const framebuffer_handle = try gfx.createFramebuffer(
         window_handle,
         render_pass_handle,
@@ -432,6 +505,16 @@ pub fn main() !void {
 
     try assets.init(gpa_allocator);
     defer assets.deinit();
+
+    try imgui.init(
+        gpa_allocator,
+        imgui_render_pass_handle,
+        framebuffer_handle,
+        .{
+            .window_handle = window_handle,
+        },
+    );
+    defer imgui.deinit();
 
     var context = try init(gpa_allocator, arena_allocator);
     defer deinit(&context);

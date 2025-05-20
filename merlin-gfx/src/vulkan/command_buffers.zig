@@ -494,6 +494,81 @@ pub fn endRenderPass(command_buffer_handle: gfx.CommandBufferHandle) void {
     vk.device.cmdEndRenderPass(command_buffer.handle);
 }
 
+pub fn waitRenderPass(
+    command_buffer_handle: gfx.CommandBufferHandle,
+    framebuffer_handle: gfx.FramebufferHandle,
+    render_pass_handle: gfx.RenderPassHandle,
+) !void {
+    const command_buffer = get(command_buffer_handle);
+    const render_pass = vk.render_pass.get(render_pass_handle);
+    const framebuffer = vk.framebuffers.get(framebuffer_handle);
+
+    var barriers_count = render_pass.color_images.len;
+    if (render_pass.depth_image != null) {
+        barriers_count += 1;
+    }
+    const barriers = try vk.arena.alloc(
+        c.VkImageMemoryBarrier,
+        barriers_count,
+    );
+
+    for (0..render_pass.color_images.len) |i| {
+        // TODO: The reason because this work, it's because we only support render_pass
+        // on swapchain and one color image. We need a correct way to handle multiple color
+        // images and not always use the swapchain one!
+        barriers[i] = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
+            .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask = c.VK_ACCESS_SHADER_READ_BIT,
+            .oldLayout = c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .newLayout = c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
+            .image = framebuffer.images[framebuffer.current_image_index],
+            .subresourceRange = .{
+                .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        });
+    }
+
+    if (render_pass.depth_image != null) {
+        barriers[barriers.len - 1] = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
+            .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask = c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
+            .oldLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            .newLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
+            .image = framebuffer.depth_image.?.image,
+            .subresourceRange = .{
+                .aspectMask = c.VK_IMAGE_ASPECT_DEPTH_BIT, // | c.VK_IMAGE_ASPECT_STENCIL_BIT, TODO: we should handle the stencil bit too
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        });
+    }
+
+    vk.device.cmdPipelineBarrier(
+        command_buffer.handle,
+        c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+        c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+        0,
+        0,
+        null,
+        0,
+        null,
+        @as(u32, @intCast(barriers.len)),
+        barriers.ptr,
+    );
+}
+
 pub fn setViewport(
     command_buffer_handle: gfx.CommandBufferHandle,
     viewport: *const c.VkViewport,

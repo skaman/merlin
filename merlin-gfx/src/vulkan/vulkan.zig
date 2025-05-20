@@ -590,6 +590,14 @@ pub fn endRenderPass() void {
     command_buffers.endRenderPass(_current_framebuffer.command_buffer_handles[_current_frame_in_flight]);
 }
 
+pub fn waitRenderPass(framebuffer_handle: gfx.FramebufferHandle, render_pass_handle: gfx.RenderPassHandle) !void {
+    try command_buffers.waitRenderPass(
+        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
+        framebuffer_handle,
+        render_pass_handle,
+    );
+}
+
 pub fn setViewport(position: [2]u32, size: [2]u32) void {
     const vk_viewport = std.mem.zeroInit(
         c.VkViewport,

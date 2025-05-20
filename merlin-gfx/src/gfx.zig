@@ -378,6 +378,7 @@ const VTab = struct {
     endFrame: *const fn () anyerror!void,
     beginRenderPass: *const fn (framebuffer_handle: FramebufferHandle, render_pass_handle: RenderPassHandle) anyerror!bool,
     endRenderPass: *const fn () void,
+    waitRenderPass: *const fn (framebuffer_handle: FramebufferHandle, render_pass_handle: RenderPassHandle) anyerror!void,
     setViewport: *const fn (position: [2]u32, size: [2]u32) void,
     setScissor: *const fn (position: [2]u32, size: [2]u32) void,
     setDebug: *const fn (debug_options: DebugOptions) void,
@@ -444,6 +445,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .endFrame = noop.endFrame,
                 .beginRenderPass = noop.beginRenderPass,
                 .endRenderPass = noop.endRenderPass,
+                .waitRenderPass = noop.waitRenderPass,
                 .setViewport = noop.setViewport,
                 .setScissor = noop.setScissor,
                 .setDebug = noop.setDebug,
@@ -492,6 +494,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .endFrame = vulkan.endFrame,
                 .beginRenderPass = vulkan.beginRenderPass,
                 .endRenderPass = vulkan.endRenderPass,
+                .waitRenderPass = vulkan.waitRenderPass,
                 .setViewport = vulkan.setViewport,
                 .setScissor = vulkan.setScissor,
                 .setDebug = vulkan.setDebug,
@@ -734,6 +737,11 @@ pub inline fn beginRenderPass(framebuffer_handle: FramebufferHandle, render_pass
 /// Ends a render pass.
 pub inline fn endRenderPass() void {
     v_tab.endRenderPass();
+}
+
+/// Waits for a render pass to finish.
+pub inline fn waitRenderPass(framebuffer_handle: FramebufferHandle, render_pass_handle: RenderPassHandle) !void {
+    return v_tab.waitRenderPass(framebuffer_handle, render_pass_handle);
 }
 
 /// Sets the viewport.

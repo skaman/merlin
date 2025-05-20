@@ -8,13 +8,14 @@ const vk = @import("vulkan.zig");
 // Structs
 // *********************************************************************************************
 
-pub const DepthImageInfo = struct {
+pub const ImageInfo = struct {
     format: c.VkFormat,
 };
 
 pub const RenderPass = struct {
     handle: c.VkRenderPass,
-    depth_image: ?DepthImageInfo,
+    color_images: []ImageInfo,
+    depth_image: ?ImageInfo,
     debug_name: ?[]const u8,
 };
 
@@ -73,12 +74,15 @@ pub fn create(options: gfx.RenderPassOptions) !gfx.RenderPassHandle {
 
     const attachments =
         try vk.arena.alloc(c.VkAttachmentDescription, attachments_count);
+    const colors_images = try vk.gpa.alloc(ImageInfo, attachments_count);
 
     for (options.color_attachments, 0..) |attachment, i| {
+        const color_attachment_format =
+            vk.vulkanFormatFromGfxImageFormat(attachment.format);
         attachments[i] = std.mem.zeroInit(
             c.VkAttachmentDescription,
             .{
-                .format = vk.vulkanFormatFromGfxImageFormat(attachment.format),
+                .format = color_attachment_format,
                 .samples = c.VK_SAMPLE_COUNT_1_BIT,
                 .loadOp = gfxLoadOpToVulkanLoadOp(attachment.load_op),
                 .storeOp = gfxStoreOpToVulkanStoreOp(attachment.store_op),
@@ -88,6 +92,9 @@ pub fn create(options: gfx.RenderPassOptions) !gfx.RenderPassHandle {
                 .finalLayout = gfxLayoutToVulkanLayout(attachment.final_layout),
             },
         );
+        colors_images[i] = ImageInfo{
+            .format = color_attachment_format,
+        };
     }
 
     const color_attachment_ref = std.mem.zeroInit(
@@ -107,7 +114,7 @@ pub fn create(options: gfx.RenderPassOptions) !gfx.RenderPassHandle {
         },
     );
 
-    var depth_image_info: ?DepthImageInfo = null;
+    var depth_image_info: ?ImageInfo = null;
     if (options.depth_attachment) |depth_attachment| {
         const depth_attachment_format =
             vk.vulkanFormatFromGfxImageFormat(depth_attachment.format);
@@ -179,6 +186,7 @@ pub fn create(options: gfx.RenderPassOptions) !gfx.RenderPassHandle {
 
     render_pass.* = .{
         .handle = render_pass_handle,
+        .color_images = colors_images,
         .depth_image = depth_image_info,
         .debug_name = null,
     };
@@ -236,6 +244,7 @@ pub fn destroyPendingResources() void {
             vk.log.debug("Render Pass '{s}' destroyed", .{name});
             vk.gpa.free(name);
         }
+        vk.gpa.free(render_pass.color_images);
         vk.gpa.destroy(render_pass);
     }
     _render_passes_to_destroy.clearRetainingCapacity();

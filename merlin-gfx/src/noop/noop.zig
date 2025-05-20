@@ -67,6 +67,7 @@ pub fn beginRenderPass(_: gfx.FramebufferHandle, _: gfx.RenderPassHandle) !bool 
 }
 pub fn endRenderPass() void {}
 pub fn endFrame() !void {}
+pub fn waitRenderPass(_: gfx.FramebufferHandle, _: gfx.RenderPassHandle) !void {}
 pub fn setViewport(_: [2]u32, _: [2]u32) void {}
 pub fn setScissor(_: [2]u32, _: [2]u32) void {}
 pub fn setDebug(_: gfx.DebugOptions) void {}

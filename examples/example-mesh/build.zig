@@ -138,6 +138,11 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
+    const merlin_imgui = b.dependency("merlin_imgui", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     const merlin_assets = b.dependency("merlin_assets", .{
         .target = target,
         .optimize = optimize,
@@ -225,6 +230,7 @@ pub fn build(b: *std.Build) !void {
     example_mesh.root_module.addImport("merlin_platform", merlin_platform.module("merlin_platform"));
     example_mesh.root_module.addImport("merlin_utils", merlin_utils.module("merlin_utils"));
     example_mesh.root_module.addImport("merlin_gfx", merlin_gfx.module("merlin_gfx"));
+    example_mesh.root_module.addImport("merlin_imgui", merlin_imgui.module("merlin_imgui"));
     example_mesh.root_module.addImport("merlin_assets", merlin_assets.module("merlin_assets"));
     example_mesh.root_module.addImport("zmath", zmath.module("root"));
 
