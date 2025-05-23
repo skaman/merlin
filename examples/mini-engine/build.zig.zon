@@ -1,0 +1,32 @@
+.{
+    .name = .mini_engine,
+    .version = "0.0.0",
+    .fingerprint = 0xac786bfc96f95c0,
+
+    .dependencies = .{
+        .merlin_platform = .{
+            .path = "../../merlin-platform",
+        },
+        .merlin_utils = .{
+            .path = "../../merlin-utils",
+        },
+        .merlin_gfx = .{
+            .path = "../../merlin-gfx",
+        },
+        .merlin_imgui = .{
+            .path = "../../merlin-imgui",
+        },
+        .merlin_assets = .{
+            .path = "../../merlin-assets",
+        },
+        .zmath = .{
+            .path = "../../vendor/zmath",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

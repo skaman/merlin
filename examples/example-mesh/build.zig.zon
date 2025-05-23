@@ -4,17 +4,8 @@
     .fingerprint = 0x538b35eaad9de4b4,
 
     .dependencies = .{
-        .merlin_platform = .{
-            .path = "../../merlin-platform",
-        },
-        .merlin_utils = .{
-            .path = "../../merlin-utils",
-        },
-        .merlin_gfx = .{
-            .path = "../../merlin-gfx",
-        },
-        .merlin_imgui = .{
-            .path = "../../merlin-imgui",
+        .mini_engine = .{
+            .path = "../mini-engine",
         },
         .merlin_shaderc = .{
             .path = "../../merlin-shaderc",
@@ -27,12 +18,6 @@
         },
         .merlin_materialc = .{
             .path = "../../merlin-materialc",
-        },
-        .merlin_assets = .{
-            .path = "../../merlin-assets",
-        },
-        .zmath = .{
-            .path = "../../vendor/zmath",
         },
     },
 
