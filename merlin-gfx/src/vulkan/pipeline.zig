@@ -112,6 +112,19 @@ fn blendOpToVulkan(blend_op: gfx.BlendOp) c.VkBlendOp {
     };
 }
 
+fn compareOpToVulkan(compare_op: gfx.CompareOp) c.VkCompareOp {
+    return switch (compare_op) {
+        .never => c.VK_COMPARE_OP_NEVER,
+        .less => c.VK_COMPARE_OP_LESS,
+        .equal => c.VK_COMPARE_OP_EQUAL,
+        .less_or_equal => c.VK_COMPARE_OP_LESS_OR_EQUAL,
+        .greater => c.VK_COMPARE_OP_GREATER,
+        .not_equal => c.VK_COMPARE_OP_NOT_EQUAL,
+        .greater_or_equal => c.VK_COMPARE_OP_GREATER_OR_EQUAL,
+        .always => c.VK_COMPARE_OP_ALWAYS,
+    };
+}
+
 fn create(
     program_handle: gfx.ProgramHandle,
     render_pass: c.VkRenderPass,
@@ -220,15 +233,21 @@ fn create(
         },
     );
 
+    const depth_test_enabled = if (render_options.depth.enabled) c.VK_TRUE else c.VK_FALSE;
+    const depth_write_enabled = if (render_options.depth.write_enabled) c.VK_TRUE else c.VK_FALSE;
+    const depth_compare_op = compareOpToVulkan(render_options.depth.compare_op);
+    const depth_bounds_test_enabled = if (render_options.depth.depth_bounds_test_enabled) c.VK_TRUE else c.VK_FALSE;
+    const depth_stencil_test_enabled = if (render_options.depth.stencil_test_enabled) c.VK_TRUE else c.VK_FALSE;
+
     const depth_stencil = std.mem.zeroInit(
         c.VkPipelineDepthStencilStateCreateInfo,
         .{
             .sType = c.VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO,
-            .depthTestEnable = c.VK_FALSE,
-            .depthWriteEnable = c.VK_TRUE,
-            .depthCompareOp = c.VK_COMPARE_OP_LESS,
-            .depthBoundsTestEnable = c.VK_FALSE,
-            .stencilTestEnable = c.VK_FALSE,
+            .depthTestEnable = depth_test_enabled,
+            .depthWriteEnable = depth_write_enabled,
+            .depthCompareOp = depth_compare_op,
+            .depthBoundsTestEnable = depth_bounds_test_enabled,
+            .stencilTestEnable = depth_stencil_test_enabled,
             .minDepthBounds = 0.0,
             .maxDepthBounds = 1.0,
         },

@@ -281,11 +281,44 @@ pub const FrontFace = enum(u1) {
     }
 };
 
+pub const CompareOp = enum(u3) {
+    never,
+    less,
+    equal,
+    less_or_equal,
+    greater,
+    not_equal,
+    greater_or_equal,
+    always,
+
+    pub fn name(self: CompareOp) []const u8 {
+        return switch (self) {
+            .never => "never",
+            .less => "less",
+            .equal => "equal",
+            .less_or_equal => "less_or_equal",
+            .greater => "greater",
+            .not_equal => "not_equal",
+            .greater_or_equal => "greater_or_equal",
+            .always => "always",
+        };
+    }
+};
+
+pub const DepthOptions = packed struct {
+    enabled: bool = false,
+    write_enabled: bool = true,
+    compare_op: CompareOp = .less,
+    depth_bounds_test_enabled: bool = false,
+    stencil_test_enabled: bool = false,
+};
+
 pub const RenderOptions = packed struct {
     cull_mode: CullMode = .back,
     front_face: FrontFace = .counter_clockwise,
     //msaa: bool = false,
     blend: BlendOptions = .{},
+    depth: DepthOptions = .{},
 };
 
 pub fn UniformArray(comptime THandle: type) type {

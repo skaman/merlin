@@ -249,6 +249,12 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
                 },
             }
 
+            gfx.setRender(.{
+                .cull_mode = .none,
+                .front_face = .counter_clockwise,
+                .depth = .{ .enabled = true },
+            });
+
             gfx.bindPipelineLayout(mesh.pipeline_handle);
             gfx.bindVertexBuffer(mesh.buffer_handle, mesh.vertex_buffer_offset);
             gfx.bindIndexBuffer(mesh.buffer_handle, mesh.index_buffer_offset);
