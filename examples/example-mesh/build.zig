@@ -33,41 +33,41 @@ pub fn build(b: *std.Build) !void {
     });
 
     try mini_engine.addMeshes(b, &[_]mini_engine.SourceMesh{
-        mini_engine.SourceMesh{
+        .{
             .source = "assets/Box/Box.gltf",
             .output = "assets/box.0.mesh",
             .tex_coord = false,
         },
-        mini_engine.SourceMesh{
+        .{
             .source = "assets/BoxTextured/BoxTextured.gltf",
             .output = "assets/box-textured.0.mesh",
         },
-        mini_engine.SourceMesh{
+        .{
             .source = "assets/FlightHelmet/FlightHelmet.gltf",
             .output = "assets/flight-helmet.0.mesh",
             .sub_mesh = 0,
         },
-        mini_engine.SourceMesh{
+        .{
             .source = "assets/FlightHelmet/FlightHelmet.gltf",
             .output = "assets/flight-helmet.1.mesh",
             .sub_mesh = 1,
         },
-        mini_engine.SourceMesh{
+        .{
             .source = "assets/FlightHelmet/FlightHelmet.gltf",
             .output = "assets/flight-helmet.2.mesh",
             .sub_mesh = 2,
         },
-        mini_engine.SourceMesh{
+        .{
             .source = "assets/FlightHelmet/FlightHelmet.gltf",
             .output = "assets/flight-helmet.3.mesh",
             .sub_mesh = 3,
         },
-        mini_engine.SourceMesh{
+        .{
             .source = "assets/FlightHelmet/FlightHelmet.gltf",
             .output = "assets/flight-helmet.4.mesh",
             .sub_mesh = 4,
         },
-        mini_engine.SourceMesh{
+        .{
             .source = "assets/FlightHelmet/FlightHelmet.gltf",
             .output = "assets/flight-helmet.5.mesh",
             .sub_mesh = 5,
@@ -75,11 +75,11 @@ pub fn build(b: *std.Build) !void {
     });
 
     try mini_engine.addMaterials(b, &[_]mini_engine.SourceMaterial{
-        mini_engine.SourceMaterial{
+        .{
             .source = "assets/FlightHelmet/FlightHelmet.gltf",
             .output = "assets/FlightHelmet",
         },
-        mini_engine.SourceMaterial{
+        .{
             .source = "assets/BoxTextured/BoxTextured.gltf",
             .output = "assets/BoxTextured",
         },

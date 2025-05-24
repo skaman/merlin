@@ -32,7 +32,16 @@ pub fn deinit(context: *mini_engine.Context(ContextData)) void {
 }
 
 pub fn update(context: *mini_engine.Context(ContextData)) !void {
+    {
+        if (!try gfx.beginRenderPass(
+            context.framebuffer_handle,
+            context.main_render_pass_handle,
+        )) return;
+        defer gfx.endRenderPass();
+    }
+
     imgui.beginFrame(context.delta_time);
+    defer imgui.endFrame();
 
     _ = imgui.c.igBegin("Statistics", null, imgui.c.ImGuiWindowFlags_None);
 
@@ -67,8 +76,6 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
 
     var show_demo_window: bool = true;
     imgui.c.igShowDemoWindow(&show_demo_window);
-
-    imgui.endFrame();
 }
 
 // *********************************************************************************************
