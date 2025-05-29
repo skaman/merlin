@@ -26,7 +26,7 @@ extern fn ktxTexture2_GetDataSizeUncompressed(
 // *********************************************************************************************
 
 pub const Texture = struct {
-    image: vk.image.Image,
+    image: vk.images.Image,
     image_layout: c.VkImageLayout,
     image_view: c.VkImageView,
     sampler: c.VkSampler,
@@ -225,7 +225,7 @@ fn generateMipmaps(
     };
 
     // Transition base level to SRC_OPTIMAL for blitting.
-    try vk.image.setImageLayout(
+    try vk.images.setImageLayout(
         command_buffer,
         image,
         initial_layout,
@@ -259,7 +259,7 @@ fn generateMipmaps(
         mip_sub_range.layerCount = layer_count;
 
         // Transiton current mip level to transfer dest
-        try vk.image.setImageLayout(
+        try vk.images.setImageLayout(
             command_buffer,
             image,
             c.VK_IMAGE_LAYOUT_UNDEFINED,
@@ -280,7 +280,7 @@ fn generateMipmaps(
 
         // Transiton current mip level to transfer source for read in
         // next iteration.
-        try vk.image.setImageLayout(
+        try vk.images.setImageLayout(
             command_buffer,
             image,
             c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -417,11 +417,11 @@ pub fn tilingFromGfxTextureTiling(tiling: gfx.TextureTiling) c.VkImageTiling {
 }
 
 fn createTexture(
-    image: vk.image.Image,
+    image: vk.images.Image,
     params: TextureParams,
     debug_name: ?[]const u8,
 ) !gfx.TextureHandle {
-    const texture_image_view = try vk.image.createView(
+    const texture_image_view = try vk.images.createViewInternal(
         image.image,
         params.format,
         params.view_type,
@@ -429,7 +429,7 @@ fn createTexture(
         params.num_image_levels,
         params.num_image_layers,
     );
-    errdefer vk.image.destroyView(texture_image_view);
+    errdefer vk.images.destroyViewInternal(texture_image_view);
 
     vk.log.debug("Created texture:", .{});
     if (debug_name) |name| {
@@ -553,7 +553,7 @@ pub fn create(
     else
         transfer_queue;
 
-    var image: vk.image.Image = undefined;
+    var image: vk.images.Image = undefined;
     if (params.tiling == c.VK_IMAGE_TILING_OPTIMAL) {
         var staging_buffer = try vk.buffers.createBuffer(
             size,
@@ -578,7 +578,7 @@ pub fn create(
             return error.TextureDataError;
         }
 
-        image = try vk.image.create(
+        image = try vk.images.createInternal(
             options.width,
             options.height,
             options.depth,
@@ -590,7 +590,7 @@ pub fn create(
             c.VK_IMAGE_LAYOUT_UNDEFINED,
             c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         );
-        errdefer vk.image.destroy(image);
+        errdefer vk.images.destroyInternal(image);
 
         const command_buffer =
             try vk.command_buffers.beginSingleTimeCommands(command_pool);
@@ -623,7 +623,7 @@ pub fn create(
             .layerCount = params.num_image_layers,
         };
 
-        try vk.image.setImageLayout(
+        try vk.images.setImageLayout(
             command_buffer,
             image.image,
             c.VK_IMAGE_LAYOUT_UNDEFINED,
@@ -653,7 +653,7 @@ pub fn create(
                 c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
             );
 
-            try vk.image.setImageLayout(
+            try vk.images.setImageLayout(
                 command_buffer,
                 image.image,
                 c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -671,7 +671,7 @@ pub fn create(
             // have been copied.
             // In this case numImageLevels == This->numLevels
             //subresourceRange.levelCount = numImageLevels;
-            try vk.image.setImageLayout(
+            try vk.images.setImageLayout(
                 command_buffer,
                 image.image,
                 c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -680,7 +680,7 @@ pub fn create(
             );
         }
     } else {
-        image = try vk.image.create(
+        image = try vk.images.createInternal(
             options.width,
             options.height,
             options.depth,
@@ -692,7 +692,7 @@ pub fn create(
             c.VK_IMAGE_LAYOUT_UNDEFINED,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         );
-        errdefer vk.image.destroy(image);
+        errdefer vk.images.destroyInternal(image);
 
         var mapped_data: [*c]u8 = undefined;
         try vk.device.mapMemory(
@@ -729,7 +729,7 @@ pub fn create(
                 c.VK_IMAGE_LAYOUT_PREINITIALIZED,
             );
 
-            try vk.image.setImageLayout(
+            try vk.images.setImageLayout(
                 command_buffer,
                 image.image,
                 c.VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
@@ -751,7 +751,7 @@ pub fn create(
                 .layerCount = params.num_image_layers,
             };
 
-            try vk.image.setImageLayout(
+            try vk.images.setImageLayout(
                 command_buffer,
                 image.image,
                 c.VK_IMAGE_LAYOUT_PREINITIALIZED,
@@ -760,7 +760,7 @@ pub fn create(
             );
         }
     }
-    errdefer vk.image.destroy(image);
+    errdefer vk.images.destroyInternal(image);
 
     return try createTexture(image, params, options.debug_name);
 }
@@ -813,7 +813,7 @@ pub fn createFromKTX(
         .generate_mipmaps = ktx_texture.generateMipmaps,
     });
 
-    var image: vk.image.Image = undefined;
+    var image: vk.images.Image = undefined;
     if (params.tiling == c.VK_IMAGE_TILING_OPTIMAL) {
         const num_copy_regions = ktx_texture.numLevels;
         const texture_size = ktxTexture2_GetDataSizeUncompressed(ktx_texture);
@@ -860,7 +860,7 @@ pub fn createFromKTX(
             ),
         );
 
-        image = try vk.image.create(
+        image = try vk.images.createInternal(
             ktx_texture.baseWidth,
             ktx_texture.baseHeight,
             ktx_texture.baseDepth,
@@ -872,7 +872,7 @@ pub fn createFromKTX(
             c.VK_IMAGE_LAYOUT_UNDEFINED,
             c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
         );
-        errdefer vk.image.destroy(image);
+        errdefer vk.images.destroyInternal(image);
 
         const command_buffer =
             try vk.command_buffers.beginSingleTimeCommands(command_pool);
@@ -906,7 +906,7 @@ pub fn createFromKTX(
             .layerCount = params.num_image_layers,
         };
 
-        try vk.image.setImageLayout(
+        try vk.images.setImageLayout(
             command_buffer,
             image.image,
             c.VK_IMAGE_LAYOUT_UNDEFINED,
@@ -940,7 +940,7 @@ pub fn createFromKTX(
             // have been copied.
             // In this case numImageLevels == This->numLevels
             //subresourceRange.levelCount = numImageLevels;
-            try vk.image.setImageLayout(
+            try vk.images.setImageLayout(
                 command_buffer,
                 image.image,
                 c.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -949,7 +949,7 @@ pub fn createFromKTX(
             );
         }
     } else {
-        image = try vk.image.create(
+        image = try vk.images.createInternal(
             ktx_texture.baseWidth,
             ktx_texture.baseHeight,
             ktx_texture.baseDepth,
@@ -961,7 +961,7 @@ pub fn createFromKTX(
             c.VK_IMAGE_LAYOUT_UNDEFINED,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
         );
-        errdefer vk.image.destroy(image);
+        errdefer vk.images.destroyInternal(image);
 
         var user_data = UserCallbackDataLinear{
             .dest_image = image.image,
@@ -1031,7 +1031,7 @@ pub fn createFromKTX(
                 .layerCount = params.num_image_layers,
             };
 
-            try vk.image.setImageLayout(
+            try vk.images.setImageLayout(
                 command_buffer,
                 image.image,
                 c.VK_IMAGE_LAYOUT_PREINITIALIZED,
@@ -1040,7 +1040,7 @@ pub fn createFromKTX(
             );
         }
     }
-    errdefer vk.image.destroy(image);
+    errdefer vk.images.destroyInternal(image);
 
     return try createTexture(image, params, options.debug_name);
 }
@@ -1060,8 +1060,8 @@ pub fn destroy(handle: gfx.TextureHandle) void {
 pub fn destroyPendingResources() void {
     for (_textures_to_destroy.items) |texture| {
         vk.device.destroySampler(texture.sampler);
-        vk.image.destroyView(texture.image_view);
-        vk.image.destroy(texture.image);
+        vk.images.destroyViewInternal(texture.image_view);
+        vk.images.destroyInternal(texture.image);
         if (texture.debug_name) |name| {
             vk.log.debug("Texture '{s}' destroyed", .{name});
             vk.gpa.free(name);

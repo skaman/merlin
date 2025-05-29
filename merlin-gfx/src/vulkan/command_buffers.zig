@@ -465,7 +465,7 @@ pub fn beginRenderPass(
     );
 
     for (options.color_attachments, 0..) |color_attachment, i| {
-        const image: *const vk.image.Image = @ptrCast(@alignCast(color_attachment.image.handle));
+        const image: *const vk.images.Image = @ptrCast(@alignCast(color_attachment.image.handle));
         const image_view: c.VkImageView = @ptrCast(@alignCast(color_attachment.image_view.handle));
 
         const barrier = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
@@ -532,7 +532,7 @@ pub fn beginRenderPass(
     );
 
     if (options.depth_attachment) |attachment| {
-        const image: *const vk.image.Image = @ptrCast(@alignCast(attachment.image.handle));
+        const image: *const vk.images.Image = @ptrCast(@alignCast(attachment.image.handle));
         const image_view: c.VkImageView = @ptrCast(@alignCast(attachment.image_view.handle));
 
         const barrier = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
@@ -594,14 +594,14 @@ pub fn beginRenderPass(
     );
 
     for (options.color_attachments, 0..) |color_attachment, i| {
-        const image: *const vk.image.Image = @ptrCast(@alignCast(color_attachment.image.handle));
+        const image: *const vk.images.Image = @ptrCast(@alignCast(color_attachment.image.handle));
         command_buffer.current_color_attachment_formats[i] = vk.vulkanFormatFromGfxImageFormat(color_attachment.format);
         command_buffer.current_color_attachment_images[i] = image.image;
     }
     command_buffer.current_color_attachment_count = @intCast(options.color_attachments.len);
 
     if (options.depth_attachment) |depth_attachment| {
-        const image: *const vk.image.Image = @ptrCast(@alignCast(depth_attachment.image.handle));
+        const image: *const vk.images.Image = @ptrCast(@alignCast(depth_attachment.image.handle));
         command_buffer.current_depth_attachment_format = vk.vulkanFormatFromGfxImageFormat(depth_attachment.format);
         command_buffer.current_depth_attachment_image = image.image;
     } else {

@@ -14,7 +14,7 @@ pub const custom_allocator = @import("custom_allocator.zig");
 pub const debug = @import("debug.zig");
 pub const device = @import("device.zig");
 pub const framebuffers = @import("framebuffers.zig");
-pub const image = @import("image.zig");
+pub const images = @import("images.zig");
 pub const instance = @import("instance.zig");
 pub const library = @import("library.zig");
 pub const pipeline = @import("pipeline.zig");
@@ -60,6 +60,7 @@ fn destroyPendingResources() !void {
     programs.destroyPendingResources();
     shaders.destroyPendingResources();
     textures.destroyPendingResources();
+    images.destroyPendingResources();
 }
 
 // *********************************************************************************************
@@ -253,6 +254,7 @@ pub fn init(
     try device.createDescriptorPool(&pool_info, &_descriptor_pool);
     errdefer device.destroyDescriptorPool(_descriptor_pool);
 
+    images.init();
     pipeline_layouts.init();
     pipeline.init();
     buffers.init();
@@ -280,6 +282,7 @@ pub fn deinit() void {
     buffers.deinit();
     pipeline.deinit();
     pipeline_layouts.deinit();
+    images.deinit();
 
     device.destroyDescriptorPool(_descriptor_pool);
 
@@ -356,82 +359,22 @@ pub fn destroyFramebuffer(handle: gfx.FramebufferHandle) void {
 }
 
 pub fn createImage(image_options: gfx.ImageOptions) !gfx.ImageHandle {
-    var usage: c.VkImageUsageFlags = 0;
-    if (image_options.usage.color_attachment)
-        usage |= c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    if (image_options.usage.depth_stencil_attachment)
-        usage |= c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-
-    const properties: u32 = switch (image_options.location) {
-        .host => c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        .device => c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-    };
-
-    const img = try gpa.create(image.Image);
-    img.* = try image.create(
-        image_options.width,
-        image_options.height,
-        image_options.depth,
-        vulkanFormatFromGfxImageFormat(image_options.format),
-        image_options.mip_levels,
-        image_options.array_layers,
-        textures.tilingFromGfxTextureTiling(image_options.tiling),
-        usage,
-        c.VK_IMAGE_LAYOUT_UNDEFINED,
-        properties,
-    );
-    return gfx.ImageHandle{ .handle = @ptrCast(img) };
+    return images.create(image_options);
 }
 
 pub fn destroyImage(handle: gfx.ImageHandle) void {
-    const img: *const image.Image = @ptrCast(@alignCast(handle.handle));
-    image.destroy(img.*);
-    gpa.destroy(img);
+    images.destroy(handle);
 }
 
 pub fn createImageView(
     image_handle: gfx.ImageHandle,
     options: gfx.ImageViewOptions,
 ) !gfx.ImageViewHandle {
-    const img: *const image.Image = @ptrCast(@alignCast(image_handle.handle));
-    const format = vulkanFormatFromGfxImageFormat(options.format);
-
-    var view_type: c.VkImageViewType = undefined;
-    if (options.is_cubemap) {
-        if (options.is_array) {
-            view_type = c.VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
-        } else {
-            view_type = c.VK_IMAGE_VIEW_TYPE_CUBE;
-        }
-    } else {
-        if (options.is_array) {
-            view_type = c.VK_IMAGE_VIEW_TYPE_2D_ARRAY;
-        } else {
-            view_type = c.VK_IMAGE_VIEW_TYPE_2D;
-        }
-    }
-
-    var aspect: c.VkImageAspectFlags = 0;
-    if (options.aspect.color) aspect |= c.VK_IMAGE_ASPECT_COLOR_BIT;
-    if (options.aspect.depth) aspect |= c.VK_IMAGE_ASPECT_DEPTH_BIT;
-    if (options.aspect.stencil) aspect |= c.VK_IMAGE_ASPECT_STENCIL_BIT;
-
-    const image_view = try image.createView(
-        img.image,
-        format,
-        view_type,
-        aspect,
-        options.level_count,
-        options.layer_count,
-    );
-
-    return gfx.ImageViewHandle{ .handle = @ptrCast(image_view) };
+    return images.createView(image_handle, options);
 }
 
 pub fn destroyImageView(handle: gfx.ImageViewHandle) void {
-    const image_view: c.VkImageView = @ptrCast(@alignCast(handle.handle));
-    image.destroyView(image_view);
+    images.destroyView(handle);
 }
 
 pub fn createShader(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderHandle {

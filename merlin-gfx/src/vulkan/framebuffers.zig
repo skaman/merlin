@@ -19,7 +19,7 @@ pub const Framebuffer = struct {
     window_handle: platform.WindowHandle,
     surface: c.VkSurfaceKHR,
     swap_chain: c.VkSwapchainKHR,
-    images: []vk.image.Image,
+    images: []vk.images.Image,
     image_views: []c.VkImageView,
     extent: c.VkExtent2D,
     format: c.VkFormat,
@@ -401,7 +401,7 @@ fn destroySwapchain(swapchain: c.VkSwapchainKHR) void {
 fn createSwapchainImages(
     swapchain: c.VkSwapchainKHR,
     format: c.VkFormat,
-) ![]vk.image.Image {
+) ![]vk.images.Image {
     std.debug.assert(swapchain != null);
 
     const images = try vk.device.getSwapchainImagesKHRAlloc(
@@ -410,7 +410,7 @@ fn createSwapchainImages(
     );
     std.debug.assert(images.len > 0);
 
-    const result = try vk.gpa.alloc(vk.image.Image, images.len);
+    const result = try vk.gpa.alloc(vk.images.Image, images.len);
     errdefer vk.gpa.free(result);
 
     for (images, 0..) |image, index| {
@@ -427,13 +427,13 @@ fn createSwapchainImages(
     return result;
 }
 
-fn destroySwapchainImages(images: []vk.image.Image) void {
+fn destroySwapchainImages(images: []vk.images.Image) void {
     vk.gpa.free(images);
 
     vk.log.debug("Swapchain images destroyed", .{});
 }
 
-fn createImageViews(images: []vk.image.Image) ![]c.VkImageView {
+fn createImageViews(images: []vk.images.Image) ![]c.VkImageView {
     std.debug.assert(images.len > 0);
 
     var image_views = try vk.gpa.alloc(

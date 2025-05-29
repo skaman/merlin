@@ -17,10 +17,30 @@ pub const Image = struct {
 };
 
 // *********************************************************************************************
+// Globals
+// *********************************************************************************************
+
+var _images_to_destroy: std.ArrayList(*const Image) = undefined;
+var _image_views_to_destroy: std.ArrayList(c.VkImageView) = undefined;
+
+// *********************************************************************************************
 // Public API
 // *********************************************************************************************
 
-pub fn create(
+pub fn init() void {
+    _images_to_destroy = .init(vk.gpa);
+    errdefer _images_to_destroy.deinit();
+
+    _image_views_to_destroy = .init(vk.gpa);
+    errdefer _image_views_to_destroy.deinit();
+}
+
+pub fn deinit() void {
+    _images_to_destroy.deinit();
+    _image_views_to_destroy.deinit();
+}
+
+pub fn createInternal(
     width: u32,
     height: u32,
     depth: u32,
@@ -100,12 +120,12 @@ pub fn create(
     };
 }
 
-pub fn destroy(image: Image) void {
+pub fn destroyInternal(image: Image) void {
     vk.device.destroyImage(image.image);
     vk.device.freeMemory(image.memory);
 }
 
-pub fn createView(
+pub fn createViewInternal(
     image: c.VkImage,
     format: c.VkFormat,
     view_type: c.VkImageViewType,
@@ -147,7 +167,7 @@ pub fn createView(
     return view;
 }
 
-pub fn destroyView(view: c.VkImageView) void {
+pub fn destroyViewInternal(view: c.VkImageView) void {
     std.debug.assert(view != null);
     vk.device.destroyImageView(view);
 }
@@ -272,4 +292,100 @@ pub fn setImageLayout(
         1,
         &barrier,
     );
+}
+
+pub fn create(image_options: gfx.ImageOptions) !gfx.ImageHandle {
+    var usage: c.VkImageUsageFlags = 0;
+    if (image_options.usage.color_attachment)
+        usage |= c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if (image_options.usage.depth_stencil_attachment)
+        usage |= c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    const properties: u32 = switch (image_options.location) {
+        .host => c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        .device => c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    };
+
+    const img = try vk.gpa.create(Image);
+    img.* = try createInternal(
+        image_options.width,
+        image_options.height,
+        image_options.depth,
+        vk.vulkanFormatFromGfxImageFormat(image_options.format),
+        image_options.mip_levels,
+        image_options.array_layers,
+        vk.textures.tilingFromGfxTextureTiling(image_options.tiling),
+        usage,
+        c.VK_IMAGE_LAYOUT_UNDEFINED,
+        properties,
+    );
+    return gfx.ImageHandle{ .handle = @ptrCast(img) };
+}
+
+pub fn destroy(handle: gfx.ImageHandle) void {
+    const image: *const Image = @ptrCast(@alignCast(handle.handle));
+    _images_to_destroy.append(image) catch |err| {
+        vk.log.err("Failed to append image to destroy list: {any}", .{err});
+        return;
+    };
+}
+
+pub fn createView(
+    image_handle: gfx.ImageHandle,
+    options: gfx.ImageViewOptions,
+) !gfx.ImageViewHandle {
+    const img: *const Image = @ptrCast(@alignCast(image_handle.handle));
+    const format = vk.vulkanFormatFromGfxImageFormat(options.format);
+
+    var view_type: c.VkImageViewType = undefined;
+    if (options.is_cubemap) {
+        if (options.is_array) {
+            view_type = c.VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+        } else {
+            view_type = c.VK_IMAGE_VIEW_TYPE_CUBE;
+        }
+    } else {
+        if (options.is_array) {
+            view_type = c.VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+        } else {
+            view_type = c.VK_IMAGE_VIEW_TYPE_2D;
+        }
+    }
+
+    var aspect: c.VkImageAspectFlags = 0;
+    if (options.aspect.color) aspect |= c.VK_IMAGE_ASPECT_COLOR_BIT;
+    if (options.aspect.depth) aspect |= c.VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (options.aspect.stencil) aspect |= c.VK_IMAGE_ASPECT_STENCIL_BIT;
+
+    const image_view = try createViewInternal(
+        img.image,
+        format,
+        view_type,
+        aspect,
+        options.level_count,
+        options.layer_count,
+    );
+
+    return gfx.ImageViewHandle{ .handle = @ptrCast(image_view) };
+}
+
+pub fn destroyView(handle: gfx.ImageViewHandle) void {
+    const image_view: c.VkImageView = @ptrCast(@alignCast(handle.handle));
+    _image_views_to_destroy.append(image_view) catch |err| {
+        vk.log.err("Failed to append image view to destroy list: {any}", .{err});
+        return;
+    };
+}
+
+pub fn destroyPendingResources() void {
+    for (_images_to_destroy.items) |image| {
+        destroyInternal(image.*);
+        vk.gpa.destroy(image);
+    }
+    for (_image_views_to_destroy.items) |view| {
+        destroyViewInternal(view);
+    }
+    _images_to_destroy.clearRetainingCapacity();
+    _image_views_to_destroy.clearRetainingCapacity();
 }
