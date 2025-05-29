@@ -19,15 +19,11 @@ pub const Framebuffer = struct {
     window_handle: platform.WindowHandle,
     surface: c.VkSurfaceKHR,
     swap_chain: c.VkSwapchainKHR,
-    images: []c.VkImage,
+    images: []vk.image.Image,
     image_views: []c.VkImageView,
     extent: c.VkExtent2D,
     format: c.VkFormat,
-    framebuffers: []c.VkFramebuffer,
-    depth_image: ?vk.image.Image,
-    depth_image_view: c.VkImageView,
     framebuffer_invalidated: bool,
-    render_pass: c.VkRenderPass,
 
     command_buffer_handles: [vk.MaxFramesInFlight]gfx.CommandBufferHandle,
 
@@ -402,34 +398,43 @@ fn destroySwapchain(swapchain: c.VkSwapchainKHR) void {
     vk.log.debug("Swapchain destroyed", .{});
 }
 
-fn createSwapchainImages(swapchain: c.VkSwapchainKHR) ![]c.VkImage {
+fn createSwapchainImages(
+    swapchain: c.VkSwapchainKHR,
+    format: c.VkFormat,
+) ![]vk.image.Image {
     std.debug.assert(swapchain != null);
 
     const images = try vk.device.getSwapchainImagesKHRAlloc(
-        vk.gpa,
+        vk.arena,
         swapchain,
     );
     std.debug.assert(images.len > 0);
 
+    const result = try vk.gpa.alloc(vk.image.Image, images.len);
+    errdefer vk.gpa.free(result);
+
+    for (images, 0..) |image, index| {
+        result[index] = .{
+            .image = image,
+            .memory = null,
+            .size = 0,
+            .format = format,
+        };
+    }
+
     vk.log.debug("Swapchain images ({d}) created", .{images.len});
 
-    return images;
+    return result;
 }
 
-fn destroySwapchainImages(images: []c.VkImage) void {
+fn destroySwapchainImages(images: []vk.image.Image) void {
     vk.gpa.free(images);
 
     vk.log.debug("Swapchain images destroyed", .{});
 }
 
-fn createImageViews(images: []c.VkImage, format: c.VkFormat) ![]c.VkImageView {
+fn createImageViews(images: []vk.image.Image) ![]c.VkImageView {
     std.debug.assert(images.len > 0);
-    std.debug.assert(std.mem.indexOf(
-        c.VkImage,
-        images,
-        &[_]c.VkImage{null},
-    ) == null);
-    std.debug.assert(format != c.VK_FORMAT_UNDEFINED);
 
     var image_views = try vk.gpa.alloc(
         c.VkImageView,
@@ -451,9 +456,9 @@ fn createImageViews(images: []c.VkImage, format: c.VkFormat) ![]c.VkImageView {
             c.VkImageViewCreateInfo,
             .{
                 .sType = c.VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-                .image = image,
+                .image = image.image,
                 .viewType = c.VK_IMAGE_VIEW_TYPE_2D,
-                .format = format,
+                .format = image.format,
                 .components = c.VkComponentMapping{
                     .r = c.VK_COMPONENT_SWIZZLE_IDENTITY,
                     .g = c.VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -496,135 +501,6 @@ fn destroyImageViews(image_views: []c.VkImageView) void {
     vk.gpa.free(image_views);
 
     vk.log.debug("Image views destroyed", .{});
-}
-
-fn createDepthImage(extent: c.VkExtent2D, format: c.VkFormat) !vk.image.Image {
-    std.debug.assert(extent.width > 0 and extent.height > 0);
-
-    const depth_image = try vk.image.create(
-        extent.width,
-        extent.height,
-        1,
-        format,
-        1,
-        1,
-        c.VK_IMAGE_TILING_OPTIMAL,
-        c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        c.VK_IMAGE_LAYOUT_UNDEFINED,
-        c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-    );
-
-    vk.log.debug("Depth image created", .{});
-
-    return depth_image;
-}
-
-fn destroyDepthImage(depth_image: vk.image.Image) void {
-    vk.image.destroy(depth_image);
-
-    vk.log.debug("Depth image destroyed", .{});
-}
-
-fn createDepthImageView(image: vk.image.Image) !c.VkImageView {
-    const image_view = try vk.image.createView(
-        image.image,
-        image.format,
-        c.VK_IMAGE_VIEW_TYPE_2D,
-        c.VK_IMAGE_ASPECT_DEPTH_BIT,
-        1,
-        1,
-    );
-    std.debug.assert(image_view != null);
-
-    vk.log.debug("Depth image view created", .{});
-
-    return image_view;
-}
-
-fn destroyDepthImageView(image_view: c.VkImageView) void {
-    std.debug.assert(image_view != null);
-
-    vk.device.destroyImageView(image_view);
-    vk.log.debug("Depth image view destroyed", .{});
-}
-
-fn createFrameBuffers(
-    image_views: []c.VkImageView,
-    depth_image_view: c.VkImageView,
-    extent: c.VkExtent2D,
-    render_pass: c.VkRenderPass,
-) ![]c.VkFramebuffer {
-    std.debug.assert(image_views.len > 0);
-    std.debug.assert(std.mem.indexOf(
-        c.VkImageView,
-        image_views,
-        &[_]c.VkImageView{null},
-    ) == null);
-    std.debug.assert(extent.width > 0 and extent.height > 0);
-    std.debug.assert(render_pass != null);
-
-    const framebuffers = try vk.gpa.alloc(
-        c.VkFramebuffer,
-        image_views.len,
-    );
-    errdefer vk.gpa.free(framebuffers);
-
-    @memset(framebuffers, null);
-    errdefer {
-        for (framebuffers) |framebuffer| {
-            if (framebuffer != null) {
-                vk.device.destroyFrameBuffer(framebuffer);
-            }
-        }
-    }
-
-    for (image_views, 0..) |image_view, index| {
-        const attachments_count: usize = if (depth_image_view != null) 2 else 1;
-        const attachments = try vk.arena.alloc(c.VkImageView, attachments_count);
-        attachments[0] = image_view;
-        if (depth_image_view != null) {
-            attachments[1] = depth_image_view;
-        }
-
-        const frame_buffer_create_info = std.mem.zeroInit(
-            c.VkFramebufferCreateInfo,
-            .{
-                .sType = c.VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-                .renderPass = render_pass,
-                .attachmentCount = @as(u32, @intCast(attachments.len)),
-                .pAttachments = attachments.ptr,
-                .width = extent.width,
-                .height = extent.height,
-                .layers = 1,
-            },
-        );
-
-        try vk.device.createFrameBuffer(
-            &frame_buffer_create_info,
-            &framebuffers[index],
-        );
-
-        std.debug.assert(framebuffers[index] != null);
-    }
-
-    vk.log.debug("Framebuffers ({d}) created", .{framebuffers.len});
-
-    return framebuffers;
-}
-
-fn destroyFrameBuffers(framebuffers: []c.VkFramebuffer) void {
-    std.debug.assert(std.mem.indexOf(
-        c.VkFramebuffer,
-        framebuffers,
-        &[_]c.VkFramebuffer{null},
-    ) == null);
-
-    for (framebuffers) |framebuffer| {
-        vk.device.destroyFrameBuffer(framebuffer);
-    }
-    vk.gpa.free(framebuffers);
-
-    vk.log.debug("Framebuffers destroyed", .{});
 }
 
 fn createSemaphores(semaphores: []c.VkSemaphore) !void {
@@ -767,7 +643,6 @@ pub fn deinit() void {
 pub fn create(
     window_handle: platform.WindowHandle,
     command_pool: c.VkCommandPool,
-    render_pass_handle: gfx.RenderPassHandle,
 ) !gfx.FramebufferHandle {
     std.debug.assert(command_pool != null);
 
@@ -805,53 +680,16 @@ pub fn create(
     errdefer destroySwapchain(swapchain);
     std.debug.assert(swapchain != null);
 
-    const images = try createSwapchainImages(swapchain);
-    errdefer destroySwapchainImages(images);
-    std.debug.assert(images.len > 0);
-    std.debug.assert(std.mem.indexOf(
-        c.VkImage,
-        images,
-        &[_]c.VkImage{null},
-    ) == null);
-
-    const image_views = try createImageViews(
-        images,
+    const images = try createSwapchainImages(
+        swapchain,
         surface_format.format,
     );
+    errdefer destroySwapchainImages(images);
+    std.debug.assert(images.len > 0);
+
+    const image_views = try createImageViews(images);
     errdefer destroyImageViews(image_views);
     std.debug.assert(image_views.len == images.len);
-    std.debug.assert(std.mem.indexOf(
-        c.VkImageView,
-        image_views,
-        &[_]c.VkImageView{null},
-    ) == null);
-
-    var depth_image: ?vk.image.Image = null;
-    errdefer if (depth_image != null) destroyDepthImage(depth_image.?);
-
-    var depth_image_view: c.VkImageView = null;
-    errdefer if (depth_image_view != null) destroyDepthImageView(depth_image_view);
-
-    const render_pass = vk.render_pass.get(render_pass_handle);
-    if (render_pass.depth_image) |depth_image_info| {
-        depth_image = try createDepthImage(extent, depth_image_info.format);
-        depth_image_view = try createDepthImageView(depth_image.?);
-        std.debug.assert(depth_image_view != null);
-    }
-
-    const framebuffers = try createFrameBuffers(
-        image_views,
-        depth_image_view,
-        extent,
-        render_pass.handle,
-    );
-    errdefer destroyFrameBuffers(framebuffers);
-    std.debug.assert(framebuffers.len == image_views.len);
-    std.debug.assert(std.mem.indexOf(
-        c.VkFramebuffer,
-        framebuffers,
-        &[_]c.VkFramebuffer{null},
-    ) == null);
 
     var image_available_semaphores: [vk.MaxFramesInFlight]c.VkSemaphore = undefined;
     try createSemaphores(&image_available_semaphores);
@@ -887,11 +725,7 @@ pub fn create(
         .image_views = image_views,
         .extent = extent,
         .format = surface_format.format,
-        .framebuffers = framebuffers,
-        .depth_image = depth_image,
-        .depth_image_view = depth_image_view,
         .framebuffer_invalidated = false,
-        .render_pass = render_pass.handle,
 
         .command_buffer_handles = command_buffer_handles,
 
@@ -938,13 +772,6 @@ pub fn destroyPendingResources() !void {
         destroySemaphores(&framebuffer.image_available_semaphores);
         destroySemaphores(framebuffer.render_finished_semaphores);
         vk.gpa.free(framebuffer.render_finished_semaphores);
-        destroyFrameBuffers(framebuffer.framebuffers);
-        if (framebuffer.depth_image_view != null) {
-            destroyDepthImageView(framebuffer.depth_image_view);
-        }
-        if (framebuffer.depth_image != null) {
-            destroyDepthImage(framebuffer.depth_image.?);
-        }
         destroyImageViews(framebuffer.image_views);
         destroySwapchainImages(framebuffer.images);
         destroySwapchain(framebuffer.swap_chain);
@@ -982,18 +809,6 @@ pub fn getSurfaceFormat(surface: c.VkSurfaceKHR) !c.VkSurfaceFormatKHR {
 pub fn recreateSwapchain(framebuffer: *Framebuffer) !void {
     try vk.device.deviceWaitIdle();
 
-    destroyFrameBuffers(framebuffer.framebuffers);
-
-    if (framebuffer.depth_image_view != null) {
-        destroyDepthImageView(framebuffer.depth_image_view);
-    }
-
-    var depth_image_format: ?c.VkFormat = null;
-    if (framebuffer.depth_image != null) {
-        depth_image_format = framebuffer.depth_image.?.format;
-        destroyDepthImage(framebuffer.depth_image.?);
-    }
-
     destroyImageViews(framebuffer.image_views);
     destroySwapchainImages(framebuffer.images);
     destroySwapchain(framebuffer.swap_chain);
@@ -1026,61 +841,24 @@ pub fn recreateSwapchain(framebuffer: *Framebuffer) !void {
     errdefer destroySwapchain(swapchain);
     std.debug.assert(swapchain != null);
 
-    const images = try createSwapchainImages(swapchain);
+    const images = try createSwapchainImages(
+        swapchain,
+        surface_format.format,
+    );
     errdefer destroySwapchainImages(images);
     std.debug.assert(images.len > 0);
-    std.debug.assert(std.mem.indexOf(
-        c.VkImage,
-        images,
-        &[_]c.VkImage{null},
-    ) == null);
 
     const image_views = try createImageViews(
         images,
-        surface_format.format,
     );
     errdefer destroyImageViews(image_views);
     std.debug.assert(image_views.len == images.len);
-    std.debug.assert(std.mem.indexOf(
-        c.VkImageView,
-        image_views,
-        &[_]c.VkImageView{null},
-    ) == null);
-
-    var depth_image: ?vk.image.Image = null;
-    errdefer if (depth_image != null) destroyDepthImage(depth_image.?);
-
-    var depth_image_view: c.VkImageView = null;
-    errdefer if (depth_image_view != null) destroyDepthImageView(depth_image_view);
-
-    if (depth_image_format) |format| {
-        depth_image = try createDepthImage(extent, format);
-        depth_image_view = try createDepthImageView(depth_image.?);
-        std.debug.assert(depth_image_view != null);
-    }
-
-    const framebuffers = try createFrameBuffers(
-        image_views,
-        depth_image_view,
-        extent,
-        framebuffer.render_pass,
-    );
-    errdefer destroyFrameBuffers(framebuffers);
-    std.debug.assert(framebuffers.len == image_views.len);
-    std.debug.assert(std.mem.indexOf(
-        c.VkFramebuffer,
-        framebuffers,
-        &[_]c.VkFramebuffer{null},
-    ) == null);
 
     framebuffer.format = surface_format.format;
     framebuffer.extent = extent;
     framebuffer.swap_chain = swapchain;
     framebuffer.images = images;
     framebuffer.image_views = image_views;
-    framebuffer.depth_image = depth_image;
-    framebuffer.depth_image_view = depth_image_view;
-    framebuffer.framebuffers = framebuffers;
 }
 
 pub fn getSwapchainSize(handle: gfx.FramebufferHandle) [2]u32 {

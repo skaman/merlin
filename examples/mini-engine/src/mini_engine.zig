@@ -11,8 +11,6 @@ pub const InitContext = struct {
     gpa_allocator: std.mem.Allocator,
     arena_allocator: std.mem.Allocator,
     window_handle: platform.WindowHandle,
-    main_render_pass_handle: gfx.RenderPassHandle,
-    ui_render_pass_handle: gfx.RenderPassHandle,
     framebuffer_handle: gfx.FramebufferHandle,
 };
 
@@ -21,8 +19,6 @@ pub fn Context(comptime T: type) type {
         gpa_allocator: std.mem.Allocator,
         arena_allocator: std.mem.Allocator,
         window_handle: platform.WindowHandle,
-        main_render_pass_handle: gfx.RenderPassHandle,
-        ui_render_pass_handle: gfx.RenderPassHandle,
         framebuffer_handle: gfx.FramebufferHandle,
         delta_time: f32,
         total_time: f32,
@@ -153,66 +149,10 @@ pub fn run_engine(
     );
     defer gfx.deinit();
 
-    // Main render pass
-    const main_render_pass_handle = try gfx.createRenderPass(
-        .{
-            .color_attachments = &[_]gfx.Attachment{
-                .{
-                    .format = try gfx.getSurfaceColorFormat(),
-                    .load_op = .clear,
-                    .store_op = .store,
-                    .stencil_load_op = .dont_care,
-                    .stencil_store_op = .dont_care,
-                    .initial_layout = .undefined,
-                    .final_layout = .present_src,
-                },
-            },
-            .depth_attachment = .{
-                .format = try gfx.getSurfaceDepthFormat(),
-                .load_op = .clear,
-                .store_op = .dont_care,
-                .stencil_load_op = .dont_care,
-                .stencil_store_op = .dont_care,
-                .initial_layout = .undefined,
-                .final_layout = .depth_stencil_attachment,
-            },
-            .debug_name = "Main Render Pass",
-        },
-    );
-    defer gfx.destroyRenderPass(main_render_pass_handle);
-
-    // UI render pass
-    const ui_render_pass_handle = try gfx.createRenderPass(
-        .{
-            .color_attachments = &[_]gfx.Attachment{
-                .{
-                    .format = try gfx.getSurfaceColorFormat(),
-                    .load_op = .load,
-                    .store_op = .store,
-                    .stencil_load_op = .dont_care,
-                    .stencil_store_op = .dont_care,
-                    .initial_layout = .present_src,
-                    .final_layout = .present_src,
-                },
-            },
-            .depth_attachment = .{
-                .format = try gfx.getSurfaceDepthFormat(),
-                .load_op = .dont_care,
-                .store_op = .dont_care,
-                .stencil_load_op = .dont_care,
-                .stencil_store_op = .dont_care,
-                .initial_layout = .undefined,
-                .final_layout = .depth_stencil_attachment,
-            },
-            .debug_name = "UI Render Pass",
-        },
-    );
-    defer gfx.destroyRenderPass(ui_render_pass_handle);
-
     // Framebuffer
     const framebuffer_handle = try gfx.createFramebuffer(
         window_handle,
-        main_render_pass_handle,
+        // main_render_pass_handle,
     );
     defer gfx.destroyFramebuffer(framebuffer_handle);
 
@@ -223,7 +163,7 @@ pub fn run_engine(
     // ImGUI
     try imgui.init(
         gpa_allocator,
-        ui_render_pass_handle,
+        // ui_render_pass_handle,
         framebuffer_handle,
         .{
             .window_handle = window_handle,
@@ -235,8 +175,6 @@ pub fn run_engine(
         .gpa_allocator = gpa_allocator,
         .arena_allocator = arena_allocator,
         .window_handle = window_handle,
-        .main_render_pass_handle = main_render_pass_handle,
-        .ui_render_pass_handle = ui_render_pass_handle,
         .framebuffer_handle = framebuffer_handle,
     });
 
@@ -244,8 +182,6 @@ pub fn run_engine(
         .gpa_allocator = gpa_allocator,
         .arena_allocator = arena_allocator,
         .window_handle = window_handle,
-        .main_render_pass_handle = main_render_pass_handle,
-        .ui_render_pass_handle = ui_render_pass_handle,
         .framebuffer_handle = framebuffer_handle,
         .delta_time = 0.0,
         .total_time = 0.0,

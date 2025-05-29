@@ -409,7 +409,7 @@ fn prepareTextureParams(args: PrepareTextureParams) !TextureParams {
     };
 }
 
-fn tilingFromGfxTextureTiling(tiling: gfx.TextureTiling) c.VkImageTiling {
+pub fn tilingFromGfxTextureTiling(tiling: gfx.TextureTiling) c.VkImageTiling {
     switch (tiling) {
         .optimal => return c.VK_IMAGE_TILING_OPTIMAL,
         .linear => return c.VK_IMAGE_TILING_LINEAR,

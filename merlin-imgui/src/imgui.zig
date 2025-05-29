@@ -65,7 +65,7 @@ var _frag_shader_handle: gfx.ShaderHandle = undefined;
 var _program_handle: gfx.ProgramHandle = undefined;
 var _tex_uniform_handle: gfx.NameHandle = undefined;
 var _pipeline_layout_handle: gfx.PipelineLayoutHandle = undefined;
-var _render_pass_handle: gfx.RenderPassHandle = undefined;
+// var _render_pass_handle: gfx.RenderPassHandle = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -507,14 +507,26 @@ fn draw(
     draw_data: [*c]c.ImDrawData,
     viewport_data: *ViewportData,
     window_handle: platform.WindowHandle,
-    render_pass_handle: gfx.RenderPassHandle,
+    // render_pass_handle: gfx.RenderPassHandle,
 ) !void {
-    const framebuffer_handle = viewport_data.framebuffer_handle orelse _main_framebuffer_handle;
-    if (!try gfx.beginRenderPass(
-        framebuffer_handle,
-        render_pass_handle,
-    )) return;
-    defer gfx.endRenderPass();
+    // const framebuffer_handle = viewport_data.framebuffer_handle orelse _main_framebuffer_handle;
+    // const render_pass_options = gfx.RenderPassOptions{
+    //     .color_attachments = &[_]gfx.Attachment{
+    //         .{
+    //             .image = gfx.getSurfaceImage(framebuffer_handle),
+    //             .image_view = gfx.getSurfaceImageView(framebuffer_handle),
+    //             .format = gfx.getSurfaceColorFormat(),
+    //             .load_op = .dont_care,
+    //             .store_op = .store,
+    //         },
+    //     },
+    //     .depth_attachment = null,
+    // };
+    // if (!try gfx.beginRenderPass(
+    //     framebuffer_handle,
+    //     render_pass_options,
+    // )) return;
+    // defer gfx.endRenderPass();
 
     if (draw_data.*.TotalVtxCount > 0) {
         const framebuffer_size = platform.windowFramebufferSize(window_handle); // TODO: this should be the swapchain size? (from gfx)
@@ -720,7 +732,7 @@ fn createWindow(viewport: ?*c.ImGuiViewport) callconv(.c) void {
 
     const framebuffer_handle = gfx.createFramebuffer(
         window_handle,
-        _render_pass_handle,
+        // _render_pass_handle,
     ) catch |err| {
         log.err("Failed to create framebuffer: {}", .{err});
         return;
@@ -837,15 +849,38 @@ fn renderWindow(viewport: ?*c.ImGuiViewport, _: ?*anyopaque) callconv(.c) void {
     const window_handle: platform.WindowHandle = .{ .handle = viewport.?.PlatformHandle.? };
     const viewport_data: ?*ViewportData = @ptrCast(@alignCast(viewport.?.PlatformUserData));
     if (viewport_data) |data| {
-        if (data.window_owned) {
-            draw(
-                viewport.?.DrawData,
-                viewport_data.?,
-                window_handle,
-                _render_pass_handle,
-            ) catch |err| {
-                log.err("Failed to render ImGui: {}", .{err});
+        const framebuffer_handle = data.framebuffer_handle;
+        if (data.window_owned and framebuffer_handle != null) {
+            const render_pass_options = gfx.RenderPassOptions{
+                .color_attachments = &[_]gfx.Attachment{
+                    .{
+                        .image = gfx.getSurfaceImage(framebuffer_handle.?),
+                        .image_view = gfx.getSurfaceImageView(framebuffer_handle.?),
+                        .format = gfx.getSurfaceColorFormat(),
+                        .load_op = .clear,
+                        .store_op = .store,
+                    },
+                },
+                .depth_attachment = null,
             };
+            if (gfx.beginRenderPass(
+                framebuffer_handle.?,
+                render_pass_options,
+            ) catch |err| {
+                log.err("Failed to begin render pass: {}", .{err});
+                return;
+            }) {
+                defer gfx.endRenderPass();
+
+                draw(
+                    viewport.?.DrawData,
+                    viewport_data.?,
+                    window_handle,
+                    // _render_pass_handle,
+                ) catch |err| {
+                    log.err("Failed to render ImGui: {}", .{err});
+                };
+            }
         }
     }
 }
@@ -865,7 +900,7 @@ fn memoryFreeFn(ptr: ?*anyopaque, _: ?*anyopaque) callconv(.c) void {
 
 pub fn init(
     allocator: std.mem.Allocator,
-    render_pass_handle: gfx.RenderPassHandle,
+    // render_pass_handle: gfx.RenderPassHandle,
     framebuffer_handle: gfx.FramebufferHandle,
     options: Options,
 ) !void {
@@ -878,7 +913,7 @@ pub fn init(
 
     _main_window_handle = options.window_handle;
     _main_framebuffer_handle = framebuffer_handle;
-    _render_pass_handle = render_pass_handle;
+    // _render_pass_handle = render_pass_handle;
 
     c.igSetAllocatorFunctions(memoryAllocFn, memoryFreeFn, null);
 
@@ -1053,7 +1088,12 @@ pub fn endFrame() void {
 
     const viewport = c.igGetMainViewport();
     const viewport_data: *ViewportData = @ptrCast(@alignCast(viewport.*.PlatformUserData));
-    draw(draw_data, viewport_data, _main_window_handle, _render_pass_handle) catch |err| {
+    draw(
+        draw_data,
+        viewport_data,
+        _main_window_handle,
+        // _render_pass_handle,
+    ) catch |err| {
         log.err("Failed to render ImGui: {}", .{err});
     };
 

@@ -16,7 +16,6 @@ const Dispatch = struct {
     BeginCommandBuffer: std.meta.Child(c.PFN_vkBeginCommandBuffer) = undefined,
     BindBufferMemory: std.meta.Child(c.PFN_vkBindBufferMemory) = undefined,
     BindImageMemory: std.meta.Child(c.PFN_vkBindImageMemory) = undefined,
-    CmdBeginRenderPass: std.meta.Child(c.PFN_vkCmdBeginRenderPass) = undefined,
     CmdBindDescriptorSets: std.meta.Child(c.PFN_vkCmdBindDescriptorSets) = undefined,
     CmdBindIndexBuffer: std.meta.Child(c.PFN_vkCmdBindIndexBuffer) = undefined,
     CmdBindPipeline: std.meta.Child(c.PFN_vkCmdBindPipeline) = undefined,
@@ -26,7 +25,6 @@ const Dispatch = struct {
     CmdCopyBufferToImage: std.meta.Child(c.PFN_vkCmdCopyBufferToImage) = undefined,
     CmdDraw: std.meta.Child(c.PFN_vkCmdDraw) = undefined,
     CmdDrawIndexed: std.meta.Child(c.PFN_vkCmdDrawIndexed) = undefined,
-    CmdEndRenderPass: std.meta.Child(c.PFN_vkCmdEndRenderPass) = undefined,
     CmdPipelineBarrier: std.meta.Child(c.PFN_vkCmdPipelineBarrier) = undefined,
     CmdPushDescriptorSetKHR: std.meta.Child(c.PFN_vkCmdPushDescriptorSetKHR) = undefined,
     CmdPushConstants: std.meta.Child(c.PFN_vkCmdPushConstants) = undefined,
@@ -42,7 +40,6 @@ const Dispatch = struct {
     CreateImage: std.meta.Child(c.PFN_vkCreateImage) = undefined,
     CreateImageView: std.meta.Child(c.PFN_vkCreateImageView) = undefined,
     CreatePipelineLayout: std.meta.Child(c.PFN_vkCreatePipelineLayout) = undefined,
-    CreateRenderPass: std.meta.Child(c.PFN_vkCreateRenderPass) = undefined,
     CreateSampler: std.meta.Child(c.PFN_vkCreateSampler) = undefined,
     CreateSemaphore: std.meta.Child(c.PFN_vkCreateSemaphore) = undefined,
     CreateShaderModule: std.meta.Child(c.PFN_vkCreateShaderModule) = undefined,
@@ -58,7 +55,6 @@ const Dispatch = struct {
     DestroyImageView: std.meta.Child(c.PFN_vkDestroyImageView) = undefined,
     DestroyPipeline: std.meta.Child(c.PFN_vkDestroyPipeline) = undefined,
     DestroyPipelineLayout: std.meta.Child(c.PFN_vkDestroyPipelineLayout) = undefined,
-    DestroyRenderPass: std.meta.Child(c.PFN_vkDestroyRenderPass) = undefined,
     DestroySampler: std.meta.Child(c.PFN_vkDestroySampler) = undefined,
     DestroySemaphore: std.meta.Child(c.PFN_vkDestroySemaphore) = undefined,
     DestroyShaderModule: std.meta.Child(c.PFN_vkDestroyShaderModule) = undefined,
@@ -82,6 +78,8 @@ const Dispatch = struct {
     UnmapMemory: std.meta.Child(c.PFN_vkUnmapMemory) = undefined,
     UpdateDescriptorSets: std.meta.Child(c.PFN_vkUpdateDescriptorSets) = undefined,
     WaitForFences: std.meta.Child(c.PFN_vkWaitForFences) = undefined,
+    CmdBeginRenderingKHR: std.meta.Child(c.PFN_vkCmdBeginRenderingKHR) = undefined,
+    CmdEndRenderingKHR: std.meta.Child(c.PFN_vkCmdEndRenderingKHR) = undefined,
 };
 const QueueFamilyIndices = struct {
     graphics_family: ?u32 = null,
@@ -350,6 +348,7 @@ pub fn init(
     const device_required_extensions = [_][*:0]const u8{
         c.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
         c.VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+        c.VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
     };
 
     var selected_physical_device: c.VkPhysicalDevice = null;
@@ -454,6 +453,14 @@ pub fn init(
         );
         try device_queue_create_infos.append(device_queue_create_info);
     }
+    var dynamic_rendering_features = std.mem.zeroInit(
+        c.VkPhysicalDeviceDynamicRenderingFeaturesKHR,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES,
+            .dynamicRendering = c.VK_TRUE,
+        },
+    );
+
     var physical_device_features = std.mem.zeroInit(
         c.VkPhysicalDeviceFeatures2,
         .{
@@ -468,6 +475,7 @@ pub fn init(
         c.VkDeviceCreateInfo,
         .{
             .sType = c.VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
+            .pNext = &dynamic_rendering_features,
             .queueCreateInfoCount = @as(u32, @intCast(device_queue_create_infos.items.len)),
             .pQueueCreateInfos = device_queue_create_infos.items.ptr,
             .enabledLayerCount = @as(u32, @intCast(validation_layers.items.len)),
@@ -621,20 +629,6 @@ pub inline fn bindImageMemory(
             memory,
             offset,
         ),
-    );
-}
-
-pub inline fn cmdBeginRenderPass(
-    command_buffer: c.VkCommandBuffer,
-    begin_info: *const c.VkRenderPassBeginInfo,
-    contents: c.VkSubpassContents,
-) !void {
-    std.debug.assert(command_buffer != null);
-
-    dispatch.CmdBeginRenderPass(
-        command_buffer,
-        begin_info,
-        contents,
     );
 }
 
@@ -816,11 +810,6 @@ pub inline fn cmdDrawIndexed(
         vertex_offset,
         first_instance,
     );
-}
-
-pub inline fn cmdEndRenderPass(command_buffer: c.VkCommandBuffer) void {
-    std.debug.assert(command_buffer != null);
-    dispatch.CmdEndRenderPass(command_buffer);
 }
 
 pub inline fn cmdPipelineBarrier(
@@ -1076,21 +1065,6 @@ pub inline fn createPipelineLayout(
     );
 }
 
-pub inline fn createRenderPass(
-    create_info: *const c.VkRenderPassCreateInfo,
-    render_pass: *c.VkRenderPass,
-) !void {
-    try vk.checkVulkanError(
-        "Failed to create Vulkan render pass",
-        dispatch.CreateRenderPass(
-            handle,
-            create_info,
-            vk.instance.allocation_callbacks,
-            render_pass,
-        ),
-    );
-}
-
 pub inline fn createSampler(
     create_info: *const c.VkSamplerCreateInfo,
     sampler: *c.VkSampler,
@@ -1237,15 +1211,6 @@ pub inline fn destroyPipelineLayout(pipeline_layout: c.VkPipelineLayout) void {
     dispatch.DestroyPipelineLayout(
         handle,
         pipeline_layout,
-        vk.instance.allocation_callbacks,
-    );
-}
-
-pub inline fn destroyRenderPass(render_pass: c.VkRenderPass) void {
-    std.debug.assert(render_pass != null);
-    dispatch.DestroyRenderPass(
-        handle,
-        render_pass,
         vk.instance.allocation_callbacks,
     );
 }
@@ -1575,4 +1540,17 @@ pub inline fn waitForFences(
             timeout,
         ),
     );
+}
+
+pub inline fn cmdBeginRenderingKHR(
+    command_buffer: c.VkCommandBuffer,
+    rendering_info: *const c.VkRenderingInfo,
+) void {
+    dispatch.CmdBeginRenderingKHR(command_buffer, rendering_info);
+}
+
+pub inline fn cmdEndRenderingKHR(
+    command_buffer: c.VkCommandBuffer,
+) void {
+    dispatch.CmdEndRenderingKHR(command_buffer);
 }

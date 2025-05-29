@@ -25,7 +25,15 @@ const MeshInstance = struct {
     material: assets.MaterialHandle,
 };
 
+const DepthImage = struct {
+    handle: gfx.ImageHandle,
+    view_handle: gfx.ImageViewHandle,
+    size: [2]u32,
+    format: gfx.ImageFormat,
+};
+
 const ContextData = struct {
+    depth_image: ?DepthImage,
     vertex_shader_handle: gfx.ShaderHandle,
     fragment_shader_handle: gfx.ShaderHandle,
     program_handle: gfx.ProgramHandle,
@@ -150,6 +158,7 @@ pub fn init(context: mini_engine.InitContext) !ContextData {
     //});
 
     return .{
+        .depth_image = null,
         .vertex_shader_handle = vert_shader_handle,
         .fragment_shader_handle = frag_shader_handle,
         .program_handle = program_handle,
@@ -169,6 +178,11 @@ pub fn deinit(context: *mini_engine.Context(ContextData)) void {
     gfx.destroyProgram(context.data.program_handle);
     gfx.destroyBuffer(context.data.mvp_uniform_buffer_handle);
     gfx.destroyTexture(context.data.texture_handle);
+
+    if (context.data.depth_image) |depth_image| {
+        gfx.destroyImage(depth_image.handle);
+        gfx.destroyImageView(depth_image.view_handle);
+    }
 }
 
 pub fn update(context: *mini_engine.Context(ContextData)) !void {
@@ -198,11 +212,68 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
         mvp_offset,
     );
 
+    if (context.data.depth_image == null or
+        context.data.depth_image.?.size[0] != swapchain_size[0] or
+        context.data.depth_image.?.size[1] != swapchain_size[1])
     {
-        if (!try gfx.beginRenderPass(
-            context.framebuffer_handle,
-            context.main_render_pass_handle,
-        )) return;
+        if (context.data.depth_image) |old_depth_image| {
+            gfx.destroyImage(old_depth_image.handle);
+            gfx.destroyImageView(old_depth_image.view_handle);
+        }
+
+        const depth_format = gfx.getSurfaceDepthFormat();
+        const depth_image_handle = try gfx.createImage(.{
+            .format = depth_format,
+            .width = swapchain_size[0],
+            .height = swapchain_size[1],
+            .usage = .{
+                .depth_stencil_attachment = true,
+            },
+        });
+        errdefer gfx.destroyImage(depth_image_handle);
+
+        const depth_image_view_handle = try gfx.createImageView(
+            depth_image_handle,
+            .{
+                .format = depth_format,
+                .aspect = .{
+                    .depth = true,
+                },
+            },
+        );
+        errdefer gfx.destroyImageView(depth_image_view_handle);
+
+        context.data.depth_image = .{
+            .handle = depth_image_handle,
+            .view_handle = depth_image_view_handle,
+            .size = swapchain_size,
+            .format = depth_format,
+        };
+    }
+
+    const main_render_pass_options = gfx.RenderPassOptions{
+        .color_attachments = &[_]gfx.Attachment{
+            .{
+                .image = gfx.getSurfaceImage(context.framebuffer_handle),
+                .image_view = gfx.getSurfaceImageView(context.framebuffer_handle),
+                .format = gfx.getSurfaceColorFormat(),
+                .load_op = .clear,
+                .store_op = .store,
+            },
+        },
+        .depth_attachment = .{
+            .image = context.data.depth_image.?.handle,
+            .image_view = context.data.depth_image.?.view_handle,
+            .format = context.data.depth_image.?.format,
+            .load_op = .clear,
+            .store_op = .dont_care,
+        },
+    };
+
+    if (try gfx.beginRenderPass(
+        context.framebuffer_handle,
+        main_render_pass_options,
+    )) {
         defer gfx.endRenderPass();
 
         gfx.beginDebugLabel("Render geometries", gfx_types.Colors.DarkGreen);
@@ -269,17 +340,32 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
         }
     }
 
-    try gfx.waitRenderPass(
-        context.framebuffer_handle,
-        context.main_render_pass_handle,
-    );
+    {
+        const ui_render_pass_options = gfx.RenderPassOptions{
+            .color_attachments = &[_]gfx.Attachment{
+                .{
+                    .image = gfx.getSurfaceImage(context.framebuffer_handle),
+                    .image_view = gfx.getSurfaceImageView(context.framebuffer_handle),
+                    .format = gfx.getSurfaceColorFormat(),
+                    .load_op = .dont_care,
+                    .store_op = .store,
+                },
+            },
+            .depth_attachment = null,
+        };
+        if (try gfx.beginRenderPass(
+            context.framebuffer_handle,
+            ui_render_pass_options,
+        )) {
+            defer gfx.endRenderPass();
+            imgui.beginFrame(context.delta_time);
 
-    imgui.beginFrame(context.delta_time);
+            var show_demo_window: bool = true;
+            imgui.c.igShowDemoWindow(&show_demo_window);
 
-    var show_demo_window: bool = true;
-    imgui.c.igShowDemoWindow(&show_demo_window);
-
-    imgui.endFrame();
+            imgui.endFrame();
+        }
+    }
 }
 
 // *********************************************************************************************

@@ -11,10 +11,17 @@ pub fn deinit() void {}
 pub fn getSwapchainSize(_: gfx.FramebufferHandle) [2]u32 {
     return .{ 0, 0 };
 }
-pub fn getSurfaceColorFormat() !gfx.ImageFormat {
+pub fn getSurfaceImage(_: gfx.FramebufferHandle) gfx.ImageHandle {
+    return .{ .handle = undefined };
+}
+
+pub fn getSurfaceImageView(_: gfx.FramebufferHandle) gfx.ImageViewHandle {
+    return .{ .handle = undefined };
+}
+pub fn getSurfaceColorFormat() gfx.ImageFormat {
     return gfx.ImageFormat.r8;
 }
-pub fn getSurfaceDepthFormat() !gfx.ImageFormat {
+pub fn getSurfaceDepthFormat() gfx.ImageFormat {
     return gfx.ImageFormat.r8;
 }
 pub fn getUniformAlignment() u32 {
@@ -26,14 +33,18 @@ pub fn getMaxFramesInFlight() u32 {
 pub fn getCurrentFrameInFlight() u32 {
     return 0;
 }
-pub fn createFramebuffer(_: platform.WindowHandle, _: gfx.RenderPassHandle) !gfx.FramebufferHandle {
+pub fn createFramebuffer(_: platform.WindowHandle) !gfx.FramebufferHandle {
     return .{ .handle = undefined };
 }
 pub fn destroyFramebuffer(_: gfx.FramebufferHandle) void {}
-pub fn createRenderPass(_: gfx.RenderPassOptions) !gfx.RenderPassHandle {
+pub fn createImage(_: gfx.ImageOptions) !gfx.ImageHandle {
     return .{ .handle = undefined };
 }
-pub fn destroyRenderPass(_: gfx.RenderPassHandle) void {}
+pub fn destroyImage(_: gfx.ImageHandle) void {}
+pub fn createImageView(_: gfx.ImageHandle, _: gfx.ImageViewOptions) !gfx.ImageViewHandle {
+    return .{ .handle = undefined };
+}
+pub fn destroyImageView(_: gfx.ImageViewHandle) void {}
 pub fn createShader(_: std.io.AnyReader, _: gfx.ShaderOptions) !gfx.ShaderHandle {
     return .{ .handle = undefined };
 }
@@ -62,12 +73,11 @@ pub fn destroyTexture(_: gfx.TextureHandle) void {}
 pub fn beginFrame() !bool {
     return true;
 }
-pub fn beginRenderPass(_: gfx.FramebufferHandle, _: gfx.RenderPassHandle) !bool {
+pub fn beginRenderPass(_: gfx.FramebufferHandle, _: gfx.RenderPassOptions) !bool {
     return false;
 }
 pub fn endRenderPass() void {}
 pub fn endFrame() !void {}
-pub fn waitRenderPass(_: gfx.FramebufferHandle, _: gfx.RenderPassHandle) !void {}
 pub fn setViewport(_: [2]u32, _: [2]u32) void {}
 pub fn setScissor(_: [2]u32, _: [2]u32) void {}
 pub fn setDebug(_: gfx.DebugOptions) void {}

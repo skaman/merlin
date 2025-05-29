@@ -248,6 +248,9 @@ pub fn setImageLayout(
             }
             barrier.dstAccessMask = c.VK_ACCESS_SHADER_READ_BIT;
         },
+        c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR => {
+            barrier.dstAccessMask = c.VK_ACCESS_MEMORY_READ_BIT;
+        },
         else => {
             vk.log.err("Unsupported new image layout: {s}", .{c.string_VkImageLayout(new_image_layout)});
             return error.UnsupportedImageLayout;

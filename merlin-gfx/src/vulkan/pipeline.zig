@@ -14,6 +14,7 @@ const vk = @import("vulkan.zig");
 pub const MaxVertexAttributes = 16;
 pub const MaxDescriptorSetBindings = 16;
 pub const MaxPushConstants = 8;
+pub const MaxColorAttachments = 8;
 
 const AttributeType = [@typeInfo(types.VertexComponentType).@"enum".fields.len][4][2]c.VkFormat{
     // i8
@@ -68,20 +69,53 @@ const AttributeType = [@typeInfo(types.VertexComponentType).@"enum".fields.len][
 // *********************************************************************************************
 // Structs
 // *********************************************************************************************
+const PipelineKeyContext = struct {
+    pub fn hash(ctx: PipelineKeyContext, key: PipelineKey) u64 {
+        _ = ctx;
+        var hasher = std.hash.Wyhash.init(0);
+        hasher.update(std.mem.asBytes(&key.program_handle));
+        hasher.update(std.mem.asBytes(&key.pipeline_layout_handle));
+        hasher.update(std.mem.asBytes(&key.debug_options));
+        hasher.update(std.mem.asBytes(&key.render_options));
+        hasher.update(std.mem.asBytes(&key.color_attachment_formats));
+        hasher.update(std.mem.asBytes(&key.depth_attachment_format));
+        return hasher.final();
+    }
+
+    pub fn eql(ctx: PipelineKeyContext, a: PipelineKey, b: PipelineKey) bool {
+        _ = ctx;
+        return std.meta.eql(a.program_handle, b.program_handle) and
+            std.meta.eql(a.pipeline_layout_handle, b.pipeline_layout_handle) and
+            std.meta.eql(a.debug_options, b.debug_options) and
+            std.meta.eql(a.render_options, b.render_options) and
+            std.mem.eql(
+                c.VkFormat,
+                a.color_attachment_formats,
+                b.color_attachment_formats,
+            ) and
+            a.depth_attachment_format == b.depth_attachment_format;
+    }
+};
 
 const PipelineKey = struct {
     program_handle: gfx.ProgramHandle,
     pipeline_layout_handle: gfx.PipelineLayoutHandle,
-    render_pass_handle: gfx.RenderPassHandle,
     debug_options: gfx.DebugOptions,
     render_options: gfx.RenderOptions,
+    color_attachment_formats: []const c.VkFormat,
+    depth_attachment_format: c.VkFormat,
 };
 
 // *********************************************************************************************
 // Globals
 // *********************************************************************************************
 
-var _pipelines: std.AutoHashMap(PipelineKey, c.VkPipeline) = undefined;
+var _pipelines: std.HashMap(
+    PipelineKey,
+    c.VkPipeline,
+    PipelineKeyContext,
+    80,
+) = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -127,13 +161,12 @@ fn compareOpToVulkan(compare_op: gfx.CompareOp) c.VkCompareOp {
 
 fn create(
     program_handle: gfx.ProgramHandle,
-    render_pass: c.VkRenderPass,
     vertex_layout: types.VertexLayout,
     debug_options: gfx.DebugOptions,
     render_options: gfx.RenderOptions,
+    color_attachment_formats: []const c.VkFormat,
+    depth_attachment_format: c.VkFormat,
 ) !c.VkPipeline {
-    std.debug.assert(render_pass != null);
-
     const binding_description = std.mem.zeroInit(
         c.VkVertexInputBindingDescription,
         .{
@@ -320,10 +353,23 @@ fn create(
         },
     };
 
+    const pipeline_rendering_create_info = std.mem.zeroInit(
+        c.VkPipelineRenderingCreateInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+            .viewMask = 0,
+            .colorAttachmentCount = @as(u32, @intCast(color_attachment_formats.len)),
+            .pColorAttachmentFormats = color_attachment_formats.ptr,
+            .depthAttachmentFormat = depth_attachment_format,
+            .stencilAttachmentFormat = c.VK_FORMAT_UNDEFINED,
+        },
+    );
+
     const pipeline_create_info = std.mem.zeroInit(
         c.VkGraphicsPipelineCreateInfo,
         .{
             .sType = c.VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
+            .pNext = &pipeline_rendering_create_info,
             .stageCount = 2,
             .pStages = &stages,
             .pVertexInputState = &vertex_input_info,
@@ -335,9 +381,6 @@ fn create(
             .pColorBlendState = &color_blending,
             .pDynamicState = &dynamic_state,
             .layout = program.pipeline_layout,
-            .renderPass = render_pass,
-            .subpass = 0,
-            //.basePipelineHandle = c.VK_NULL_HANDLE,
         },
     );
 
@@ -396,16 +439,19 @@ pub fn deinit() void {
 pub fn getOrCreate(
     program_handle: gfx.ProgramHandle,
     layout_handle: gfx.PipelineLayoutHandle,
-    render_pass_handle: gfx.RenderPassHandle,
+    // render_pass_handle: gfx.RenderPassHandle,
     debug_options: gfx.DebugOptions,
     render_options: gfx.RenderOptions,
+    color_attachment_formats: []const c.VkFormat,
+    depth_attachment_format: c.VkFormat,
 ) !c.VkPipeline {
     const key = PipelineKey{
         .program_handle = program_handle,
         .pipeline_layout_handle = layout_handle,
-        .render_pass_handle = render_pass_handle,
         .debug_options = debug_options,
         .render_options = render_options,
+        .color_attachment_formats = color_attachment_formats,
+        .depth_attachment_format = depth_attachment_format,
     };
     var pipeline_value = _pipelines.get(key);
     if (pipeline_value != null) {
@@ -415,10 +461,11 @@ pub fn getOrCreate(
     const pipeline_layout = vk.pipeline_layouts.get(layout_handle);
     pipeline_value = try create(
         program_handle,
-        vk.render_pass.get(render_pass_handle).handle,
         pipeline_layout.layout,
         debug_options,
         render_options,
+        color_attachment_formats,
+        depth_attachment_format,
     );
     try _pipelines.put(key, pipeline_value.?);
     return pipeline_value.?;

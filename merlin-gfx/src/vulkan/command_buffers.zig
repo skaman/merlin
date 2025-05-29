@@ -40,7 +40,11 @@ pub const CommandBuffer = struct {
     current_debug_options: gfx.DebugOptions = .{},
     current_render_options: gfx.RenderOptions = .{},
     current_program_handle: ?gfx.ProgramHandle = null,
-    current_render_pass_handle: ?gfx.RenderPassHandle = null,
+    current_color_attachment_count: u32 = 0,
+    current_color_attachment_images: [vk.pipeline.MaxColorAttachments]c.VkImage = undefined,
+    current_color_attachment_formats: [vk.pipeline.MaxColorAttachments]c.VkFormat = undefined,
+    current_depth_attachment_image: c.VkImage = null,
+    current_depth_attachment_format: c.VkFormat = c.VK_FORMAT_UNDEFINED,
     current_vertex_buffer_handle: ?gfx.BufferHandle = null,
     current_vertex_buffer_offset: u32 = 0,
     current_index_buffer_handle: ?gfx.BufferHandle = null,
@@ -48,11 +52,7 @@ pub const CommandBuffer = struct {
     current_uniform_bindings: std.AutoHashMap(gfx.NameHandle, UniformBinding) = undefined,
     current_push_constants: std.ArrayList(PushConstantBinding) = undefined,
 
-    last_pipeline_layout_handle: ?gfx.PipelineLayoutHandle = null,
-    last_pipeline_program_handle: ?gfx.ProgramHandle = null,
-    last_pipeline_render_pass_handle: ?gfx.RenderPassHandle = null,
-    last_pipeline_debug_options: gfx.DebugOptions = .{},
-    last_pipeline_render_options: gfx.RenderOptions = .{},
+    is_pipeline_valid: bool = false,
     last_vertex_buffer_handle: ?gfx.BufferHandle = null,
     last_vertex_buffer_offset: u32 = 0,
     last_index_buffer_handle: ?gfx.BufferHandle = null,
@@ -63,7 +63,9 @@ pub const CommandBuffer = struct {
         self.current_debug_options = .{};
         self.current_render_options = .{};
         self.current_program_handle = null;
-        self.current_render_pass_handle = null;
+        self.current_color_attachment_count = 0;
+        self.current_depth_attachment_image = null;
+        self.current_depth_attachment_format = c.VK_FORMAT_UNDEFINED;
         self.current_vertex_buffer_handle = null;
         self.current_vertex_buffer_offset = 0;
         self.current_index_buffer_handle = null;
@@ -71,11 +73,8 @@ pub const CommandBuffer = struct {
         self.current_uniform_bindings.clearRetainingCapacity();
         self.current_push_constants.clearRetainingCapacity();
 
-        self.last_pipeline_layout_handle = null;
-        self.last_pipeline_program_handle = null;
-        self.last_pipeline_render_pass_handle = null;
-        self.last_pipeline_debug_options = .{};
-        self.last_pipeline_render_options = .{};
+        self.is_pipeline_valid = false;
+
         self.last_vertex_buffer_handle = null;
         self.last_vertex_buffer_offset = 0;
         self.last_index_buffer_handle = null;
@@ -87,30 +86,41 @@ pub const CommandBuffer = struct {
 // Private API
 // *********************************************************************************************
 
+fn gfxLoadOpToVulkanLoadOp(load_op: gfx.AttachmentLoadOp) c.VkAttachmentLoadOp {
+    switch (load_op) {
+        .clear => return c.VK_ATTACHMENT_LOAD_OP_CLEAR,
+        .load => return c.VK_ATTACHMENT_LOAD_OP_LOAD,
+        .dont_care => return c.VK_ATTACHMENT_LOAD_OP_DONT_CARE,
+    }
+}
+
+fn gfxStoreOpToVulkanStoreOp(store_op: gfx.AttachmentStoreOp) c.VkAttachmentStoreOp {
+    switch (store_op) {
+        .store => return c.VK_ATTACHMENT_STORE_OP_STORE,
+        .dont_care => return c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
+    }
+}
+
 fn handleBindPipeline(
     command_buffer_handle: gfx.CommandBufferHandle,
     program_handle: gfx.ProgramHandle,
     pipeline_layout_handle: gfx.PipelineLayoutHandle,
-    render_pass_handle: gfx.RenderPassHandle,
+    // render_pass_handle: gfx.RenderPassHandle,
+    color_attachment_formats: []const c.VkFormat,
+    depth_attachment_format: c.VkFormat,
     debug_options: gfx.DebugOptions,
     render_options: gfx.RenderOptions,
 ) !void {
     var command_buffer = get(command_buffer_handle);
-    if (command_buffer.last_pipeline_program_handle == program_handle and
-        command_buffer.last_pipeline_layout_handle == pipeline_layout_handle and
-        command_buffer.last_pipeline_render_pass_handle == render_pass_handle and
-        command_buffer.last_pipeline_debug_options == debug_options and
-        command_buffer.last_pipeline_render_options == render_options)
-    {
-        return;
-    }
+    if (command_buffer.is_pipeline_valid) return;
 
     const pipeline = try vk.pipeline.getOrCreate(
         program_handle,
         pipeline_layout_handle,
-        render_pass_handle,
         debug_options,
         render_options,
+        color_attachment_formats,
+        depth_attachment_format,
     );
     std.debug.assert(pipeline != null);
 
@@ -120,11 +130,7 @@ fn handleBindPipeline(
         pipeline,
     );
 
-    command_buffer.last_pipeline_program_handle = program_handle;
-    command_buffer.last_pipeline_layout_handle = pipeline_layout_handle;
-    command_buffer.last_pipeline_render_pass_handle = render_pass_handle;
-    command_buffer.last_pipeline_debug_options = debug_options;
-    command_buffer.last_pipeline_render_options = render_options;
+    command_buffer.is_pipeline_valid = true;
 }
 
 fn handleBindVertexBuffer(command_buffer_handle: gfx.CommandBufferHandle) !void {
@@ -444,88 +450,34 @@ pub fn end(handle: gfx.CommandBufferHandle) !void {
 
 pub fn beginRenderPass(
     command_buffer_handle: gfx.CommandBufferHandle,
-    render_pass_handle: gfx.RenderPassHandle,
-    framebuffer: c.VkFramebuffer,
     extent: c.VkExtent2D,
+    options: gfx.RenderPassOptions,
 ) !void {
-    std.debug.assert(framebuffer != null);
     std.debug.assert(extent.width > 0 and extent.height > 0);
+    std.debug.assert(options.color_attachments.len > 0);
+    std.debug.assert(options.color_attachments.len <= vk.pipeline.MaxColorAttachments);
 
-    const clear_values = [_]c.VkClearValue{
-        .{
-            .color = .{
-                .float32 = [_]f32{ 0.0, 0.0, 0.0, 1.0 },
-            },
-        },
-        .{
-            .depthStencil = .{
-                .depth = 1.0,
-                .stencil = 0,
-            },
-        },
-    };
-
-    const begin_info = std.mem.zeroInit(
-        c.VkRenderPassBeginInfo,
-        .{
-            .sType = c.VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
-            .renderPass = vk.render_pass.get(render_pass_handle).handle,
-            .framebuffer = framebuffer,
-            .renderArea = .{
-                .offset = .{ .x = 0, .y = 0 },
-                .extent = extent,
-            },
-            .clearValueCount = clear_values.len,
-            .pClearValues = &clear_values,
-        },
-    );
     const command_buffer = get(command_buffer_handle);
-    command_buffer.current_render_pass_handle = render_pass_handle;
 
-    try vk.device.cmdBeginRenderPass(
-        command_buffer.handle,
-        &begin_info,
-        c.VK_SUBPASS_CONTENTS_INLINE,
-    );
-}
-
-pub fn endRenderPass(command_buffer_handle: gfx.CommandBufferHandle) void {
-    const command_buffer = get(command_buffer_handle);
-    vk.device.cmdEndRenderPass(command_buffer.handle);
-}
-
-pub fn waitRenderPass(
-    command_buffer_handle: gfx.CommandBufferHandle,
-    framebuffer_handle: gfx.FramebufferHandle,
-    render_pass_handle: gfx.RenderPassHandle,
-) !void {
-    const command_buffer = get(command_buffer_handle);
-    const render_pass = vk.render_pass.get(render_pass_handle);
-    const framebuffer = vk.framebuffers.get(framebuffer_handle);
-
-    var barriers_count = render_pass.color_images.len;
-    if (render_pass.depth_image != null) {
-        barriers_count += 1;
-    }
-    const barriers = try vk.arena.alloc(
-        c.VkImageMemoryBarrier,
-        barriers_count,
+    const color_attachments = try vk.arena.alloc(
+        c.VkRenderingAttachmentInfoKHR,
+        options.color_attachments.len,
     );
 
-    for (0..render_pass.color_images.len) |i| {
-        // TODO: The reason because this work, it's because we only support render_pass
-        // on swapchain and one color image. We need a correct way to handle multiple color
-        // images and not always use the swapchain one!
-        barriers[i] = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
+    for (options.color_attachments, 0..) |color_attachment, i| {
+        const image: *const vk.image.Image = @ptrCast(@alignCast(color_attachment.image.handle));
+        const image_view: c.VkImageView = @ptrCast(@alignCast(color_attachment.image_view.handle));
+
+        const barrier = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
             .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .srcAccessMask = c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-            .dstAccessMask = c.VK_ACCESS_SHADER_READ_BIT,
-            .oldLayout = c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            .newLayout = c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .srcAccessMask = 0,
+            .dstAccessMask = c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .oldLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-            .image = framebuffer.images[framebuffer.current_image_index],
-            .subresourceRange = .{
+            .image = image.image,
+            .subresourceRange = c.VkImageSubresourceRange{
                 .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
                 .baseMipLevel = 0,
                 .levelCount = 1,
@@ -533,40 +485,170 @@ pub fn waitRenderPass(
                 .layerCount = 1,
             },
         });
+
+        vk.device.cmdPipelineBarrier(
+            command_buffer.handle,
+            c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            0,
+            0,
+            null,
+            0,
+            null,
+            1,
+            &barrier,
+        );
+
+        color_attachments[i] = std.mem.zeroInit(
+            c.VkRenderingAttachmentInfoKHR,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
+                .imageView = image_view,
+                .imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                .resolveMode = c.VK_RESOLVE_MODE_NONE,
+                .loadOp = gfxLoadOpToVulkanLoadOp(color_attachment.load_op),
+                .storeOp = gfxStoreOpToVulkanStoreOp(color_attachment.store_op),
+                .clearValue = c.VkClearValue{
+                    .color = .{
+                        .float32 = [_]f32{ 0.0, 0.0, 0.0, 1.0 },
+                    },
+                },
+            },
+        );
     }
 
-    if (render_pass.depth_image != null) {
-        barriers[barriers.len - 1] = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
+    var begin_info = std.mem.zeroInit(
+        c.VkRenderingInfo,
+        .{
+            .sType = c.VK_STRUCTURE_TYPE_RENDERING_INFO,
+            .renderArea = .{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = extent,
+            },
+            .layerCount = 1,
+            .colorAttachmentCount = @as(u32, @intCast(options.color_attachments.len)),
+            .pColorAttachments = color_attachments.ptr,
+        },
+    );
+
+    if (options.depth_attachment) |attachment| {
+        const image: *const vk.image.Image = @ptrCast(@alignCast(attachment.image.handle));
+        const image_view: c.VkImageView = @ptrCast(@alignCast(attachment.image_view.handle));
+
+        const barrier = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
             .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .srcAccessMask = c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            .dstAccessMask = c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT,
-            .oldLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-            .newLayout = c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            .srcAccessMask = 0,
+            .dstAccessMask = c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            .oldLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
+            .newLayout = c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
             .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-            .image = framebuffer.depth_image.?.image,
-            .subresourceRange = .{
-                .aspectMask = c.VK_IMAGE_ASPECT_DEPTH_BIT, // | c.VK_IMAGE_ASPECT_STENCIL_BIT, TODO: we should handle the stencil bit too
+            .image = image.image,
+            .subresourceRange = c.VkImageSubresourceRange{
+                .aspectMask = c.VK_IMAGE_ASPECT_DEPTH_BIT,
                 .baseMipLevel = 0,
                 .levelCount = 1,
                 .baseArrayLayer = 0,
                 .layerCount = 1,
             },
         });
+
+        vk.device.cmdPipelineBarrier(
+            command_buffer.handle,
+            c.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
+                c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            0,
+            0,
+            null,
+            0,
+            null,
+            1,
+            &barrier,
+        );
+        const depth_attachment = std.mem.zeroInit(
+            c.VkRenderingAttachmentInfoKHR,
+            .{
+                .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
+                .imageView = image_view,
+                .imageLayout = c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                .resolveMode = c.VK_RESOLVE_MODE_NONE,
+                .loadOp = gfxLoadOpToVulkanLoadOp(attachment.load_op),
+                .storeOp = gfxStoreOpToVulkanStoreOp(attachment.store_op),
+                .clearValue = c.VkClearValue{
+                    .depthStencil = .{
+                        .depth = 1.0,
+                        .stencil = 0,
+                    },
+                },
+            },
+        );
+
+        begin_info.pDepthAttachment = &depth_attachment;
     }
 
-    vk.device.cmdPipelineBarrier(
+    vk.device.cmdBeginRenderingKHR(
         command_buffer.handle,
-        c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-        c.VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        0,
-        0,
-        null,
-        0,
-        null,
-        @as(u32, @intCast(barriers.len)),
-        barriers.ptr,
+        &begin_info,
     );
+
+    for (options.color_attachments, 0..) |color_attachment, i| {
+        const image: *const vk.image.Image = @ptrCast(@alignCast(color_attachment.image.handle));
+        command_buffer.current_color_attachment_formats[i] = vk.vulkanFormatFromGfxImageFormat(color_attachment.format);
+        command_buffer.current_color_attachment_images[i] = image.image;
+    }
+    command_buffer.current_color_attachment_count = @intCast(options.color_attachments.len);
+
+    if (options.depth_attachment) |depth_attachment| {
+        const image: *const vk.image.Image = @ptrCast(@alignCast(depth_attachment.image.handle));
+        command_buffer.current_depth_attachment_format = vk.vulkanFormatFromGfxImageFormat(depth_attachment.format);
+        command_buffer.current_depth_attachment_image = image.image;
+    } else {
+        command_buffer.current_depth_attachment_format = c.VK_FORMAT_UNDEFINED;
+        command_buffer.current_depth_attachment_image = null;
+    }
+    command_buffer.is_pipeline_valid = false;
+}
+
+pub fn endRenderPass(command_buffer_handle: gfx.CommandBufferHandle) void {
+    const command_buffer = get(command_buffer_handle);
+    vk.device.cmdEndRenderingKHR(command_buffer.handle);
+
+    for (0..command_buffer.current_color_attachment_count) |i| {
+        const image = command_buffer.current_color_attachment_images[i];
+
+        const barrier = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
+            .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            .srcAccessMask = c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+            .dstAccessMask = c.VK_ACCESS_MEMORY_READ_BIT,
+            .oldLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            .newLayout = c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
+            .image = image,
+            .subresourceRange = c.VkImageSubresourceRange{
+                .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        });
+
+        vk.device.cmdPipelineBarrier(
+            command_buffer.handle,
+            c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            0,
+            0,
+            null,
+            0,
+            null,
+            1,
+            &barrier,
+        );
+    }
 }
 
 pub fn setViewport(
@@ -601,6 +683,7 @@ pub fn setDebug(
 ) void {
     const command_buffer = get(command_buffer_handle);
     command_buffer.current_debug_options = debug_options;
+    command_buffer.is_pipeline_valid = false;
 }
 
 pub fn setRender(
@@ -609,6 +692,7 @@ pub fn setRender(
 ) void {
     const command_buffer = get(command_buffer_handle);
     command_buffer.current_render_options = render_options;
+    command_buffer.is_pipeline_valid = false;
 }
 
 pub fn bindPipelineLayout(
@@ -617,6 +701,7 @@ pub fn bindPipelineLayout(
 ) void {
     const command_buffer = get(command_buffer_handle);
     command_buffer.current_pipeline_layout = pipeline_layout;
+    command_buffer.is_pipeline_valid = false;
 }
 
 pub fn bindProgram(
@@ -625,6 +710,7 @@ pub fn bindProgram(
 ) void {
     const command_buffer = get(command_buffer_handle);
     command_buffer.current_program_handle = program;
+    command_buffer.is_pipeline_valid = false;
 }
 
 pub fn bindVertexBuffer(
@@ -714,7 +800,9 @@ pub fn draw(
     const command_buffer = get(command_buffer_handle);
     const current_layout = command_buffer.current_pipeline_layout;
     const current_program = command_buffer.current_program_handle;
-    const current_render_pass = command_buffer.current_render_pass_handle;
+    const current_color_attachment_count = command_buffer.current_color_attachment_count;
+    const current_color_attachment_formats = command_buffer.current_color_attachment_formats;
+    const current_depth_attachment_format = command_buffer.current_depth_attachment_format;
     const current_debug_options = command_buffer.current_debug_options;
     const current_render_options = command_buffer.current_render_options;
 
@@ -722,7 +810,8 @@ pub fn draw(
         command_buffer_handle,
         current_program.?,
         current_layout.?,
-        current_render_pass.?,
+        current_color_attachment_formats[0..current_color_attachment_count],
+        current_depth_attachment_format,
         current_debug_options,
         current_render_options,
     ) catch {
@@ -766,7 +855,9 @@ pub fn drawIndexed(
     const command_buffer = get(command_buffer_handle);
     const current_layout = command_buffer.current_pipeline_layout;
     const current_program = command_buffer.current_program_handle;
-    const current_render_pass = command_buffer.current_render_pass_handle;
+    const current_color_attachment_count = command_buffer.current_color_attachment_count;
+    const current_color_attachment_formats = command_buffer.current_color_attachment_formats;
+    const current_depth_attachment_format = command_buffer.current_depth_attachment_format;
     const current_debug_options = command_buffer.current_debug_options;
     const current_render_options = command_buffer.current_render_options;
 
@@ -774,7 +865,8 @@ pub fn drawIndexed(
         command_buffer_handle,
         current_program.?,
         current_layout.?,
-        current_render_pass.?,
+        current_color_attachment_formats[0..current_color_attachment_count],
+        current_depth_attachment_format,
         current_debug_options,
         current_render_options,
     ) catch {

@@ -14,11 +14,12 @@ const vulkan = @import("vulkan/vulkan.zig");
 pub const log = std.log.scoped(.gfx);
 
 pub const FramebufferHandle = packed struct { handle: *anyopaque };
-pub const RenderPassHandle = packed struct { handle: *anyopaque };
 pub const ShaderHandle = packed struct { handle: *anyopaque };
 pub const ProgramHandle = packed struct { handle: *anyopaque };
 pub const BufferHandle = packed struct { handle: *anyopaque };
 pub const TextureHandle = packed struct { handle: *anyopaque };
+pub const ImageHandle = packed struct { handle: *anyopaque };
+pub const ImageViewHandle = packed struct { handle: *anyopaque };
 pub const PipelineLayoutHandle = packed struct { handle: *anyopaque };
 pub const CommandBufferHandle = packed struct { handle: *anyopaque };
 pub const NameHandle = packed struct { handle: u64 };
@@ -112,39 +113,20 @@ pub const AttachmentStoreOp = enum(u8) {
     }
 };
 
-pub const AttachmentLayout = enum(u8) {
-    undefined,
-    color_attachment,
-    depth_stencil_attachment,
-    present_src,
-
-    pub fn name(self: AttachmentLayout) []const u8 {
-        return switch (self) {
-            .undefined => "undefined",
-            .color_attachment => "color_attachment",
-            .depth_stencil_attachment => "depth_stencil_attachment",
-            .present_src => "present",
-        };
-    }
-};
-
 pub const Attachment = packed struct {
+    image: ImageHandle,
+    image_view: ImageViewHandle,
     format: ImageFormat,
     load_op: AttachmentLoadOp,
     store_op: AttachmentStoreOp,
-    stencil_load_op: AttachmentLoadOp,
-    stencil_store_op: AttachmentStoreOp,
-    initial_layout: AttachmentLayout,
-    final_layout: AttachmentLayout,
 };
 
 pub const RenderPassOptions = struct {
     color_attachments: []const Attachment,
     depth_attachment: ?Attachment = null,
-    debug_name: ?[]const u8 = null,
 };
 
-pub const TextureTiling = enum(u8) {
+pub const TextureTiling = enum(u8) { // TODO: rename in ImageTiling
     linear,
     optimal,
 
@@ -178,6 +160,55 @@ pub const TextureOptions = struct {
 };
 
 pub const TextureKTXOptions = struct {
+    debug_name: ?[]const u8 = null,
+};
+
+pub const ImageUsage = packed struct(u8) {
+    color_attachment: bool = false,
+    depth_stencil_attachment: bool = false,
+
+    _padding: u6 = 0,
+};
+
+pub const ImageLocation = enum(u8) {
+    host,
+    device,
+
+    pub fn name(self: ImageLocation) []const u8 {
+        return switch (self) {
+            .host => "host",
+            .device => "device",
+        };
+    }
+};
+
+pub const ImageAspect = packed struct(u8) {
+    color: bool = false,
+    depth: bool = false,
+    stencil: bool = false,
+
+    _padding: u5 = 0,
+};
+
+pub const ImageOptions = struct {
+    format: ImageFormat,
+    width: u32,
+    height: u32,
+    depth: u32 = 1,
+    mip_levels: u32 = 1,
+    array_layers: u32 = 1,
+    tiling: TextureTiling = .optimal,
+    usage: ImageUsage = .{},
+    location: ImageLocation = .device,
+};
+
+pub const ImageViewOptions = struct {
+    format: ImageFormat,
+    is_cubemap: bool = false,
+    is_array: bool = false,
+    aspect: ImageAspect = .{},
+    level_count: u32 = 1,
+    layer_count: u32 = 1,
     debug_name: ?[]const u8 = null,
 };
 
@@ -386,15 +417,19 @@ const VTab = struct {
     init: *const fn (allocator: std.mem.Allocator, options: *const Options) anyerror!void,
     deinit: *const fn () void,
     getSwapchainSize: *const fn (framebuffer_handle: FramebufferHandle) [2]u32,
-    getSurfaceColorFormat: *const fn () anyerror!ImageFormat,
-    getSurfaceDepthFormat: *const fn () anyerror!ImageFormat,
+    getSurfaceImage: *const fn (framebuffer_handle: FramebufferHandle) ImageHandle,
+    getSurfaceImageView: *const fn (framebuffer_handle: FramebufferHandle) ImageViewHandle,
+    getSurfaceColorFormat: *const fn () ImageFormat,
+    getSurfaceDepthFormat: *const fn () ImageFormat,
     getUniformAlignment: *const fn () u32,
     getMaxFramesInFlight: *const fn () u32,
     getCurrentFrameInFlight: *const fn () u32,
-    createFramebuffer: *const fn (window_handle: platform.WindowHandle, render_pass_handle: RenderPassHandle) anyerror!FramebufferHandle,
+    createFramebuffer: *const fn (window_handle: platform.WindowHandle) anyerror!FramebufferHandle,
     destroyFramebuffer: *const fn (framebuffer_handle: FramebufferHandle) void,
-    createRenderPass: *const fn (options: RenderPassOptions) anyerror!RenderPassHandle,
-    destroyRenderPass: *const fn (render_pass_handle: RenderPassHandle) void,
+    createImage: *const fn (image_options: ImageOptions) anyerror!ImageHandle,
+    destroyImage: *const fn (image_handle: ImageHandle) void,
+    createImageView: *const fn (image_handle: ImageHandle, options: ImageViewOptions) anyerror!ImageViewHandle,
+    destroyImageView: *const fn (image_view_handle: ImageViewHandle) void,
     createShader: *const fn (reader: std.io.AnyReader, options: ShaderOptions) anyerror!ShaderHandle,
     destroyShader: *const fn (shader_handle: ShaderHandle) void,
     createPipelineLayout: *const fn (vertex_layout: types.VertexLayout) anyerror!PipelineLayoutHandle,
@@ -409,9 +444,8 @@ const VTab = struct {
     destroyTexture: *const fn (texture_handle: TextureHandle) void,
     beginFrame: *const fn () anyerror!bool,
     endFrame: *const fn () anyerror!void,
-    beginRenderPass: *const fn (framebuffer_handle: FramebufferHandle, render_pass_handle: RenderPassHandle) anyerror!bool,
+    beginRenderPass: *const fn (framebuffer_handle: FramebufferHandle, options: RenderPassOptions) anyerror!bool,
     endRenderPass: *const fn () void,
-    waitRenderPass: *const fn (framebuffer_handle: FramebufferHandle, render_pass_handle: RenderPassHandle) anyerror!void,
     setViewport: *const fn (position: [2]u32, size: [2]u32) void,
     setScissor: *const fn (position: [2]u32, size: [2]u32) void,
     setDebug: *const fn (debug_options: DebugOptions) void,
@@ -453,6 +487,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .init = noop.init,
                 .deinit = noop.deinit,
                 .getSwapchainSize = noop.getSwapchainSize,
+                .getSurfaceImage = noop.getSurfaceImage,
+                .getSurfaceImageView = noop.getSurfaceImageView,
                 .getSurfaceColorFormat = noop.getSurfaceColorFormat,
                 .getSurfaceDepthFormat = noop.getSurfaceDepthFormat,
                 .getUniformAlignment = noop.getUniformAlignment,
@@ -460,8 +496,10 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .getCurrentFrameInFlight = noop.getCurrentFrameInFlight,
                 .createFramebuffer = noop.createFramebuffer,
                 .destroyFramebuffer = noop.destroyFramebuffer,
-                .createRenderPass = noop.createRenderPass,
-                .destroyRenderPass = noop.destroyRenderPass,
+                .createImage = noop.createImage,
+                .destroyImage = noop.destroyImage,
+                .createImageView = noop.createImageView,
+                .destroyImageView = noop.destroyImageView,
                 .createShader = noop.createShader,
                 .destroyShader = noop.destroyShader,
                 .createPipelineLayout = noop.createPipelineLayout,
@@ -478,7 +516,6 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .endFrame = noop.endFrame,
                 .beginRenderPass = noop.beginRenderPass,
                 .endRenderPass = noop.endRenderPass,
-                .waitRenderPass = noop.waitRenderPass,
                 .setViewport = noop.setViewport,
                 .setScissor = noop.setScissor,
                 .setDebug = noop.setDebug,
@@ -502,6 +539,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .init = vulkan.init,
                 .deinit = vulkan.deinit,
                 .getSwapchainSize = vulkan.getSwapchainSize,
+                .getSurfaceImage = vulkan.getSurfaceImage,
+                .getSurfaceImageView = vulkan.getSurfaceImageView,
                 .getSurfaceColorFormat = vulkan.getSurfaceColorFormat,
                 .getSurfaceDepthFormat = vulkan.getSurfaceDepthFormat,
                 .getUniformAlignment = vulkan.getUniformAlignment,
@@ -509,8 +548,12 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .getCurrentFrameInFlight = vulkan.getCurrentFrameInFlight,
                 .createFramebuffer = vulkan.createFramebuffer,
                 .destroyFramebuffer = vulkan.destroyFramebuffer,
-                .createRenderPass = vulkan.createRenderPass,
-                .destroyRenderPass = vulkan.destroyRenderPass,
+                .createImage = vulkan.createImage,
+                .destroyImage = vulkan.destroyImage,
+                .createImageView = vulkan.createImageView,
+                .destroyImageView = vulkan.destroyImageView,
+                // .createRenderPass = vulkan.createRenderPass,
+                // .destroyRenderPass = vulkan.destroyRenderPass,
                 .createShader = vulkan.createShader,
                 .destroyShader = vulkan.destroyShader,
                 .createPipelineLayout = vulkan.createPipelineLayout,
@@ -527,7 +570,6 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .endFrame = vulkan.endFrame,
                 .beginRenderPass = vulkan.beginRenderPass,
                 .endRenderPass = vulkan.endRenderPass,
-                .waitRenderPass = vulkan.waitRenderPass,
                 .setViewport = vulkan.setViewport,
                 .setScissor = vulkan.setScissor,
                 .setDebug = vulkan.setDebug,
@@ -587,13 +629,23 @@ pub inline fn getSwapchainSize(framebuffer_handle: FramebufferHandle) [2]u32 {
     return v_tab.getSwapchainSize(framebuffer_handle);
 }
 
+/// Returns the surface image of the swapchain.
+pub inline fn getSurfaceImage(framebuffer_handle: FramebufferHandle) ImageHandle {
+    return v_tab.getSurfaceImage(framebuffer_handle);
+}
+
+/// Returns the surface image view of the swapchain.
+pub inline fn getSurfaceImageView(framebuffer_handle: FramebufferHandle) ImageViewHandle {
+    return v_tab.getSurfaceImageView(framebuffer_handle);
+}
+
 /// Returns the color format of the swapchain.
-pub inline fn getSurfaceColorFormat() !ImageFormat {
+pub inline fn getSurfaceColorFormat() ImageFormat {
     return v_tab.getSurfaceColorFormat();
 }
 
 /// Returns the depth format of the swapchain.
-pub inline fn getSurfaceDepthFormat() !ImageFormat {
+pub inline fn getSurfaceDepthFormat() ImageFormat {
     return v_tab.getSurfaceDepthFormat();
 }
 
@@ -616,8 +668,8 @@ pub inline fn getCurrentFrameInFlight() u32 {
 }
 
 /// Creates a framebuffer.
-pub fn createFramebuffer(window_handle: platform.WindowHandle, render_pass_handle: RenderPassHandle) !FramebufferHandle {
-    return try v_tab.createFramebuffer(window_handle, render_pass_handle);
+pub fn createFramebuffer(window_handle: platform.WindowHandle) !FramebufferHandle {
+    return try v_tab.createFramebuffer(window_handle);
 }
 
 /// Destroys a framebuffer.
@@ -625,14 +677,27 @@ pub inline fn destroyFramebuffer(handle: FramebufferHandle) void {
     v_tab.destroyFramebuffer(handle);
 }
 
-/// Creates a render pass.
-pub fn createRenderPass(options: RenderPassOptions) !RenderPassHandle {
-    return try v_tab.createRenderPass(options);
+/// Creates an image.
+pub fn createImage(options: ImageOptions) !ImageHandle {
+    return try v_tab.createImage(options);
 }
 
-/// Destroys a render pass.
-pub inline fn destroyRenderPass(handle: RenderPassHandle) void {
-    v_tab.destroyRenderPass(handle);
+/// Destroys an image.
+pub inline fn destroyImage(handle: ImageHandle) void {
+    v_tab.destroyImage(handle);
+}
+
+/// Creates an image view.
+pub fn createImageView(
+    image_handle: ImageHandle,
+    options: ImageViewOptions,
+) !ImageViewHandle {
+    return try v_tab.createImageView(image_handle, options);
+}
+
+/// Destroys an image view.
+pub inline fn destroyImageView(handle: ImageViewHandle) void {
+    v_tab.destroyImageView(handle);
 }
 
 /// Creates a shader from a loader.
@@ -763,18 +828,13 @@ pub inline fn endFrame() !void {
 }
 
 /// Begins a render pass.
-pub inline fn beginRenderPass(framebuffer_handle: FramebufferHandle, render_pass_handle: RenderPassHandle) !bool {
-    return v_tab.beginRenderPass(framebuffer_handle, render_pass_handle);
+pub inline fn beginRenderPass(framebuffer_handle: FramebufferHandle, options: RenderPassOptions) !bool {
+    return v_tab.beginRenderPass(framebuffer_handle, options);
 }
 
 /// Ends a render pass.
 pub inline fn endRenderPass() void {
     v_tab.endRenderPass();
-}
-
-/// Waits for a render pass to finish.
-pub inline fn waitRenderPass(framebuffer_handle: FramebufferHandle, render_pass_handle: RenderPassHandle) !void {
-    return v_tab.waitRenderPass(framebuffer_handle, render_pass_handle);
 }
 
 /// Sets the viewport.

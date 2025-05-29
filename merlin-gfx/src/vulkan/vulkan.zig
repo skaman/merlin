@@ -20,7 +20,6 @@ pub const library = @import("library.zig");
 pub const pipeline = @import("pipeline.zig");
 pub const pipeline_layouts = @import("pipeline_layouts.zig");
 pub const programs = @import("programs.zig");
-pub const render_pass = @import("render_pass.zig");
 pub const shaders = @import("shaders.zig");
 pub const textures = @import("textures.zig");
 
@@ -56,7 +55,6 @@ var _surface_format: c.VkSurfaceFormatKHR = undefined;
 // *********************************************************************************************
 
 fn destroyPendingResources() !void {
-    render_pass.destroyPendingResources();
     try framebuffers.destroyPendingResources();
     buffers.destroyPendingResources();
     programs.destroyPendingResources();
@@ -261,7 +259,6 @@ pub fn init(
     programs.init();
     shaders.init();
     textures.init();
-    render_pass.init();
     framebuffers.init();
 }
 
@@ -277,7 +274,6 @@ pub fn deinit() void {
     };
 
     framebuffers.deinit();
-    render_pass.deinit();
     textures.deinit();
     shaders.deinit();
     programs.deinit();
@@ -304,12 +300,36 @@ pub fn getSwapchainSize(handle: gfx.FramebufferHandle) [2]u32 {
     return framebuffers.getSwapchainSize(handle);
 }
 
-pub fn getSurfaceColorFormat() !gfx.ImageFormat {
-    return try gfxImageFormatFromVulkanFormat(_surface_format.format);
+pub fn getSurfaceImage(framebuffer_handle: gfx.FramebufferHandle) gfx.ImageHandle {
+    const framebuffer = framebuffers.get(framebuffer_handle);
+    return gfx.ImageHandle{
+        .handle = @ptrCast(&framebuffer.images[framebuffer.current_image_index]),
+    };
 }
 
-pub fn getSurfaceDepthFormat() !gfx.ImageFormat {
-    return try gfxImageFormatFromVulkanFormat(try framebuffers.findDepthFormat());
+pub fn getSurfaceImageView(framebuffer_handle: gfx.FramebufferHandle) gfx.ImageViewHandle {
+    const framebuffer = framebuffers.get(framebuffer_handle);
+    return gfx.ImageViewHandle{
+        .handle = @ptrCast(framebuffer.image_views[framebuffer.current_image_index]),
+    };
+}
+
+pub fn getSurfaceColorFormat() gfx.ImageFormat {
+    return gfxImageFormatFromVulkanFormat(_surface_format.format) catch |err| {
+        log.err("Failed to get surface color format: {}", .{err});
+        @panic("Failed to get surface color format");
+    };
+}
+
+pub fn getSurfaceDepthFormat() gfx.ImageFormat {
+    const depth_format = framebuffers.findDepthFormat() catch |err| {
+        log.err("Failed to find depth format: {}", .{err});
+        @panic("Failed to find depth format");
+    };
+    return gfxImageFormatFromVulkanFormat(depth_format) catch |err| {
+        log.err("Failed to get surface depth format: {}", .{err});
+        @panic("Failed to get surface depth format");
+    };
 }
 
 pub fn getUniformAlignment() u32 {
@@ -324,14 +344,10 @@ pub fn getCurrentFrameInFlight() u32 {
     return _current_frame_in_flight;
 }
 
-pub fn createFramebuffer(
-    window_handle: platform.WindowHandle,
-    render_pass_handle: gfx.RenderPassHandle,
-) !gfx.FramebufferHandle {
+pub fn createFramebuffer(window_handle: platform.WindowHandle) !gfx.FramebufferHandle {
     return try framebuffers.create(
         window_handle,
         _graphics_command_pool,
-        render_pass_handle,
     );
 }
 
@@ -339,12 +355,83 @@ pub fn destroyFramebuffer(handle: gfx.FramebufferHandle) void {
     framebuffers.destroy(handle);
 }
 
-pub fn createRenderPass(options: gfx.RenderPassOptions) !gfx.RenderPassHandle {
-    return render_pass.create(options);
+pub fn createImage(image_options: gfx.ImageOptions) !gfx.ImageHandle {
+    var usage: c.VkImageUsageFlags = 0;
+    if (image_options.usage.color_attachment)
+        usage |= c.VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if (image_options.usage.depth_stencil_attachment)
+        usage |= c.VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+
+    const properties: u32 = switch (image_options.location) {
+        .host => c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        .device => c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+    };
+
+    const img = try gpa.create(image.Image);
+    img.* = try image.create(
+        image_options.width,
+        image_options.height,
+        image_options.depth,
+        vulkanFormatFromGfxImageFormat(image_options.format),
+        image_options.mip_levels,
+        image_options.array_layers,
+        textures.tilingFromGfxTextureTiling(image_options.tiling),
+        usage,
+        c.VK_IMAGE_LAYOUT_UNDEFINED,
+        properties,
+    );
+    return gfx.ImageHandle{ .handle = @ptrCast(img) };
 }
 
-pub fn destroyRenderPass(handle: gfx.RenderPassHandle) void {
-    render_pass.destroy(handle);
+pub fn destroyImage(handle: gfx.ImageHandle) void {
+    const img: *const image.Image = @ptrCast(@alignCast(handle.handle));
+    image.destroy(img.*);
+    gpa.destroy(img);
+}
+
+pub fn createImageView(
+    image_handle: gfx.ImageHandle,
+    options: gfx.ImageViewOptions,
+) !gfx.ImageViewHandle {
+    const img: *const image.Image = @ptrCast(@alignCast(image_handle.handle));
+    const format = vulkanFormatFromGfxImageFormat(options.format);
+
+    var view_type: c.VkImageViewType = undefined;
+    if (options.is_cubemap) {
+        if (options.is_array) {
+            view_type = c.VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+        } else {
+            view_type = c.VK_IMAGE_VIEW_TYPE_CUBE;
+        }
+    } else {
+        if (options.is_array) {
+            view_type = c.VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+        } else {
+            view_type = c.VK_IMAGE_VIEW_TYPE_2D;
+        }
+    }
+
+    var aspect: c.VkImageAspectFlags = 0;
+    if (options.aspect.color) aspect |= c.VK_IMAGE_ASPECT_COLOR_BIT;
+    if (options.aspect.depth) aspect |= c.VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (options.aspect.stencil) aspect |= c.VK_IMAGE_ASPECT_STENCIL_BIT;
+
+    const image_view = try image.createView(
+        img.image,
+        format,
+        view_type,
+        aspect,
+        options.level_count,
+        options.layer_count,
+    );
+
+    return gfx.ImageViewHandle{ .handle = @ptrCast(image_view) };
+}
+
+pub fn destroyImageView(handle: gfx.ImageViewHandle) void {
+    const image_view: c.VkImageView = @ptrCast(@alignCast(handle.handle));
+    image.destroyView(image_view);
 }
 
 pub fn createShader(reader: std.io.AnyReader, options: gfx.ShaderOptions) !gfx.ShaderHandle {
@@ -552,13 +639,20 @@ pub fn endFrame() !void {
 
         if (!framebuffer.is_destroying) {
             const framebuffer_size = platform.windowFramebufferSize(framebuffer.window_handle);
-            if (framebuffer.extent.width != framebuffer_size[0] or framebuffer.extent.height != framebuffer_size[1]) {
+            if (framebuffer.extent.width != framebuffer_size[0] or
+                framebuffer.extent.height != framebuffer_size[1])
+            {
                 framebuffer.framebuffer_invalidated = true;
             }
         }
 
-        const result = try device.queuePresentKHR(_present_queue, &present_info);
-        if (result == c.VK_ERROR_OUT_OF_DATE_KHR or result == c.VK_SUBOPTIMAL_KHR or framebuffer.framebuffer_invalidated) {
+        const result = try device.queuePresentKHR(
+            _present_queue,
+            &present_info,
+        );
+        if (result == c.VK_ERROR_OUT_OF_DATE_KHR or result == c.VK_SUBOPTIMAL_KHR or
+            framebuffer.framebuffer_invalidated)
+        {
             framebuffer.framebuffer_invalidated = false;
             log.debug("Framebuffer invalidated, recreating swapchain", .{});
             try framebuffers.recreateSwapchain(framebuffer);
@@ -568,7 +662,7 @@ pub fn endFrame() !void {
     _current_frame_in_flight = (_current_frame_in_flight + 1) % MaxFramesInFlight;
 }
 
-pub fn beginRenderPass(framebuffer_handle: gfx.FramebufferHandle, render_pass_handle: gfx.RenderPassHandle) !bool {
+pub fn beginRenderPass(framebuffer_handle: gfx.FramebufferHandle, options: gfx.RenderPassOptions) !bool {
     const framebuffer = framebuffers.get(framebuffer_handle);
     if (!framebuffer.is_image_acquired or !framebuffer.is_buffer_recording) {
         return false;
@@ -576,9 +670,8 @@ pub fn beginRenderPass(framebuffer_handle: gfx.FramebufferHandle, render_pass_ha
 
     try command_buffers.beginRenderPass(
         framebuffer.command_buffer_handles[_current_frame_in_flight],
-        render_pass_handle,
-        framebuffer.framebuffers[framebuffer.current_image_index],
         framebuffer.extent,
+        options,
     );
 
     _current_framebuffer = framebuffer;
@@ -588,14 +681,6 @@ pub fn beginRenderPass(framebuffer_handle: gfx.FramebufferHandle, render_pass_ha
 
 pub fn endRenderPass() void {
     command_buffers.endRenderPass(_current_framebuffer.command_buffer_handles[_current_frame_in_flight]);
-}
-
-pub fn waitRenderPass(framebuffer_handle: gfx.FramebufferHandle, render_pass_handle: gfx.RenderPassHandle) !void {
-    try command_buffers.waitRenderPass(
-        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
-        framebuffer_handle,
-        render_pass_handle,
-    );
 }
 
 pub fn setViewport(position: [2]u32, size: [2]u32) void {
