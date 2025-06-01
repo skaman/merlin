@@ -25,60 +25,18 @@ const UniformBinding = union(types.DescriptorBindType) {
     combined_sampler: CombinedSamplerBinding,
 };
 
-const PushConstantBinding = struct {
-    shader_stage: c.VkShaderStageFlags,
-    offset: u32,
-    size: u32,
-    data: [*c]const u8,
-};
-
 pub const CommandBuffer = struct {
     command_pool: c.VkCommandPool,
     handle: c.VkCommandBuffer,
 
-    current_pipeline_layout: ?gfx.PipelineLayoutHandle = null,
-    current_debug_options: gfx.DebugOptions = .{},
-    current_render_options: gfx.RenderOptions = .{},
-    current_program_handle: ?gfx.ProgramHandle = null,
-    current_color_attachment_count: u32 = 0,
-    current_color_attachment_images: [vk.pipeline.MaxColorAttachments]c.VkImage = undefined,
-    current_color_attachment_formats: [vk.pipeline.MaxColorAttachments]c.VkFormat = undefined,
-    current_depth_attachment_image: c.VkImage = null,
-    current_depth_attachment_format: c.VkFormat = c.VK_FORMAT_UNDEFINED,
-    current_vertex_buffer_handle: ?gfx.BufferHandle = null,
-    current_vertex_buffer_offset: u32 = 0,
-    current_index_buffer_handle: ?gfx.BufferHandle = null,
-    current_index_buffer_offset: u32 = 0,
+    current_program_handle: gfx.ProgramHandle,
+    current_pipeline_layout: c.VkPipelineLayout,
+    current_color_attachment_images: std.ArrayList(c.VkImage) = undefined,
     current_uniform_bindings: std.AutoHashMap(gfx.NameHandle, UniformBinding) = undefined,
-    current_push_constants: std.ArrayList(PushConstantBinding) = undefined,
-
-    is_pipeline_valid: bool = false,
-    last_vertex_buffer_handle: ?gfx.BufferHandle = null,
-    last_vertex_buffer_offset: u32 = 0,
-    last_index_buffer_handle: ?gfx.BufferHandle = null,
-    last_index_buffer_offset: u32 = 0,
 
     pub fn reset(self: *CommandBuffer) void {
-        self.current_pipeline_layout = null;
-        self.current_debug_options = .{};
-        self.current_render_options = .{};
-        self.current_program_handle = null;
-        self.current_color_attachment_count = 0;
-        self.current_depth_attachment_image = null;
-        self.current_depth_attachment_format = c.VK_FORMAT_UNDEFINED;
-        self.current_vertex_buffer_handle = null;
-        self.current_vertex_buffer_offset = 0;
-        self.current_index_buffer_handle = null;
-        self.current_index_buffer_offset = 0;
+        self.current_color_attachment_images.clearRetainingCapacity();
         self.current_uniform_bindings.clearRetainingCapacity();
-        self.current_push_constants.clearRetainingCapacity();
-
-        self.is_pipeline_valid = false;
-
-        self.last_vertex_buffer_handle = null;
-        self.last_vertex_buffer_offset = 0;
-        self.last_index_buffer_handle = null;
-        self.last_index_buffer_offset = 0;
     }
 };
 
@@ -99,94 +57,6 @@ fn gfxStoreOpToVulkanStoreOp(store_op: gfx.AttachmentStoreOp) c.VkAttachmentStor
         .store => return c.VK_ATTACHMENT_STORE_OP_STORE,
         .dont_care => return c.VK_ATTACHMENT_STORE_OP_DONT_CARE,
     }
-}
-
-fn handleBindPipeline(
-    command_buffer_handle: gfx.CommandBufferHandle,
-    program_handle: gfx.ProgramHandle,
-    pipeline_layout_handle: gfx.PipelineLayoutHandle,
-    // render_pass_handle: gfx.RenderPassHandle,
-    color_attachment_formats: []const c.VkFormat,
-    depth_attachment_format: c.VkFormat,
-    debug_options: gfx.DebugOptions,
-    render_options: gfx.RenderOptions,
-) !void {
-    var command_buffer = get(command_buffer_handle);
-    if (command_buffer.is_pipeline_valid) return;
-
-    const pipeline = try vk.pipeline.getOrCreate(
-        program_handle,
-        pipeline_layout_handle,
-        debug_options,
-        render_options,
-        color_attachment_formats,
-        depth_attachment_format,
-    );
-    std.debug.assert(pipeline != null);
-
-    vk.device.cmdBindPipeline(
-        command_buffer.handle,
-        c.VK_PIPELINE_BIND_POINT_GRAPHICS,
-        pipeline,
-    );
-
-    command_buffer.is_pipeline_valid = true;
-}
-
-fn handleBindVertexBuffer(command_buffer_handle: gfx.CommandBufferHandle) !void {
-    var command_buffer = get(command_buffer_handle);
-    std.debug.assert(command_buffer.current_vertex_buffer_handle != null);
-
-    const vertex_buffer_handle = command_buffer.current_vertex_buffer_handle.?;
-    const vertex_buffer_offset = command_buffer.current_vertex_buffer_offset;
-    if (command_buffer.last_vertex_buffer_handle == vertex_buffer_handle and
-        command_buffer.last_vertex_buffer_offset == vertex_buffer_offset)
-    {
-        return;
-    }
-
-    var offsets = [_]c.VkDeviceSize{vertex_buffer_offset};
-
-    vk.device.cmdBindVertexBuffers(
-        command_buffer.handle,
-        0,
-        1,
-        &vk.buffers.get(vertex_buffer_handle).buffer,
-        @ptrCast(&offsets),
-    );
-
-    command_buffer.last_vertex_buffer_handle = vertex_buffer_handle;
-    command_buffer.last_vertex_buffer_offset = vertex_buffer_offset;
-}
-
-fn handleBindIndexBuffer(
-    command_buffer_handle: gfx.CommandBufferHandle,
-    index_type: types.IndexType,
-) !void {
-    var command_buffer = get(command_buffer_handle);
-    std.debug.assert(command_buffer.current_index_buffer_handle != null);
-
-    const index_buffer_handle = command_buffer.current_index_buffer_handle.?;
-    const index_buffer_offset = command_buffer.current_index_buffer_offset;
-    if (command_buffer.last_index_buffer_handle == index_buffer_handle and
-        command_buffer.last_index_buffer_offset == index_buffer_offset)
-    {
-        return;
-    }
-
-    vk.device.cmdBindIndexBuffer(
-        command_buffer.handle,
-        vk.buffers.get(index_buffer_handle).buffer,
-        index_buffer_offset,
-        switch (index_type) {
-            .u8 => c.VK_INDEX_TYPE_UINT8_EXT,
-            .u16 => c.VK_INDEX_TYPE_UINT16,
-            .u32 => c.VK_INDEX_TYPE_UINT32,
-        },
-    );
-
-    command_buffer.last_index_buffer_handle = index_buffer_handle;
-    command_buffer.last_index_buffer_offset = index_buffer_offset;
 }
 
 fn handlePushDescriptorSet(
@@ -256,29 +126,6 @@ fn handlePushDescriptorSet(
     );
 }
 
-fn handlePushConstants(
-    command_buffer_handle: gfx.CommandBufferHandle,
-    program_handle: gfx.ProgramHandle,
-) !void {
-    var command_buffer = get(command_buffer_handle);
-    const program = vk.programs.get(program_handle);
-    const pipeline_layout = program.pipeline_layout;
-    const push_constants = command_buffer.current_push_constants.items;
-
-    for (push_constants) |push_constant| {
-        vk.device.cmdPushConstants(
-            command_buffer.handle,
-            pipeline_layout,
-            push_constant.shader_stage,
-            push_constant.offset,
-            push_constant.size,
-            push_constant.data,
-        );
-    }
-
-    command_buffer.current_push_constants.clearRetainingCapacity();
-}
-
 // *********************************************************************************************
 // Public API
 // *********************************************************************************************
@@ -316,8 +163,10 @@ pub fn create(command_pool: c.VkCommandPool) !gfx.CommandBufferHandle {
     command_buffer_ptr.* = .{
         .command_pool = command_pool,
         .handle = command_buffer,
+        .current_pipeline_layout = null,
+        .current_program_handle = undefined,
+        .current_color_attachment_images = std.ArrayList(c.VkImage).init(vk.gpa),
         .current_uniform_bindings = .init(vk.gpa),
-        .current_push_constants = std.ArrayList(PushConstantBinding).init(vk.gpa),
     };
 
     vk.log.debug("Created command buffer", .{});
@@ -327,8 +176,9 @@ pub fn create(command_pool: c.VkCommandPool) !gfx.CommandBufferHandle {
 
 pub fn destroy(command_buffer_handle: gfx.CommandBufferHandle) void {
     const command_buffer = get(command_buffer_handle);
+    command_buffer.current_color_attachment_images.deinit();
     command_buffer.current_uniform_bindings.deinit();
-    command_buffer.current_push_constants.deinit();
+    // command_buffer.current_push_constants.deinit();
     vk.device.freeCommandBuffers(
         command_buffer.command_pool,
         1,
@@ -455,9 +305,9 @@ pub fn beginRenderPass(
 ) !void {
     std.debug.assert(extent.width > 0 and extent.height > 0);
     std.debug.assert(options.color_attachments.len > 0);
-    std.debug.assert(options.color_attachments.len <= vk.pipeline.MaxColorAttachments);
 
     const command_buffer = get(command_buffer_handle);
+    command_buffer.current_color_attachment_images.clearRetainingCapacity();
 
     const color_attachments = try vk.arena.alloc(
         c.VkRenderingAttachmentInfoKHR,
@@ -515,6 +365,8 @@ pub fn beginRenderPass(
                 },
             },
         );
+
+        try command_buffer.current_color_attachment_images.append(image.image);
     }
 
     var begin_info = std.mem.zeroInit(
@@ -592,32 +444,13 @@ pub fn beginRenderPass(
         command_buffer.handle,
         &begin_info,
     );
-
-    for (options.color_attachments, 0..) |color_attachment, i| {
-        const image: *const vk.images.Image = @ptrCast(@alignCast(color_attachment.image.handle));
-        command_buffer.current_color_attachment_formats[i] = vk.vulkanFormatFromGfxImageFormat(color_attachment.format);
-        command_buffer.current_color_attachment_images[i] = image.image;
-    }
-    command_buffer.current_color_attachment_count = @intCast(options.color_attachments.len);
-
-    if (options.depth_attachment) |depth_attachment| {
-        const image: *const vk.images.Image = @ptrCast(@alignCast(depth_attachment.image.handle));
-        command_buffer.current_depth_attachment_format = vk.vulkanFormatFromGfxImageFormat(depth_attachment.format);
-        command_buffer.current_depth_attachment_image = image.image;
-    } else {
-        command_buffer.current_depth_attachment_format = c.VK_FORMAT_UNDEFINED;
-        command_buffer.current_depth_attachment_image = null;
-    }
-    command_buffer.is_pipeline_valid = false;
 }
 
 pub fn endRenderPass(command_buffer_handle: gfx.CommandBufferHandle) void {
     const command_buffer = get(command_buffer_handle);
     vk.device.cmdEndRenderingKHR(command_buffer.handle);
 
-    for (0..command_buffer.current_color_attachment_count) |i| {
-        const image = command_buffer.current_color_attachment_images[i];
-
+    for (command_buffer.current_color_attachment_images.items) |image| {
         const barrier = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
             .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
             .srcAccessMask = c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
@@ -677,60 +510,58 @@ pub fn setScissor(
     );
 }
 
-pub fn setDebug(
+pub fn bindPipeline(
     command_buffer_handle: gfx.CommandBufferHandle,
-    debug_options: gfx.DebugOptions,
+    pipeline_handle: gfx.PipelineHandle,
 ) void {
     const command_buffer = get(command_buffer_handle);
-    command_buffer.current_debug_options = debug_options;
-    command_buffer.is_pipeline_valid = false;
-}
+    const pipeline = vk.pipeline.get(pipeline_handle);
 
-pub fn setRender(
-    command_buffer_handle: gfx.CommandBufferHandle,
-    render_options: gfx.RenderOptions,
-) void {
-    const command_buffer = get(command_buffer_handle);
-    command_buffer.current_render_options = render_options;
-    command_buffer.is_pipeline_valid = false;
-}
+    vk.device.cmdBindPipeline(
+        command_buffer.handle,
+        c.VK_PIPELINE_BIND_POINT_GRAPHICS,
+        pipeline.handle,
+    );
 
-pub fn bindPipelineLayout(
-    command_buffer_handle: gfx.CommandBufferHandle,
-    pipeline_layout: gfx.PipelineLayoutHandle,
-) void {
-    const command_buffer = get(command_buffer_handle);
-    command_buffer.current_pipeline_layout = pipeline_layout;
-    command_buffer.is_pipeline_valid = false;
-}
-
-pub fn bindProgram(
-    command_buffer_handle: gfx.CommandBufferHandle,
-    program: gfx.ProgramHandle,
-) void {
-    const command_buffer = get(command_buffer_handle);
-    command_buffer.current_program_handle = program;
-    command_buffer.is_pipeline_valid = false;
+    const program = vk.programs.get(pipeline.program_handle);
+    command_buffer.current_pipeline_layout = program.pipeline_layout;
+    command_buffer.current_program_handle = pipeline.program_handle;
 }
 
 pub fn bindVertexBuffer(
     command_buffer_handle: gfx.CommandBufferHandle,
-    vertex_buffer: gfx.BufferHandle,
+    vertex_buffer_handle: gfx.BufferHandle,
     offset: u32,
 ) void {
     const command_buffer = get(command_buffer_handle);
-    command_buffer.current_vertex_buffer_handle = vertex_buffer;
-    command_buffer.current_vertex_buffer_offset = offset;
+    var offsets = [_]c.VkDeviceSize{offset};
+
+    vk.device.cmdBindVertexBuffers(
+        command_buffer.handle,
+        0,
+        1,
+        &vk.buffers.get(vertex_buffer_handle).buffer,
+        @ptrCast(&offsets),
+    );
 }
 
 pub fn bindIndexBuffer(
     command_buffer_handle: gfx.CommandBufferHandle,
-    index_buffer: gfx.BufferHandle,
+    index_buffer_handle: gfx.BufferHandle,
     offset: u32,
+    index_type: types.IndexType,
 ) void {
     const command_buffer = get(command_buffer_handle);
-    command_buffer.current_index_buffer_handle = index_buffer;
-    command_buffer.current_index_buffer_offset = offset;
+    vk.device.cmdBindIndexBuffer(
+        command_buffer.handle,
+        vk.buffers.get(index_buffer_handle).buffer,
+        offset,
+        switch (index_type) {
+            .u8 => c.VK_INDEX_TYPE_UINT8_EXT,
+            .u16 => c.VK_INDEX_TYPE_UINT16,
+            .u32 => c.VK_INDEX_TYPE_UINT32,
+        },
+    );
 }
 
 pub fn bindUniformBuffer(
@@ -775,19 +606,17 @@ pub fn pushConstants(
     data: *const u8,
 ) void {
     const command_buffer = get(command_buffer_handle);
-    const push_constant = PushConstantBinding{
-        .shader_stage = switch (shader_stage) {
+    vk.device.cmdPushConstants(
+        command_buffer.handle,
+        command_buffer.current_pipeline_layout,
+        switch (shader_stage) {
             .vertex => c.VK_SHADER_STAGE_VERTEX_BIT,
             .fragment => c.VK_SHADER_STAGE_FRAGMENT_BIT,
         },
-        .offset = offset,
-        .size = size,
-        .data = data,
-    };
-    command_buffer.current_push_constants.append(push_constant) catch {
-        vk.log.err("Failed to push constants", .{});
-        return;
-    };
+        offset,
+        size,
+        data,
+    );
 }
 
 pub fn draw(
@@ -798,39 +627,13 @@ pub fn draw(
     first_instance: u32,
 ) void {
     const command_buffer = get(command_buffer_handle);
-    const current_layout = command_buffer.current_pipeline_layout;
     const current_program = command_buffer.current_program_handle;
-    const current_color_attachment_count = command_buffer.current_color_attachment_count;
-    const current_color_attachment_formats = command_buffer.current_color_attachment_formats;
-    const current_depth_attachment_format = command_buffer.current_depth_attachment_format;
-    const current_debug_options = command_buffer.current_debug_options;
-    const current_render_options = command_buffer.current_render_options;
 
-    handleBindPipeline(
+    handlePushDescriptorSet(
         command_buffer_handle,
-        current_program.?,
-        current_layout.?,
-        current_color_attachment_formats[0..current_color_attachment_count],
-        current_depth_attachment_format,
-        current_debug_options,
-        current_render_options,
+        current_program,
     ) catch {
-        vk.log.err("Failed to bind Vulkan program", .{});
-        return;
-    };
-
-    handleBindVertexBuffer(command_buffer_handle) catch {
-        vk.log.err("Failed to bind Vulkan vertex buffer", .{});
-        return;
-    };
-
-    handlePushDescriptorSet(command_buffer_handle, current_program.?) catch {
         vk.log.err("Failed to bind Vulkan descriptor set", .{});
-        return;
-    };
-
-    handlePushConstants(command_buffer_handle, current_program.?) catch {
-        vk.log.err("Failed to bind Vulkan push constants", .{});
         return;
     };
 
@@ -850,47 +653,15 @@ pub fn drawIndexed(
     first_index: u32,
     vertex_offset: i32,
     first_instance: u32,
-    index_type: types.IndexType,
 ) void {
     const command_buffer = get(command_buffer_handle);
-    const current_layout = command_buffer.current_pipeline_layout;
     const current_program = command_buffer.current_program_handle;
-    const current_color_attachment_count = command_buffer.current_color_attachment_count;
-    const current_color_attachment_formats = command_buffer.current_color_attachment_formats;
-    const current_depth_attachment_format = command_buffer.current_depth_attachment_format;
-    const current_debug_options = command_buffer.current_debug_options;
-    const current_render_options = command_buffer.current_render_options;
 
-    handleBindPipeline(
+    handlePushDescriptorSet(
         command_buffer_handle,
-        current_program.?,
-        current_layout.?,
-        current_color_attachment_formats[0..current_color_attachment_count],
-        current_depth_attachment_format,
-        current_debug_options,
-        current_render_options,
+        current_program,
     ) catch {
-        vk.log.err("Failed to bind Vulkan program", .{});
-        return;
-    };
-
-    handleBindVertexBuffer(command_buffer_handle) catch {
-        vk.log.err("Failed to bind Vulkan vertex buffer", .{});
-        return;
-    };
-
-    handlePushDescriptorSet(command_buffer_handle, current_program.?) catch {
         vk.log.err("Failed to bind Vulkan descriptor set", .{});
-        return;
-    };
-
-    handleBindIndexBuffer(command_buffer_handle, index_type) catch {
-        vk.log.err("Failed to bind Vulkan index buffer", .{});
-        return;
-    };
-
-    handlePushConstants(command_buffer_handle, current_program.?) catch {
-        vk.log.err("Failed to bind Vulkan push constants", .{});
         return;
     };
 

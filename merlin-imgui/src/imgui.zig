@@ -65,7 +65,7 @@ var _frag_shader_handle: gfx.ShaderHandle = undefined;
 var _program_handle: gfx.ProgramHandle = undefined;
 var _tex_uniform_handle: gfx.NameHandle = undefined;
 var _pipeline_layout_handle: gfx.PipelineLayoutHandle = undefined;
-// var _render_pass_handle: gfx.RenderPassHandle = undefined;
+var _pipeline_handle: gfx.PipelineHandle = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -610,12 +610,9 @@ fn draw(
         gfx.beginDebugLabel("Render ImGui", gfx_types.Colors.LightCoral);
         defer gfx.endDebugLabel();
 
-        gfx.setRender(.{
-            .cull_mode = .none,
-            .blend = .{ .enabled = true },
-        });
-
         gfx.setViewport(.{ 0, 0 }, framebuffer_size);
+
+        gfx.bindPipeline(_pipeline_handle);
         gfx.pushConstants(
             .vertex,
             0,
@@ -626,14 +623,16 @@ fn draw(
             64,
             fragment_constant_data_ptr[0..@sizeOf(FragmentConstantData)],
         );
-        gfx.bindProgram(_program_handle);
         gfx.bindCombinedSampler(
             _tex_uniform_handle,
             _font_texture_handle,
         );
-        gfx.bindPipelineLayout(_pipeline_layout_handle);
         gfx.bindVertexBuffer(viewport_data.vertex_buffer_handle.?, 0);
-        gfx.bindIndexBuffer(viewport_data.index_buffer_handle.?, 0);
+        gfx.bindIndexBuffer(
+            viewport_data.index_buffer_handle.?,
+            0,
+            if (@sizeOf(c.ImDrawIdx) == 2) .u16 else .u32,
+        );
 
         const clip_offset: [2]f32 = .{ draw_data.*.DisplayPos.x, draw_data.*.DisplayPos.y };
         const clip_scale: [2]f32 = .{ draw_data.*.FramebufferScale.x, draw_data.*.FramebufferScale.y };
@@ -683,7 +682,6 @@ fn draw(
                     cmd.IdxOffset + global_index_offset,
                     @intCast(cmd.VtxOffset + global_vertex_offset),
                     0,
-                    if (@sizeOf(c.ImDrawIdx) == 2) .u16 else .u32,
                 );
             }
 
@@ -971,6 +969,22 @@ pub fn init(
     _pipeline_layout_handle = try gfx.createPipelineLayout(vertex_layout);
     errdefer gfx.destroyPipelineLayout(_pipeline_layout_handle);
 
+    _pipeline_handle = try gfx.createPipeline(.{
+        .program_handle = _program_handle,
+        .pipeline_layout_handle = _pipeline_layout_handle,
+        .render_options = .{
+            .cull_mode = .none,
+            .blend = .{ .enabled = true },
+        },
+        .color_attachment_formats = &[_]gfx.ImageFormat{
+            gfx.getSurfaceColorFormat(),
+        },
+        .debug_options = .{
+            .debug_name = "ImGui Pipeline",
+        },
+    });
+    errdefer gfx.destroyPipeline(_pipeline_handle);
+
     theme.setup(options.theme, options.ui_scale);
 
     _tex_uniform_handle = gfx.nameHandle("s_tex");
@@ -1035,6 +1049,7 @@ pub fn deinit() void {
 
     c.igDestroyPlatformWindows();
 
+    gfx.destroyPipeline(_pipeline_handle);
     gfx.destroyPipelineLayout(_pipeline_layout_handle);
     gfx.destroyTexture(_font_texture_handle);
     gfx.destroyShader(_vert_shader_handle);

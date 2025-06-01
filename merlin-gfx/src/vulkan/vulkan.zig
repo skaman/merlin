@@ -55,6 +55,7 @@ var _surface_format: c.VkSurfaceFormatKHR = undefined;
 // *********************************************************************************************
 
 fn destroyPendingResources() !void {
+    pipeline.destroyPendingResources();
     try framebuffers.destroyPendingResources();
     buffers.destroyPendingResources();
     programs.destroyPendingResources();
@@ -395,6 +396,14 @@ pub fn destroyPipelineLayout(handle: gfx.PipelineLayoutHandle) void {
     pipeline_layouts.destroy(handle);
 }
 
+pub fn createPipeline(options: gfx.PipelineOptions) !gfx.PipelineHandle {
+    return pipeline.create(options);
+}
+
+pub fn destroyPipeline(handle: gfx.PipelineHandle) void {
+    pipeline.destroy(handle);
+}
+
 pub fn createProgram(
     vertex_shader: gfx.ShaderHandle,
     fragment_shader: gfx.ShaderHandle,
@@ -665,31 +674,10 @@ pub fn setScissor(position: [2]u32, size: [2]u32) void {
     );
 }
 
-pub fn setDebug(debug_options: gfx.DebugOptions) void {
-    command_buffers.setDebug(
+pub fn bindPipeline(pipeline_handle: gfx.PipelineHandle) void {
+    command_buffers.bindPipeline(
         _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
-        debug_options,
-    );
-}
-
-pub fn setRender(render_options: gfx.RenderOptions) void {
-    command_buffers.setRender(
-        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
-        render_options,
-    );
-}
-
-pub fn bindPipelineLayout(pipeline_layout: gfx.PipelineLayoutHandle) void {
-    command_buffers.bindPipelineLayout(
-        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
-        pipeline_layout,
-    );
-}
-
-pub fn bindProgram(program: gfx.ProgramHandle) void {
-    command_buffers.bindProgram(
-        _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
-        program,
+        pipeline_handle,
     );
 }
 
@@ -701,11 +689,12 @@ pub fn bindVertexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
     );
 }
 
-pub fn bindIndexBuffer(buffer: gfx.BufferHandle, offset: u32) void {
+pub fn bindIndexBuffer(buffer: gfx.BufferHandle, offset: u32, index_type: types.IndexType) void {
     command_buffers.bindIndexBuffer(
         _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
         buffer,
         offset,
+        index_type,
     );
 }
 
@@ -761,7 +750,6 @@ pub fn drawIndexed(
     first_index: u32,
     vertex_offset: i32,
     first_instance: u32,
-    index_type: types.IndexType,
 ) void {
     command_buffers.drawIndexed(
         _current_framebuffer.command_buffer_handles[_current_frame_in_flight],
@@ -770,7 +758,6 @@ pub fn drawIndexed(
         first_index,
         vertex_offset,
         first_instance,
-        index_type,
     );
 }
 

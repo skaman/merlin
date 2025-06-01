@@ -21,6 +21,7 @@ pub const TextureHandle = packed struct { handle: *anyopaque };
 pub const ImageHandle = packed struct { handle: *anyopaque };
 pub const ImageViewHandle = packed struct { handle: *anyopaque };
 pub const PipelineLayoutHandle = packed struct { handle: *anyopaque };
+pub const PipelineHandle = packed struct { handle: *anyopaque };
 pub const CommandBufferHandle = packed struct { handle: *anyopaque };
 pub const NameHandle = packed struct { handle: u64 };
 
@@ -216,8 +217,9 @@ pub const BufferOptions = struct {
     debug_name: ?[]const u8 = null,
 };
 
-pub const DebugOptions = packed struct {
+pub const DebugOptions = struct {
     wireframe: bool = false,
+    debug_name: ?[]const u8 = null,
 };
 
 pub const CullMode = enum(u2) {
@@ -352,6 +354,15 @@ pub const RenderOptions = packed struct {
     depth: DepthOptions = .{},
 };
 
+pub const PipelineOptions = struct {
+    program_handle: ProgramHandle,
+    pipeline_layout_handle: PipelineLayoutHandle,
+    debug_options: DebugOptions = .{},
+    render_options: RenderOptions = .{},
+    color_attachment_formats: []const ImageFormat = &.{},
+    depth_attachment_format: ?ImageFormat = null,
+};
+
 pub fn UniformArray(comptime THandle: type) type {
     return struct {
         const Self = @This();
@@ -434,6 +445,8 @@ const VTab = struct {
     destroyShader: *const fn (shader_handle: ShaderHandle) void,
     createPipelineLayout: *const fn (vertex_layout: types.VertexLayout) anyerror!PipelineLayoutHandle,
     destroyPipelineLayout: *const fn (pipeline_layout_handle: PipelineLayoutHandle) void,
+    createPipeline: *const fn (options: PipelineOptions) anyerror!PipelineHandle,
+    destroyPipeline: *const fn (pipeline_handle: PipelineHandle) void,
     createProgram: *const fn (vertex_shader_handle: ShaderHandle, fragment_shader_handle: ShaderHandle, options: ProgramOptions) anyerror!ProgramHandle,
     destroyProgram: *const fn (program_handle: ProgramHandle) void,
     createBuffer: *const fn (size: u32, usage: BufferUsage, location: BufferLocation, options: BufferOptions) anyerror!BufferHandle,
@@ -448,17 +461,14 @@ const VTab = struct {
     endRenderPass: *const fn () void,
     setViewport: *const fn (position: [2]u32, size: [2]u32) void,
     setScissor: *const fn (position: [2]u32, size: [2]u32) void,
-    setDebug: *const fn (debug_options: DebugOptions) void,
-    setRender: *const fn (render_options: RenderOptions) void,
-    bindPipelineLayout: *const fn (pipeline_layout_handle: PipelineLayoutHandle) void,
-    bindProgram: *const fn (program_handle: ProgramHandle) void,
+    bindPipeline: *const fn (pipeline_handle: PipelineHandle) void,
     bindVertexBuffer: *const fn (buffer_handle: BufferHandle, offset: u32) void,
-    bindIndexBuffer: *const fn (buffer_handle: BufferHandle, offset: u32) void,
+    bindIndexBuffer: *const fn (buffer_handle: BufferHandle, offset: u32, index_type: types.IndexType) void,
     bindUniformBuffer: *const fn (name_handle: NameHandle, buffer_handle: BufferHandle, offset: u32) void,
     bindCombinedSampler: *const fn (name_handle: NameHandle, texture_handle: TextureHandle) void,
     pushConstants: *const fn (shader_stage: types.ShaderType, offset: u32, data: []const u8) void,
     draw: *const fn (vertex_count: u32, instance_count: u32, first_vertex: u32, first_instance: u32) void,
-    drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32, index_type: types.IndexType) void,
+    drawIndexed: *const fn (index_count: u32, instance_count: u32, first_index: u32, vertex_offset: i32, first_instance: u32) void,
     beginDebugLabel: *const fn (label_name: []const u8, color: [4]f32) void,
     endDebugLabel: *const fn () void,
     insertDebugLabel: *const fn (label_name: []const u8, color: [4]f32) void,
@@ -504,6 +514,8 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .destroyShader = noop.destroyShader,
                 .createPipelineLayout = noop.createPipelineLayout,
                 .destroyPipelineLayout = noop.destroyPipelineLayout,
+                .createPipeline = noop.createPipeline,
+                .destroyPipeline = noop.destroyPipeline,
                 .createProgram = noop.createProgram,
                 .destroyProgram = noop.destroyProgram,
                 .createBuffer = noop.createBuffer,
@@ -518,10 +530,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .endRenderPass = noop.endRenderPass,
                 .setViewport = noop.setViewport,
                 .setScissor = noop.setScissor,
-                .setDebug = noop.setDebug,
-                .setRender = noop.setRender,
-                .bindPipelineLayout = noop.bindPipelineLayout,
-                .bindProgram = noop.bindProgram,
+                .bindPipeline = noop.bindPipeline,
                 .bindVertexBuffer = noop.bindVertexBuffer,
                 .bindIndexBuffer = noop.bindIndexBuffer,
                 .bindUniformBuffer = noop.bindUniformBuffer,
@@ -552,12 +561,12 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .destroyImage = vulkan.destroyImage,
                 .createImageView = vulkan.createImageView,
                 .destroyImageView = vulkan.destroyImageView,
-                // .createRenderPass = vulkan.createRenderPass,
-                // .destroyRenderPass = vulkan.destroyRenderPass,
                 .createShader = vulkan.createShader,
                 .destroyShader = vulkan.destroyShader,
                 .createPipelineLayout = vulkan.createPipelineLayout,
                 .destroyPipelineLayout = vulkan.destroyPipelineLayout,
+                .createPipeline = vulkan.createPipeline,
+                .destroyPipeline = vulkan.destroyPipeline,
                 .createProgram = vulkan.createProgram,
                 .destroyProgram = vulkan.destroyProgram,
                 .createBuffer = vulkan.createBuffer,
@@ -572,10 +581,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .endRenderPass = vulkan.endRenderPass,
                 .setViewport = vulkan.setViewport,
                 .setScissor = vulkan.setScissor,
-                .setDebug = vulkan.setDebug,
-                .setRender = vulkan.setRender,
-                .bindPipelineLayout = vulkan.bindPipelineLayout,
-                .bindProgram = vulkan.bindProgram,
+                .bindPipeline = vulkan.bindPipeline,
                 .bindVertexBuffer = vulkan.bindVertexBuffer,
                 .bindIndexBuffer = vulkan.bindIndexBuffer,
                 .bindUniformBuffer = vulkan.bindUniformBuffer,
@@ -744,6 +750,16 @@ pub inline fn destroyPipelineLayout(handle: PipelineLayoutHandle) void {
     v_tab.destroyPipelineLayout(handle);
 }
 
+/// Creates a pipeline.
+pub inline fn createPipeline(options: PipelineOptions) !PipelineHandle {
+    return try v_tab.createPipeline(options);
+}
+
+/// Destroys a pipeline.
+pub inline fn destroyPipeline(handle: PipelineHandle) void {
+    v_tab.destroyPipeline(handle);
+}
+
 /// Creates a buffer.
 pub inline fn createBuffer(
     size: u32,
@@ -847,30 +863,17 @@ pub inline fn setScissor(position: [2]u32, size: [2]u32) void {
     v_tab.setScissor(position, size);
 }
 
-/// Sets the debug options.
-pub inline fn setDebug(debug_options: DebugOptions) void {
-    v_tab.setDebug(debug_options);
-}
-
-/// Sets the render options.
-pub inline fn setRender(render_options: RenderOptions) void {
-    v_tab.setRender(render_options);
-}
-
-pub fn bindPipelineLayout(handle: PipelineLayoutHandle) void {
-    v_tab.bindPipelineLayout(handle);
-}
-
-pub inline fn bindProgram(handle: ProgramHandle) void {
-    v_tab.bindProgram(handle);
+/// Binds a pipeline.
+pub inline fn bindPipeline(handle: PipelineHandle) void {
+    v_tab.bindPipeline(handle);
 }
 
 pub inline fn bindVertexBuffer(handle: BufferHandle, offset: u32) void {
     v_tab.bindVertexBuffer(handle, offset);
 }
 
-pub inline fn bindIndexBuffer(handle: BufferHandle, offset: u32) void {
-    v_tab.bindIndexBuffer(handle, offset);
+pub inline fn bindIndexBuffer(handle: BufferHandle, offset: u32, index_type: types.IndexType) void {
+    v_tab.bindIndexBuffer(handle, offset, index_type);
 }
 
 pub inline fn bindUniformBuffer(
@@ -917,7 +920,6 @@ pub inline fn drawIndexed(
     first_index: u32,
     vertex_offset: i32,
     first_instance: u32,
-    index_type: types.IndexType,
 ) void {
     v_tab.drawIndexed(
         index_count,
@@ -925,7 +927,6 @@ pub inline fn drawIndexed(
         first_index,
         vertex_offset,
         first_instance,
-        index_type,
     );
 }
 

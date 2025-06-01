@@ -12,7 +12,7 @@ const gfx_types = utils.gfx_types;
 const log = std.log.scoped(.assets);
 
 pub const Mesh = struct {
-    pipeline_handle: gfx.PipelineLayoutHandle,
+    pipeline_handle: gfx.PipelineLayoutHandle, // TODO: rename to PipelineLayoutHandle
     buffer_handle: gfx.BufferHandle,
     vertex_buffer_offset: u32,
     index_buffer_offset: u32,

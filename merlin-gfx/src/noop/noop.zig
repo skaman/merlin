@@ -54,6 +54,10 @@ pub fn createPipelineLayout(_: types.VertexLayout) !gfx.PipelineLayoutHandle {
 }
 
 pub fn destroyPipelineLayout(_: gfx.PipelineLayoutHandle) void {}
+pub fn createPipeline(_: gfx.PipelineOptions) !gfx.PipelineHandle {
+    return .{ .handle = undefined };
+}
+pub fn destroyPipeline(_: gfx.PipelineHandle) void {}
 pub fn createProgram(_: gfx.ShaderHandle, _: gfx.ShaderHandle, _: gfx.ProgramOptions) !gfx.ProgramHandle {
     return .{ .handle = undefined };
 }
@@ -80,17 +84,14 @@ pub fn endRenderPass() void {}
 pub fn endFrame() !void {}
 pub fn setViewport(_: [2]u32, _: [2]u32) void {}
 pub fn setScissor(_: [2]u32, _: [2]u32) void {}
-pub fn setDebug(_: gfx.DebugOptions) void {}
-pub fn setRender(_: gfx.RenderOptions) void {}
-pub fn bindPipelineLayout(_: gfx.PipelineLayoutHandle) void {}
-pub fn bindProgram(_: gfx.ProgramHandle) void {}
+pub fn bindPipeline(_: gfx.PipelineHandle) void {}
 pub fn bindVertexBuffer(_: gfx.BufferHandle, _: u32) void {}
-pub fn bindIndexBuffer(_: gfx.BufferHandle, _: u32) void {}
+pub fn bindIndexBuffer(_: gfx.BufferHandle, _: u32, _: types.IndexType) void {}
 pub fn bindUniformBuffer(_: gfx.NameHandle, _: gfx.BufferHandle, _: u32) void {}
 pub fn bindCombinedSampler(_: gfx.NameHandle, _: gfx.TextureHandle) void {}
 pub fn pushConstants(_: types.ShaderType, _: u32, _: []const u8) void {}
 pub fn draw(_: u32, _: u32, _: u32, _: u32) void {}
-pub fn drawIndexed(_: u32, _: u32, _: u32, _: i32, _: u32, _: types.IndexType) void {}
+pub fn drawIndexed(_: u32, _: u32, _: u32, _: i32, _: u32) void {}
 pub fn beginDebugLabel(_: []const u8, _: [4]f32) void {}
 pub fn endDebugLabel() void {}
 pub fn insertDebugLabel(_: []const u8, _: [4]f32) void {}

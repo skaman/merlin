@@ -14,7 +14,6 @@ const vk = @import("vulkan.zig");
 pub const MaxVertexAttributes = 16;
 pub const MaxDescriptorSetBindings = 16;
 pub const MaxPushConstants = 8;
-pub const MaxColorAttachments = 8;
 
 const AttributeType = [@typeInfo(types.VertexComponentType).@"enum".fields.len][4][2]c.VkFormat{
     // i8
@@ -69,53 +68,23 @@ const AttributeType = [@typeInfo(types.VertexComponentType).@"enum".fields.len][
 // *********************************************************************************************
 // Structs
 // *********************************************************************************************
-const PipelineKeyContext = struct {
-    pub fn hash(ctx: PipelineKeyContext, key: PipelineKey) u64 {
-        _ = ctx;
-        var hasher = std.hash.Wyhash.init(0);
-        hasher.update(std.mem.asBytes(&key.program_handle));
-        hasher.update(std.mem.asBytes(&key.pipeline_layout_handle));
-        hasher.update(std.mem.asBytes(&key.debug_options));
-        hasher.update(std.mem.asBytes(&key.render_options));
-        hasher.update(std.mem.asBytes(&key.color_attachment_formats));
-        hasher.update(std.mem.asBytes(&key.depth_attachment_format));
-        return hasher.final();
-    }
 
-    pub fn eql(ctx: PipelineKeyContext, a: PipelineKey, b: PipelineKey) bool {
-        _ = ctx;
-        return std.meta.eql(a.program_handle, b.program_handle) and
-            std.meta.eql(a.pipeline_layout_handle, b.pipeline_layout_handle) and
-            std.meta.eql(a.debug_options, b.debug_options) and
-            std.meta.eql(a.render_options, b.render_options) and
-            std.mem.eql(
-                c.VkFormat,
-                a.color_attachment_formats,
-                b.color_attachment_formats,
-            ) and
-            a.depth_attachment_format == b.depth_attachment_format;
-    }
-};
-
-const PipelineKey = struct {
+pub const Pipeline = struct {
+    handle: c.VkPipeline,
     program_handle: gfx.ProgramHandle,
     pipeline_layout_handle: gfx.PipelineLayoutHandle,
     debug_options: gfx.DebugOptions,
     render_options: gfx.RenderOptions,
-    color_attachment_formats: []const c.VkFormat,
-    depth_attachment_format: c.VkFormat,
+    color_attachment_formats: []const gfx.ImageFormat,
+    depth_attachment_format: ?gfx.ImageFormat,
+    debug_name: ?[]const u8,
 };
 
 // *********************************************************************************************
 // Globals
 // *********************************************************************************************
 
-var _pipelines: std.HashMap(
-    PipelineKey,
-    c.VkPipeline,
-    PipelineKeyContext,
-    80,
-) = undefined;
+var _pipelines_to_destroy: std.ArrayList(*const Pipeline) = undefined;
 
 // *********************************************************************************************
 // Private API
@@ -159,14 +128,28 @@ fn compareOpToVulkan(compare_op: gfx.CompareOp) c.VkCompareOp {
     };
 }
 
-fn create(
-    program_handle: gfx.ProgramHandle,
-    vertex_layout: types.VertexLayout,
-    debug_options: gfx.DebugOptions,
-    render_options: gfx.RenderOptions,
-    color_attachment_formats: []const c.VkFormat,
-    depth_attachment_format: c.VkFormat,
-) !c.VkPipeline {
+// *********************************************************************************************
+// Public API
+// *********************************************************************************************
+
+pub fn init() void {
+    _pipelines_to_destroy = .init(vk.gpa);
+    errdefer _pipelines_to_destroy.deinit();
+}
+
+pub fn deinit() void {
+    _pipelines_to_destroy.deinit();
+}
+
+pub fn create(options: gfx.PipelineOptions) !gfx.PipelineHandle {
+    const program = vk.programs.get(options.program_handle);
+    const vertex_shader = program.vertex_shader;
+    const fragment_shader = program.fragment_shader;
+    const pipeline_layout = vk.pipeline_layouts.get(options.pipeline_layout_handle);
+    const vertex_layout = pipeline_layout.layout;
+    const debug_options = options.debug_options;
+    const render_options = options.render_options;
+
     const binding_description = std.mem.zeroInit(
         c.VkVertexInputBindingDescription,
         .{
@@ -176,16 +159,19 @@ fn create(
         },
     );
 
-    const program = vk.programs.get(program_handle);
-    const vertex_shader = program.vertex_shader;
-    const fragment_shader = program.fragment_shader;
-
     var attribute_descriptions: [MaxVertexAttributes]c.VkVertexInputAttributeDescription = undefined;
     var attribute_count: u32 = 0;
     for (vertex_shader.input_attributes) |input_attribute| {
-        const attribute_data = vertex_layout.attributes[@intFromEnum(input_attribute.attribute)];
+        const attribute_data = vertex_layout.attributes[
+            @intFromEnum(
+                input_attribute.attribute,
+            )
+        ];
         if (attribute_data.num == 0) {
-            vk.log.warn("Attribute {s} not found in vertex layout", .{input_attribute.attribute.name()});
+            vk.log.warn(
+                "Attribute {s} not found in vertex layout",
+                .{input_attribute.attribute.name()},
+            );
             continue;
         }
 
@@ -195,7 +181,11 @@ fn create(
         attribute_descriptions[attribute_count] = .{
             .location = @intCast(input_attribute.location),
             .binding = 0,
-            .format = AttributeType[@intFromEnum(attribute_data.type)][@intCast(attribute_data.num - 1)][@intFromBool(attribute_data.normalized)],
+            .format = AttributeType[
+                @intFromEnum(
+                    attribute_data.type,
+                )
+            ][@intCast(attribute_data.num - 1)][@intFromBool(attribute_data.normalized)],
             .offset = vertex_layout.offsets[@intFromEnum(input_attribute.attribute)],
         };
 
@@ -353,6 +343,20 @@ fn create(
         },
     };
 
+    var color_attachment_formats = try vk.arena.alloc(
+        c.VkFormat,
+        options.color_attachment_formats.len,
+    );
+    for (options.color_attachment_formats, 0..) |format, index| {
+        color_attachment_formats[index] = vk.vulkanFormatFromGfxImageFormat(format);
+    }
+    var depth_attachment_format: c.VkFormat = c.VK_FORMAT_UNDEFINED;
+    if (options.depth_attachment_format != null) {
+        depth_attachment_format = vk.vulkanFormatFromGfxImageFormat(
+            options.depth_attachment_format.?,
+        );
+    }
+
     const pipeline_rendering_create_info = std.mem.zeroInit(
         c.VkPipelineRenderingCreateInfo,
         .{
@@ -394,6 +398,9 @@ fn create(
     std.debug.assert(graphics_pipeline != null);
 
     vk.log.debug("Pipeline created:", .{});
+    if (debug_options.debug_name) |name| {
+        vk.log.debug("  - Name: {s}", .{name});
+    }
     vk.log.debug(
         "  - Binding Description 0: binding={d}, stride={d}, inputRate={s}",
         .{
@@ -416,57 +423,57 @@ fn create(
         );
     }
 
-    return graphics_pipeline;
-}
+    const pipeline = try vk.gpa.create(Pipeline);
+    errdefer vk.gpa.destroy(pipeline);
 
-// *********************************************************************************************
-// Public API
-// *********************************************************************************************
-
-pub fn init() void {
-    _pipelines = .init(vk.gpa);
-}
-
-pub fn deinit() void {
-    var iterator = _pipelines.valueIterator();
-    while (iterator.next()) |pipeline_value| {
-        vk.device.destroyPipeline(pipeline_value.*);
+    var debug_name: ?[]const u8 = null;
+    if (debug_options.debug_name) |name| {
+        debug_name = try vk.gpa.dupe(u8, name);
+        try vk.debug.setObjectName(
+            c.VK_OBJECT_TYPE_PIPELINE,
+            graphics_pipeline,
+            name,
+        );
     }
 
-    _pipelines.deinit();
-}
-
-pub fn getOrCreate(
-    program_handle: gfx.ProgramHandle,
-    layout_handle: gfx.PipelineLayoutHandle,
-    // render_pass_handle: gfx.RenderPassHandle,
-    debug_options: gfx.DebugOptions,
-    render_options: gfx.RenderOptions,
-    color_attachment_formats: []const c.VkFormat,
-    depth_attachment_format: c.VkFormat,
-) !c.VkPipeline {
-    const key = PipelineKey{
-        .program_handle = program_handle,
-        .pipeline_layout_handle = layout_handle,
+    pipeline.* = .{
+        .handle = graphics_pipeline,
+        .program_handle = options.program_handle,
+        .pipeline_layout_handle = options.pipeline_layout_handle,
         .debug_options = debug_options,
         .render_options = render_options,
-        .color_attachment_formats = color_attachment_formats,
-        .depth_attachment_format = depth_attachment_format,
+        .color_attachment_formats = try vk.gpa.dupe(
+            gfx.ImageFormat,
+            options.color_attachment_formats,
+        ),
+        .depth_attachment_format = options.depth_attachment_format,
+        .debug_name = debug_name,
     };
-    var pipeline_value = _pipelines.get(key);
-    if (pipeline_value != null) {
-        return pipeline_value.?;
-    }
 
-    const pipeline_layout = vk.pipeline_layouts.get(layout_handle);
-    pipeline_value = try create(
-        program_handle,
-        pipeline_layout.layout,
-        debug_options,
-        render_options,
-        color_attachment_formats,
-        depth_attachment_format,
-    );
-    try _pipelines.put(key, pipeline_value.?);
-    return pipeline_value.?;
+    return .{ .handle = @ptrCast(pipeline) };
+}
+
+pub fn destroy(pipeline_handle: gfx.PipelineHandle) void {
+    const pipeline = get(pipeline_handle);
+    _pipelines_to_destroy.append(pipeline) catch |err| {
+        vk.log.err("Failed to append pipeline to destroy list: {any}", .{err});
+        return;
+    };
+}
+
+pub fn destroyPendingResources() void {
+    for (_pipelines_to_destroy.items) |pipeline| {
+        vk.device.destroyPipeline(pipeline.handle);
+        vk.gpa.free(pipeline.color_attachment_formats);
+        if (pipeline.debug_name) |name| {
+            vk.log.debug("Pipeline '{s}' destroyed", .{name});
+            vk.gpa.free(name);
+        }
+        vk.gpa.destroy(pipeline);
+    }
+    _pipelines_to_destroy.clearRetainingCapacity();
+}
+
+pub inline fn get(handle: gfx.PipelineHandle) *const Pipeline {
+    return @ptrCast(@alignCast(handle.handle));
 }

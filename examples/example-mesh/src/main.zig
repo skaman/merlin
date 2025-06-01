@@ -42,6 +42,7 @@ const ContextData = struct {
     mvp_uniform_buffer_handle: gfx.BufferHandle,
     texture_handle: gfx.TextureHandle,
     meshes: std.ArrayList(MeshInstance),
+    pipelines: std.AutoHashMap(gfx.PipelineLayoutHandle, gfx.PipelineHandle),
 };
 
 // *********************************************************************************************
@@ -54,6 +55,37 @@ fn destroyMeshes(meshes: *std.ArrayList(MeshInstance)) void {
         assets.destroyMaterial(mesh_instance.material);
     }
     meshes.deinit();
+}
+
+fn getPipeline(
+    data: *ContextData,
+    pipeline_layout: gfx.PipelineLayoutHandle,
+) !gfx.PipelineHandle {
+    if (data.pipelines.get(pipeline_layout)) |pipeline| {
+        return pipeline;
+    }
+
+    const pipeline = try gfx.createPipeline(.{
+        .program_handle = data.program_handle,
+        .pipeline_layout_handle = pipeline_layout,
+        .render_options = .{
+            .cull_mode = .back,
+            .front_face = .counter_clockwise,
+            .depth = .{ .enabled = true },
+        },
+        .color_attachment_formats = &[_]gfx.ImageFormat{
+            gfx.getSurfaceColorFormat(),
+        },
+        .depth_attachment_format = gfx.getSurfaceDepthFormat(),
+        .debug_options = .{
+            .debug_name = "Simple Mesh Pipeline",
+        },
+    });
+    errdefer gfx.destroyPipeline(pipeline);
+
+    try data.pipelines.put(pipeline_layout, pipeline);
+
+    return pipeline;
 }
 
 // *********************************************************************************************
@@ -167,6 +199,7 @@ pub fn init(context: mini_engine.InitContext) !ContextData {
         .mvp_uniform_buffer_handle = mvp_uniform_buffer_handle,
         .texture_handle = texture_handle,
         .meshes = meshes,
+        .pipelines = .init(context.gpa_allocator),
     };
 }
 
@@ -183,6 +216,12 @@ pub fn deinit(context: *mini_engine.Context(ContextData)) void {
         gfx.destroyImage(depth_image.handle);
         gfx.destroyImageView(depth_image.view_handle);
     }
+    var it = context.data.pipelines.iterator();
+    while (it.next()) |entry| {
+        gfx.destroyPipeline(entry.value_ptr.*);
+    }
+
+    context.data.pipelines.deinit();
 }
 
 pub fn update(context: *mini_engine.Context(ContextData)) !void {
@@ -282,7 +321,7 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
         gfx.setViewport(.{ 0, 0 }, swapchain_size);
         gfx.setScissor(.{ 0, 0 }, swapchain_size);
 
-        gfx.bindProgram(context.data.program_handle);
+        // gfx.bindProgram(context.data.program_handle);
         gfx.bindUniformBuffer(
             context.data.mvp_uniform_handle,
             context.data.mvp_uniform_buffer_handle,
@@ -292,6 +331,13 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
         for (context.data.meshes.items) |mesh_instance| {
             const mesh = assets.mesh(mesh_instance.mesh);
             const material = assets.material(mesh_instance.material);
+
+            const pipeline_handle = try getPipeline(
+                &context.data,
+                mesh.pipeline_handle,
+            );
+
+            gfx.bindPipeline(pipeline_handle);
 
             gfx.insertDebugLabel(
                 mesh_instance.name,
@@ -320,22 +366,18 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
                 },
             }
 
-            gfx.setRender(.{
-                .cull_mode = .none,
-                .front_face = .counter_clockwise,
-                .depth = .{ .enabled = true },
-            });
-
-            gfx.bindPipelineLayout(mesh.pipeline_handle);
             gfx.bindVertexBuffer(mesh.buffer_handle, mesh.vertex_buffer_offset);
-            gfx.bindIndexBuffer(mesh.buffer_handle, mesh.index_buffer_offset);
+            gfx.bindIndexBuffer(
+                mesh.buffer_handle,
+                mesh.index_buffer_offset,
+                mesh.index_type,
+            );
             gfx.drawIndexed(
                 mesh.indices_count,
                 1,
                 0,
                 0,
                 0,
-                mesh.index_type,
             );
         }
     }
@@ -373,7 +415,7 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
 // *********************************************************************************************
 
 pub const std_options: std.Options = .{
-    .log_level = .info,
+    .log_level = .debug,
     .logFn = mini_engine.customLog,
 };
 
