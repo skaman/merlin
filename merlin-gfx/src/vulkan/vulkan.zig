@@ -17,8 +17,8 @@ pub const framebuffers = @import("framebuffers.zig");
 pub const images = @import("images.zig");
 pub const instance = @import("instance.zig");
 pub const library = @import("library.zig");
-pub const pipeline = @import("pipeline.zig");
 pub const pipeline_layouts = @import("pipeline_layouts.zig");
+pub const pipelines = @import("pipelines.zig");
 pub const programs = @import("programs.zig");
 pub const shaders = @import("shaders.zig");
 pub const textures = @import("textures.zig");
@@ -55,7 +55,7 @@ var _surface_format: c.VkSurfaceFormatKHR = undefined;
 // *********************************************************************************************
 
 fn destroyPendingResources() !void {
-    pipeline.destroyPendingResources();
+    pipelines.destroyPendingResources();
     try framebuffers.destroyPendingResources();
     buffers.destroyPendingResources();
     programs.destroyPendingResources();
@@ -257,7 +257,7 @@ pub fn init(
 
     images.init();
     pipeline_layouts.init();
-    pipeline.init();
+    pipelines.init();
     buffers.init();
     programs.init();
     shaders.init();
@@ -281,7 +281,7 @@ pub fn deinit() void {
     shaders.deinit();
     programs.deinit();
     buffers.deinit();
-    pipeline.deinit();
+    pipelines.deinit();
     pipeline_layouts.deinit();
     images.deinit();
 
@@ -397,11 +397,11 @@ pub fn destroyPipelineLayout(handle: gfx.PipelineLayoutHandle) void {
 }
 
 pub fn createPipeline(options: gfx.PipelineOptions) !gfx.PipelineHandle {
-    return pipeline.create(options);
+    return pipelines.create(options);
 }
 
 pub fn destroyPipeline(handle: gfx.PipelineHandle) void {
-    pipeline.destroy(handle);
+    pipelines.destroy(handle);
 }
 
 pub fn createProgram(

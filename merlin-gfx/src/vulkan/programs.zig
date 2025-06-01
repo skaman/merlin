@@ -18,10 +18,10 @@ pub const Program = struct {
     descriptor_pool: c.VkDescriptorPool,
     descriptor_set_layout: c.VkDescriptorSetLayout,
 
-    uniform_name_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.NameHandle,
-    write_descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet,
-    descriptor_types: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorType,
-    uniform_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32,
+    uniform_name_handles: [vk.pipelines.MaxDescriptorSetBindings]gfx.NameHandle,
+    write_descriptor_sets: [vk.pipelines.MaxDescriptorSetBindings]c.VkWriteDescriptorSet,
+    descriptor_types: [vk.pipelines.MaxDescriptorSetBindings]c.VkDescriptorType,
+    uniform_sizes: [vk.pipelines.MaxDescriptorSetBindings]u32,
 
     layout_count: u32,
 
@@ -76,9 +76,9 @@ pub fn create(
 ) !gfx.ProgramHandle {
     std.debug.assert(descriptor_pool != null);
 
-    var layouts: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorSetLayoutBinding = undefined;
-    var layout_names: [vk.pipeline.MaxDescriptorSetBindings][]const u8 = undefined;
-    var layout_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32 = undefined;
+    var layouts: [vk.pipelines.MaxDescriptorSetBindings]c.VkDescriptorSetLayoutBinding = undefined;
+    var layout_names: [vk.pipelines.MaxDescriptorSetBindings][]const u8 = undefined;
+    var layout_sizes: [vk.pipelines.MaxDescriptorSetBindings]u32 = undefined;
     var layout_count: u32 = 0;
 
     const vertex_shader = vk.shaders.get(vertex_shader_handle);
@@ -159,7 +159,7 @@ pub fn create(
         try vk.device.createDescriptorSetLayout(&create_info, &descriptor_set_layout);
     }
 
-    var push_constants: [vk.pipeline.MaxPushConstants]c.VkPushConstantRange = undefined;
+    var push_constants: [vk.pipelines.MaxPushConstants]c.VkPushConstantRange = undefined;
     var push_constant_count: u32 = 0;
 
     for (vertex_shader.push_constants) |push_constant| {
@@ -204,10 +204,10 @@ pub fn create(
         descriptor_set_layouts[i] = descriptor_set_layout;
     }
 
-    var write_descriptor_sets: [vk.pipeline.MaxDescriptorSetBindings]c.VkWriteDescriptorSet = undefined;
-    var descriptor_types: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorType = undefined;
-    var uniform_sizes: [vk.pipeline.MaxDescriptorSetBindings]u32 = undefined;
-    var uniform_name_handles: [vk.pipeline.MaxDescriptorSetBindings]gfx.NameHandle = undefined;
+    var write_descriptor_sets: [vk.pipelines.MaxDescriptorSetBindings]c.VkWriteDescriptorSet = undefined;
+    var descriptor_types: [vk.pipelines.MaxDescriptorSetBindings]c.VkDescriptorType = undefined;
+    var uniform_sizes: [vk.pipelines.MaxDescriptorSetBindings]u32 = undefined;
+    var uniform_name_handles: [vk.pipelines.MaxDescriptorSetBindings]gfx.NameHandle = undefined;
 
     for (0..layout_count) |binding_index| {
         const name = layout_names[binding_index];

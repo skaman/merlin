@@ -68,8 +68,8 @@ fn handlePushDescriptorSet(
     const pipeline_layout = program.pipeline_layout;
     const layout_count = program.layout_count;
     var write_descriptor_sets = &program.write_descriptor_sets;
-    var buffer_infos: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorBufferInfo = undefined;
-    var image_infos: [vk.pipeline.MaxDescriptorSetBindings]c.VkDescriptorImageInfo = undefined;
+    var buffer_infos: [vk.pipelines.MaxDescriptorSetBindings]c.VkDescriptorBufferInfo = undefined;
+    var image_infos: [vk.pipelines.MaxDescriptorSetBindings]c.VkDescriptorImageInfo = undefined;
 
     for (0..layout_count) |binding_index| {
         const uniform_name_handle = program.uniform_name_handles[binding_index];
@@ -515,7 +515,7 @@ pub fn bindPipeline(
     pipeline_handle: gfx.PipelineHandle,
 ) void {
     const command_buffer = get(command_buffer_handle);
-    const pipeline = vk.pipeline.get(pipeline_handle);
+    const pipeline = vk.pipelines.get(pipeline_handle);
 
     vk.device.cmdBindPipeline(
         command_buffer.handle,
