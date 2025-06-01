@@ -26,103 +26,118 @@ fn checkKtxError(comptime message: []const u8, result: c.KTX_error_code) !void {
     }
 }
 
+fn getGlInternalFormat(channels: usize, channel_size: image.ChannelSize, srgb: bool) !c.GLenum {
+    if (channels == 1) {
+        switch (channel_size) {
+            .u8 => return if (srgb) c.GL_SR8_EXT else c.GL_R8,
+            .u16 => return c.GL_R16,
+            .f32 => return c.GL_R32F,
+        }
+    } else if (channels == 2) {
+        switch (channel_size) {
+            // TODO: 0x8FBE should be GL_SRG8_EXT, but it's not defined
+            // in the header file on windows.
+            .u8 => return if (srgb) 0x8FBE else c.GL_RG8,
+            .u16 => return c.GL_RG16,
+            .f32 => return c.GL_RG32F,
+        }
+    } else if (channels == 3) {
+        switch (channel_size) {
+            .u8 => return if (srgb) c.GL_SRGB8 else c.GL_RGB8,
+            .u16 => return c.GL_RGB16,
+            .f32 => return c.GL_RGB32F,
+        }
+    } else if (channels == 4) {
+        switch (channel_size) {
+            .u8 => return if (srgb) c.GL_SRGB8_ALPHA8 else c.GL_RGBA8,
+            .u16 => return c.GL_RGBA16,
+            .f32 => return c.GL_RGBA32F,
+        }
+    }
+
+    std.log.err("Unsupported number of channels: {d}\n", .{channels});
+    return error.ImageError;
+}
+
+fn getVulkanFormat(channels: usize, channel_size: image.ChannelSize, srgb: bool) !c.VkFormat {
+    if (channels == 1) {
+        switch (channel_size) {
+            .u8 => return if (srgb) c.VK_FORMAT_R8_SRGB else c.VK_FORMAT_R8_UNORM,
+            .u16 => return c.VK_FORMAT_R16_UNORM,
+            .f32 => return c.VK_FORMAT_R32_SFLOAT,
+        }
+    } else if (channels == 2) {
+        switch (channel_size) {
+            .u8 => return if (srgb) c.VK_FORMAT_R8G8_SRGB else c.VK_FORMAT_R8G8_UNORM,
+            .u16 => return c.VK_FORMAT_R16G16_UNORM,
+            .f32 => return c.VK_FORMAT_R32G32_SFLOAT,
+        }
+    } else if (channels == 3) {
+        switch (channel_size) {
+            .u8 => return if (srgb) c.VK_FORMAT_R8G8B8_SRGB else c.VK_FORMAT_R8G8B8_UNORM,
+            .u16 => return c.VK_FORMAT_R16G16B16_UNORM,
+            .f32 => return c.VK_FORMAT_R32G32B32_SFLOAT,
+        }
+    } else if (channels == 4) {
+        switch (channel_size) {
+            .u8 => return if (srgb) c.VK_FORMAT_R8G8B8A8_SRGB else c.VK_FORMAT_R8G8B8A8_UNORM,
+            .u16 => return c.VK_FORMAT_R16G16B16A16_UNORM,
+            .f32 => return c.VK_FORMAT_R32G32B32A32_SFLOAT,
+        }
+    }
+
+    std.log.err("Unsupported number of channels: {d}\n", .{channels});
+    return error.ImageError;
+}
+
 // *********************************************************************************************
 // Public API
 // *********************************************************************************************
 
 pub const Texture = struct {
     allocator: std.mem.Allocator,
-    image: image.Image,
-    texture: *c.ktxTexture2,
+    texture: *c.ktxTexture2 = undefined,
 
-    pub fn load(allocator: std.mem.Allocator, path: []const u8) !Texture {
-        const source = try image.Image.load(allocator, path, 0);
-        errdefer source.deinit();
+    pub const CreateOptions = struct {
+        num_channels: usize,
+        channel_size: image.ChannelSize,
+        srgb: bool,
+        base_width: u32,
+        base_height: u32,
+        base_depth: u32 = 1,
+        num_dimensions: u32 = 2,
+        num_levels: u32 = 1,
+        num_layers: u32 = 1,
+        num_faces: u32 = 1,
+        is_array: bool = false,
+        generate_mipmaps: bool = false,
+    };
 
+    pub fn init(allocator: std.mem.Allocator, options: CreateOptions) !Texture {
         var create_info = std.mem.zeroInit(
             c.ktxTextureCreateInfo,
             .{
-                .numFaces = 1,
-                .numLayers = 1,
-                .isArray = false,
+                .glInternalformat = try getGlInternalFormat(
+                    options.num_channels,
+                    options.channel_size,
+                    options.srgb,
+                ),
+                .vkFormat = try getVulkanFormat(
+                    options.num_channels,
+                    options.channel_size,
+                    options.srgb,
+                ),
+                .baseWidth = options.base_width,
+                .baseHeight = options.base_height,
+                .baseDepth = options.base_depth,
+                .numDimensions = options.num_dimensions,
+                .numLevels = options.num_levels,
+                .numLayers = options.num_layers,
+                .numFaces = options.num_faces,
+                .isArray = options.is_array,
+                .generateMipmaps = options.generate_mipmaps,
             },
         );
-
-        if (source.channels == 1) {
-            switch (source.channel_size) {
-                .u8 => {
-                    create_info.glInternalformat = if (source.srgb) c.GL_SR8_EXT else c.GL_R8;
-                    create_info.vkFormat = if (source.srgb) c.VK_FORMAT_R8_SRGB else c.VK_FORMAT_R8_UNORM;
-                },
-                .u16 => {
-                    create_info.glInternalformat = c.GL_R16;
-                    create_info.vkFormat = c.VK_FORMAT_R16_UNORM;
-                },
-                .f32 => {
-                    create_info.glInternalformat = c.GL_R32F;
-                    create_info.vkFormat = c.VK_FORMAT_R32_SFLOAT;
-                },
-            }
-        } else if (source.channels == 2) {
-            switch (source.channel_size) {
-                .u8 => {
-                    // TODO: 0x8FBE should be GL_SRG8_EXT, but it's not defined in the header file on windows.
-                    create_info.glInternalformat = if (source.srgb) 0x8FBE else c.GL_RG8;
-                    create_info.vkFormat = if (source.srgb) c.VK_FORMAT_R8G8_SRGB else c.VK_FORMAT_R8G8_UNORM;
-                },
-                .u16 => {
-                    create_info.glInternalformat = c.GL_RG16;
-                    create_info.vkFormat = c.VK_FORMAT_R16G16_UNORM;
-                },
-                .f32 => {
-                    create_info.glInternalformat = c.GL_RG32F;
-                    create_info.vkFormat = c.VK_FORMAT_R32G32_SFLOAT;
-                },
-            }
-        } else if (source.channels == 3) {
-            switch (source.channel_size) {
-                .u8 => {
-                    create_info.glInternalformat = if (source.srgb) c.GL_SRGB8 else c.GL_RGB8;
-                    create_info.vkFormat = if (source.srgb) c.VK_FORMAT_R8G8B8_SRGB else c.VK_FORMAT_R8G8B8_UNORM;
-                },
-                .u16 => {
-                    create_info.glInternalformat = c.GL_RGB16;
-                    create_info.vkFormat = c.VK_FORMAT_R16G16B16_UNORM;
-                },
-                .f32 => {
-                    create_info.glInternalformat = c.GL_RGB32F;
-                    create_info.vkFormat = c.VK_FORMAT_R32G32B32_SFLOAT;
-                },
-            }
-        } else if (source.channels == 4) {
-            switch (source.channel_size) {
-                .u8 => {
-                    create_info.glInternalformat = if (source.srgb) c.GL_SRGB8_ALPHA8 else c.GL_RGBA8;
-                    create_info.vkFormat = if (source.srgb) c.VK_FORMAT_R8G8B8A8_SRGB else c.VK_FORMAT_R8G8B8A8_UNORM;
-                },
-                .u16 => {
-                    create_info.glInternalformat = c.GL_RGBA16;
-                    create_info.vkFormat = c.VK_FORMAT_R16G16B16A16_UNORM;
-                },
-                .f32 => {
-                    create_info.glInternalformat = c.GL_RGBA32F;
-                    create_info.vkFormat = c.VK_FORMAT_R32G32B32A32_SFLOAT;
-                },
-            }
-        } else {
-            std.log.err("Unsupported number of channels: {d}\n", .{source.channels});
-            return error.ImageError;
-        }
-
-        create_info.baseWidth = @intCast(source.width);
-        create_info.baseHeight = @intCast(source.height);
-        create_info.baseDepth = 1;
-        create_info.numDimensions = 2;
-
-        create_info.generateMipmaps = false;
-        //create_info.numLevels = 1;
-        const max_dim = @max(source.width, source.height);
-        create_info.numLevels = @intCast(std.math.log2(max_dim) + 1);
 
         var ktx_texture: *c.ktxTexture2 = undefined;
         try checkKtxError(
@@ -134,41 +149,37 @@ pub const Texture = struct {
             ),
         );
 
-        try checkKtxError(
-            "Failed to load image data",
-            ktxTexture2_SetImageFromMemory(
-                ktx_texture,
-                0,
-                0,
-                0,
-                source.data.ptr,
-                source.data.len,
-            ),
-        );
-
         return .{
             .allocator = allocator,
-            .image = source,
             .texture = ktx_texture,
         };
     }
 
     pub fn deinit(self: *const Texture) void {
-        self.image.deinit();
         c.ktxTexture2_Destroy(self.texture);
     }
 
-    pub fn save(self: *const Texture, path: []const u8) !void {
-        const path_z = try self.allocator.dupeZ(u8, path);
-        defer self.allocator.free(path_z);
-
+    pub fn setImage(
+        self: *const Texture,
+        data: []u8,
+        level: u32,
+        layer: u32,
+        face_slice: u32,
+    ) !void {
         try checkKtxError(
-            "Failed to write KTX texture",
-            c.ktxTexture2_WriteToNamedFile(self.texture, path_z.ptr),
+            "Failed to set image data",
+            ktxTexture2_SetImageFromMemory(
+                self.texture,
+                level,
+                layer,
+                face_slice,
+                data.ptr,
+                @intCast(data.len),
+            ),
         );
     }
 
-    pub fn compress(
+    pub fn compressBasis(
         self: *const Texture,
         normalmap: bool,
         level: u32,
@@ -192,31 +203,13 @@ pub const Texture = struct {
         );
     }
 
-    pub fn genMipmaps(
-        self: *const Texture,
-        layer: u32,
-        face_slice: u32,
-        edge: image.ResizeEdge,
-        filter: image.ResizeFilter,
-    ) !void {
-        for (1..self.texture.numLevels) |level| {
-            const output_width = @as(u32, @intCast(@max(1, self.image.width >> @intCast(level))));
-            const output_height = @as(u32, @intCast(@max(1, self.image.height >> @intCast(level))));
+    pub fn save(self: *const Texture, path: []const u8) !void {
+        const path_z = try self.allocator.dupeZ(u8, path);
+        defer self.allocator.free(path_z);
 
-            const resized_image = try self.image.resize(output_width, output_height, edge, filter);
-            defer resized_image.deinit();
-
-            try checkKtxError(
-                "Failed to set image data",
-                ktxTexture2_SetImageFromMemory(
-                    self.texture,
-                    @intCast(level),
-                    layer,
-                    face_slice,
-                    resized_image.data.ptr,
-                    resized_image.data.len,
-                ),
-            );
-        }
+        try checkKtxError(
+            "Failed to write KTX texture",
+            c.ktxTexture2_WriteToNamedFile(self.texture, path_z.ptr),
+        );
     }
 };

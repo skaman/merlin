@@ -194,13 +194,13 @@ pub fn main() !void {
     );
     defer texture.deinit();
 
-    try std_out.print("Image: {d}x{d} {d} channels ({s} {s})\n", .{
-        texture.image.width,
-        texture.image.height,
-        texture.image.channels,
-        texture.image.channel_size.name(),
-        if (texture.image.srgb) "sRGB" else "linear",
-    });
+    // try std_out.print("Image: {d}x{d} {d} channels ({s} {s})\n", .{
+    //     texture.image.width,
+    //     texture.image.height,
+    //     texture.image.channels,
+    //     texture.image.channel_size.name(),
+    //     if (texture.image.srgb) "sRGB" else "linear",
+    // });
 
     try texture.save(options.output_file);
 
