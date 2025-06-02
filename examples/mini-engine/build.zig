@@ -22,31 +22,6 @@ pub fn addShaders(
     }
 }
 
-pub fn addTextures(
-    b: *std.Build,
-    textures: []const []const u8,
-) !void {
-    const merlin_texturec = b.dependency("merlin_texturec", .{
-        .optimize = std.builtin.OptimizeMode.ReleaseFast,
-    });
-    const merlin_texturec_exe = merlin_texturec.artifact("texturec");
-
-    for (textures) |texture| {
-        var output_buffer: [4096]u8 = undefined;
-        const extension = std.fs.path.extension(texture);
-        const texture_without_extension = texture[0..(texture.len - extension.len)];
-        const output_slice = try std.fmt.bufPrint(&output_buffer, "{s}.ktx", .{texture_without_extension});
-
-        const tool_step = b.addRunArtifact(merlin_texturec_exe);
-        tool_step.addArg("-m");
-        tool_step.addArg("-c");
-        tool_step.addFileArg(b.path(texture));
-        const output = tool_step.addOutputFileArg(output_slice);
-
-        b.getInstallStep().dependOn(&b.addInstallFileWithDir(output, .bin, output_slice).step);
-    }
-}
-
 pub const SourceMesh = struct {
     source: []const u8,
     output: []const u8,

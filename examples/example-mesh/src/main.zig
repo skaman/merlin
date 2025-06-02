@@ -93,7 +93,6 @@ fn getPipeline(
 // *********************************************************************************************
 
 pub fn init(context: mini_engine.InitContext) !ContextData {
-
     // Shaders and program
     const vert_shader_handle = try mini_engine.loadShader(
         context.arena_allocator,
@@ -382,31 +381,29 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
         }
     }
 
-    {
-        const ui_render_pass_options = gfx.RenderPassOptions{
-            .color_attachments = &[_]gfx.Attachment{
-                .{
-                    .image = gfx.getSurfaceImage(context.framebuffer_handle),
-                    .image_view = gfx.getSurfaceImageView(context.framebuffer_handle),
-                    .format = gfx.getSurfaceColorFormat(),
-                    .load_op = .dont_care,
-                    .store_op = .store,
-                },
+    const ui_render_pass_options = gfx.RenderPassOptions{
+        .color_attachments = &[_]gfx.Attachment{
+            .{
+                .image = gfx.getSurfaceImage(context.framebuffer_handle),
+                .image_view = gfx.getSurfaceImageView(context.framebuffer_handle),
+                .format = gfx.getSurfaceColorFormat(),
+                .load_op = .dont_care,
+                .store_op = .store,
             },
-            .depth_attachment = null,
-        };
-        if (try gfx.beginRenderPass(
-            context.framebuffer_handle,
-            ui_render_pass_options,
-        )) {
-            defer gfx.endRenderPass();
-            imgui.beginFrame(context.delta_time);
+        },
+        .depth_attachment = null,
+    };
+    if (try gfx.beginRenderPass(
+        context.framebuffer_handle,
+        ui_render_pass_options,
+    )) {
+        defer gfx.endRenderPass();
+        imgui.beginFrame(context.delta_time);
 
-            var show_demo_window: bool = true;
-            imgui.c.igShowDemoWindow(&show_demo_window);
+        var show_demo_window: bool = true;
+        imgui.c.igShowDemoWindow(&show_demo_window);
 
-            imgui.endFrame();
-        }
+        imgui.endFrame();
     }
 }
 

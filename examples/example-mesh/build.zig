@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const mini_engine = @import("mini_engine");
+const texturec = @import("merlin_texturec");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -28,8 +29,13 @@ pub fn build(b: *std.Build) !void {
         "assets/shader.frag",
     });
 
-    try mini_engine.addTextures(b, &[_][]const u8{
-        "assets/uv_texture.png",
+    try texturec.compile(b, &[_]texturec.Texture{
+        .{
+            .input_files = &[_][]const u8{"assets/uv_texture.png"},
+            .output_file = "assets/uv_texture.ktx",
+            .compression = true,
+            .mipmaps = true,
+        },
     });
 
     try mini_engine.addMeshes(b, &[_]mini_engine.SourceMesh{
