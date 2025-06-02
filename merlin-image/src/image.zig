@@ -196,7 +196,8 @@ fn isImageSrgb(path: []const u8) !bool {
     }
     // check for JPEG
     if (header[0] == 0xff and header[1] == 0xd8) {
-        return try checkJpegSrgb(file);
+        return false; // TODO: fix it!
+        //return try checkJpegSrgb(file);
     }
     // check for TIFF
     if ((header[0] == 'I' and header[1] == 'I' and header[2] == 42 and header[3] == 0) or

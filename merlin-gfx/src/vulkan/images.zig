@@ -45,6 +45,7 @@ pub fn createInternal(
     height: u32,
     depth: u32,
     format: c.VkFormat,
+    create_flags: c.VkImageCreateFlags,
     mip_levels: u32,
     array_layers: u32,
     tiling: c.VkImageTiling,
@@ -63,6 +64,7 @@ pub fn createInternal(
         c.VkImageCreateInfo,
         .{
             .sType = c.VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            .flags = create_flags,
             .imageType = c.VK_IMAGE_TYPE_2D,
             .extent = .{
                 .width = width,
@@ -313,6 +315,7 @@ pub fn create(image_options: gfx.ImageOptions) !gfx.ImageHandle {
         image_options.height,
         image_options.depth,
         vk.vulkanFormatFromGfxImageFormat(image_options.format),
+        0,
         image_options.mip_levels,
         image_options.array_layers,
         vk.textures.tilingFromGfxTextureTiling(image_options.tiling),

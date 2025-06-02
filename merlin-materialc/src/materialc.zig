@@ -58,7 +58,7 @@ fn convertGltfToKtxTexture(
 
     return try texturec.convert(
         allocator,
-        path,
+        &[_][]const u8{path},
         .{
             .compression = conversion_options.compression,
             .level = conversion_options.level,

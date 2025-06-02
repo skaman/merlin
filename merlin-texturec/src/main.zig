@@ -9,7 +9,7 @@ const texturec = @import("texturec");
 // *********************************************************************************************
 
 const Options = struct {
-    input_file: []const u8,
+    input_files: []const []const u8,
     output_file: []const u8,
     conversion_options: texturec.Options,
 };
@@ -24,8 +24,9 @@ const Params = clap.parseParamsComptime(
     \\-m, --mipmaps             Generate image mipmaps.
     \\-e, --edge <EDGE>         Mipmaps resizing edge mode (clamp, reflect, wrap, zero). Default is clamp.
     \\-f, --filter <FILTER>     Mipmaps resizing filter mode (auto, box, triangle, cubicbspline, catmullrom, mitchell, pointsample). Default is auto.
-    \\<IN_FILE>                 Source file.
-    \\<OUT_FILE>                Output file.
+    \\-C, --cubemap             Convert input files to cubemap. It requires 6 input files in the order +X, -X, +Y, -Y, +Z, -Z.
+    \\-o, --output <OUT_FILE>   Output file.
+    \\<IN_FILES>...             Source files.
 );
 
 // *********************************************************************************************
@@ -33,7 +34,7 @@ const Params = clap.parseParamsComptime(
 // *********************************************************************************************
 
 fn printHelp(writer: anytype) !void {
-    try writer.print("Usage: merlin-texturec [options] <IN_FILE> <OUT_FILE>\n", .{});
+    try writer.print("Usage: merlin-texturec [options] <IN_FILES>\n", .{});
     return clap.help(
         writer,
         clap.Help,
@@ -46,6 +47,12 @@ fn invalidArgument(writer: anytype, name: []const u8) !void {
     try writer.print("Invalid argument: {s}\n", .{name});
     try printHelp(writer);
     return error.InvalidArgument;
+}
+
+fn missingArgument(writer: anytype, name: []const u8) !void {
+    try writer.print("Missing argument: {s}\n", .{name});
+    try printHelp(writer);
+    return error.MissingArgument;
 }
 
 fn parseEdgeOption(writer: anytype, value: []const u8) !image.ResizeEdge {
@@ -121,7 +128,7 @@ pub fn main() !void {
 
     const parsers = comptime .{
         .FILE = clap.parsers.string,
-        .IN_FILE = clap.parsers.string,
+        .IN_FILES = clap.parsers.string,
         .OUT_FILE = clap.parsers.string,
         .LEVEL = clap.parsers.int(u32, 10),
         .QUALITY = clap.parsers.int(u32, 10),
@@ -144,9 +151,15 @@ pub fn main() !void {
         return printHelp(std_out);
     }
 
+    const input_files = res.positionals[0];
+    const output_file = if (res.args.output) |value|
+        value
+    else
+        return missingArgument(std_err, "OUT_FILE");
+
     var options = Options{
-        .input_file = if (res.positionals[0]) |value| value else return invalidArgument(std_err, "IN_FILE"),
-        .output_file = if (res.positionals[1]) |value| value else return invalidArgument(std_err, "OUT_FILE"),
+        .input_files = input_files,
+        .output_file = output_file,
         .conversion_options = .{},
     };
 
@@ -174,9 +187,18 @@ pub fn main() !void {
     if (res.args.filter) |value| {
         options.conversion_options.filter = try parseFilterOption(std_err, value);
     }
+    if (res.args.cubemap != 0) {
+        if (input_files.len != 6) {
+            try std_err.print("Invalid number of input files for cubemap. Expected 6 files.\n", .{});
+            return error.InvalidArgument;
+        }
+        options.conversion_options.cubemap = true;
+    }
 
     try std_out.print("Texture compiler:\n", .{});
-    try std_out.print("  - Input file: {s}\n", .{options.input_file});
+    for (options.input_files) |input_file| {
+        try std_out.print("  - Input file: {s}\n", .{input_file});
+    }
     try std_out.print("  - Output file: {s}\n", .{options.output_file});
     try std_out.print("  - Compression: {}\n", .{options.conversion_options.compression});
     try std_out.print("  - Normal map: {}\n", .{options.conversion_options.normalmap});
@@ -189,7 +211,7 @@ pub fn main() !void {
 
     const texture = try texturec.convert(
         allocator,
-        options.input_file,
+        options.input_files,
         options.conversion_options,
     );
     defer texture.deinit();

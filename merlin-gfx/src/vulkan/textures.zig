@@ -58,6 +58,7 @@ const TextureParams = struct {
     blit_filter: c.VkFilter,
     final_layout: c.VkImageLayout,
     view_type: c.VkImageViewType,
+    create_flags: c.VkImageCreateFlags,
 };
 
 const PrepareTextureParams = struct {
@@ -406,6 +407,7 @@ fn prepareTextureParams(args: PrepareTextureParams) !TextureParams {
         .blit_filter = blit_filter,
         .final_layout = args.final_layout,
         .view_type = view_type,
+        .create_flags = create_flags,
     };
 }
 
@@ -583,6 +585,7 @@ pub fn create(
             options.height,
             options.depth,
             params.format,
+            params.create_flags,
             params.num_image_levels,
             params.num_image_layers,
             c.VK_IMAGE_TILING_OPTIMAL,
@@ -685,6 +688,7 @@ pub fn create(
             options.height,
             options.depth,
             params.format,
+            params.create_flags,
             params.num_image_levels,
             params.num_image_layers,
             c.VK_IMAGE_TILING_LINEAR,
@@ -865,6 +869,7 @@ pub fn createFromKTX(
             ktx_texture.baseHeight,
             ktx_texture.baseDepth,
             params.format,
+            params.create_flags,
             params.num_image_levels,
             params.num_image_layers,
             c.VK_IMAGE_TILING_OPTIMAL,
@@ -954,6 +959,7 @@ pub fn createFromKTX(
             ktx_texture.baseHeight,
             ktx_texture.baseDepth,
             params.format,
+            params.create_flags,
             params.num_image_levels,
             params.num_image_layers,
             c.VK_IMAGE_TILING_LINEAR,
