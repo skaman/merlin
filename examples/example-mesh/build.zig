@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const geometryc = @import("merlin_geometryc");
+const materialc = @import("merlin_materialc");
 const mini_engine = @import("mini_engine");
 const shaderc = @import("merlin_shaderc");
 const texturec = @import("merlin_texturec");
@@ -88,14 +89,18 @@ pub fn build(b: *std.Build) !void {
         },
     });
 
-    try mini_engine.addMaterials(b, &[_]mini_engine.SourceMaterial{
+    try materialc.compile(b, &[_]materialc.Material{
         .{
             .source = "assets/FlightHelmet/FlightHelmet.gltf",
             .output = "assets/FlightHelmet",
+            .compression = true,
+            .mipmaps = true,
         },
         .{
             .source = "assets/BoxTextured/BoxTextured.gltf",
             .output = "assets/BoxTextured",
+            .compression = true,
+            .mipmaps = true,
         },
     });
 

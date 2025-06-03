@@ -1,35 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-pub const SourceMaterial = struct {
-    source: []const u8,
-    output: []const u8,
-};
-
-pub fn addMaterials(
-    b: *std.Build,
-    materials: []const SourceMaterial,
-) !void {
-    const merlin_materialc = b.dependency("merlin_materialc", .{
-        .optimize = std.builtin.OptimizeMode.ReleaseFast,
-    });
-    const materialc_exe = merlin_materialc.artifact("materialc");
-
-    for (materials) |material| {
-        const tool_step = b.addRunArtifact(materialc_exe);
-        tool_step.addArg("-m");
-        tool_step.addArg("-c");
-        tool_step.addFileArg(b.path(material.source));
-        const output = tool_step.addOutputDirectoryArg(material.output);
-
-        b.getInstallStep().dependOn(&b.addInstallDirectory(.{
-            .source_dir = output,
-            .install_dir = .bin,
-            .install_subdir = material.output,
-        }).step);
-    }
-}
-
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});

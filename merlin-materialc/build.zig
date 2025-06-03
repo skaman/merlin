@@ -1,6 +1,70 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+pub const Material = struct {
+    source: []const u8,
+    output: []const u8,
+    compression: bool = false,
+    level: ?usize = null,
+    quality: ?usize = null,
+    mipmaps: bool = false,
+    edge: ?[]const u8 = null,
+    filter: ?[]const u8 = null,
+};
+
+pub fn compile(b: *std.Build, materials: []const Material) !void {
+    const merlin_materialc = b.dependency("merlin_materialc", .{
+        .optimize = std.builtin.OptimizeMode.ReleaseFast,
+    });
+    const materialc_exe = merlin_materialc.artifact("materialc");
+
+    for (materials) |material| {
+        const tool_step = b.addRunArtifact(materialc_exe);
+        if (material.compression) {
+            tool_step.addArg("-c");
+        }
+        if (material.level) |level| {
+            var level_buf: [16]u8 = undefined;
+            const level_slice = try std.fmt.bufPrint(
+                &level_buf,
+                "{d}",
+                .{level},
+            );
+            tool_step.addArg("-l");
+            tool_step.addArg(level_slice);
+        }
+        if (material.quality) |quality| {
+            var quality_buf: [16]u8 = undefined;
+            const quality_slice = try std.fmt.bufPrint(
+                &quality_buf,
+                "{d}",
+                .{quality},
+            );
+            tool_step.addArg("-q");
+            tool_step.addArg(quality_slice);
+        }
+        if (material.mipmaps) {
+            tool_step.addArg("-m");
+        }
+        if (material.edge) |edge| {
+            tool_step.addArg("-e");
+            tool_step.addArg(edge);
+        }
+        if (material.filter) |filter| {
+            tool_step.addArg("-f");
+            tool_step.addArg(filter);
+        }
+        tool_step.addFileArg(b.path(material.source));
+        const output = tool_step.addOutputDirectoryArg(material.output);
+
+        b.getInstallStep().dependOn(&b.addInstallDirectory(.{
+            .source_dir = output,
+            .install_dir = .bin,
+            .install_subdir = material.output,
+        }).step);
+    }
+}
+
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
