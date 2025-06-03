@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+const geometryc = @import("merlin_geometryc");
 const mini_engine = @import("mini_engine");
 const shaderc = @import("merlin_shaderc");
 const texturec = @import("merlin_texturec");
@@ -45,7 +46,7 @@ pub fn build(b: *std.Build) !void {
         },
     });
 
-    try mini_engine.addMeshes(b, &[_]mini_engine.SourceMesh{
+    try geometryc.compile(b, &[_]geometryc.Mesh{
         .{
             .source = "assets/Box/Box.gltf",
             .output = "assets/box.0.mesh",

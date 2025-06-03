@@ -1,49 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-pub const SourceMesh = struct {
-    source: []const u8,
-    output: []const u8,
-    sub_mesh: u32 = 0,
-    normal: bool = true,
-    tangent: bool = false,
-    color: bool = false,
-    weight: bool = false,
-    tex_coord: bool = true,
-};
-
-pub fn addMeshes(
-    b: *std.Build,
-    meshes: []const SourceMesh,
-) !void {
-    const merlin_geometryc = b.dependency("merlin_geometryc", .{
-        .optimize = std.builtin.OptimizeMode.ReleaseFast,
-    });
-    const geometryc_exe = merlin_geometryc.artifact("geometryc");
-
-    for (meshes) |mesh| {
-        const sub_mesh = try std.fmt.allocPrint(b.allocator, "{d}", .{mesh.sub_mesh});
-        defer b.allocator.free(sub_mesh);
-        const tool_step = b.addRunArtifact(geometryc_exe);
-        tool_step.addArg("-s");
-        tool_step.addArg(sub_mesh);
-        tool_step.addArg("-n");
-        tool_step.addArg(if (mesh.normal) "1" else "0");
-        tool_step.addArg("-t");
-        tool_step.addArg(if (mesh.tangent) "1" else "0");
-        tool_step.addArg("-C");
-        tool_step.addArg(if (mesh.color) "1" else "0");
-        tool_step.addArg("-w");
-        tool_step.addArg(if (mesh.weight) "1" else "0");
-        tool_step.addArg("-T");
-        tool_step.addArg(if (mesh.tex_coord) "1" else "0");
-        tool_step.addFileArg(b.path(mesh.source));
-        const output = tool_step.addOutputFileArg(mesh.output);
-
-        b.getInstallStep().dependOn(&b.addInstallFileWithDir(output, .bin, mesh.output).step);
-    }
-}
-
 pub const SourceMaterial = struct {
     source: []const u8,
     output: []const u8,
