@@ -1,6 +1,50 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+pub const Shader = struct {
+    input_file: []const u8,
+    output_file: []const u8,
+};
+
+pub fn compile(b: *std.Build, shaders: []const Shader) !void {
+    const merlin_shaderc = b.dependency("merlin_shaderc", .{
+        .optimize = std.builtin.OptimizeMode.ReleaseFast,
+    });
+    const merlin_shaderc_exe = merlin_shaderc.artifact("shaderc");
+
+    for (shaders) |shader| {
+        const tool_step = b.addRunArtifact(merlin_shaderc_exe);
+        tool_step.addFileArg(b.path(shader.input_file));
+        const output = tool_step.addOutputFileArg(shader.output_file);
+
+        b.getInstallStep().dependOn(&b.addInstallFileWithDir(
+            output,
+            .bin,
+            shader.output_file,
+        ).step);
+    }
+}
+
+pub fn compileEmbed(b: *std.Build, shaders: []const Shader, exe: *std.Build.Step.Compile) !void {
+    const merlin_shaderc = b.dependency("merlin_shaderc", .{
+        .optimize = std.builtin.OptimizeMode.ReleaseFast,
+    });
+    const merlin_shaderc_exe = merlin_shaderc.artifact("shaderc");
+
+    for (shaders) |shader| {
+        const tool_step = b.addRunArtifact(merlin_shaderc_exe);
+        tool_step.addFileArg(b.path(shader.input_file));
+        const output = tool_step.addOutputFileArg(shader.output_file);
+
+        exe.root_module.addAnonymousImport(
+            std.fs.path.basename(shader.output_file),
+            .{
+                .root_source_file = output,
+            },
+        );
+    }
+}
+
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});

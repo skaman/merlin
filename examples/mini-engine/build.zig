@@ -1,27 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-pub fn addShaders(
-    b: *std.Build,
-    shaders: []const []const u8,
-) !void {
-    const merlin_shaderc = b.dependency("merlin_shaderc", .{
-        .optimize = std.builtin.OptimizeMode.ReleaseFast,
-    });
-    const merlin_shaderc_exe = merlin_shaderc.artifact("shaderc");
-
-    for (shaders) |shader| {
-        var output_buffer: [4096]u8 = undefined;
-        const output_slice = try std.fmt.bufPrint(&output_buffer, "{s}.bin", .{shader});
-
-        const tool_step = b.addRunArtifact(merlin_shaderc_exe);
-        tool_step.addFileArg(b.path(shader));
-        const output = tool_step.addOutputFileArg(output_slice);
-
-        b.getInstallStep().dependOn(&b.addInstallFileWithDir(output, .bin, output_slice).step);
-    }
-}
-
 pub const SourceMesh = struct {
     source: []const u8,
     output: []const u8,

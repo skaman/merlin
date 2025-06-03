@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 const mini_engine = @import("mini_engine");
+const shaderc = @import("merlin_shaderc");
 const texturec = @import("merlin_texturec");
 
 pub fn build(b: *std.Build) !void {
@@ -24,9 +25,15 @@ pub fn build(b: *std.Build) !void {
         .root_module = example_mesh_mod,
     });
 
-    try mini_engine.addShaders(b, &[_][]const u8{
-        "assets/shader.vert",
-        "assets/shader.frag",
+    try shaderc.compile(b, &[_]shaderc.Shader{
+        .{
+            .input_file = "assets/shader.vert",
+            .output_file = "assets/shader.vert.bin",
+        },
+        .{
+            .input_file = "assets/shader.frag",
+            .output_file = "assets/shader.frag.bin",
+        },
     });
 
     try texturec.compile(b, &[_]texturec.Texture{
