@@ -320,7 +320,6 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
         gfx.setViewport(.{ 0, 0 }, swapchain_size);
         gfx.setScissor(.{ 0, 0 }, swapchain_size);
 
-        // gfx.bindProgram(context.data.program_handle);
         gfx.bindUniformBuffer(
             context.data.mvp_uniform_handle,
             context.data.mvp_uniform_buffer_handle,
