@@ -349,13 +349,27 @@ pub fn beginRenderPass(
             &barrier,
         );
 
+        const resolve_mode: c.VkResolveModeFlagBits = switch (color_attachment.resolve_mode) {
+            .none => c.VK_RESOLVE_MODE_NONE,
+            .sample_zero => c.VK_RESOLVE_MODE_SAMPLE_ZERO_BIT,
+            .average => c.VK_RESOLVE_MODE_AVERAGE_BIT,
+            .min => c.VK_RESOLVE_MODE_MIN_BIT,
+            .max => c.VK_RESOLVE_MODE_MAX_BIT,
+        };
+
+        var resolve_image_view: c.VkImageView = @ptrCast(c.VK_NULL_HANDLE);
+        if (color_attachment.resolve_image_view) |resolve_image| {
+            resolve_image_view = @ptrCast(@alignCast(resolve_image.handle));
+        }
+
         color_attachments[i] = std.mem.zeroInit(
             c.VkRenderingAttachmentInfoKHR,
             .{
                 .sType = c.VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR,
                 .imageView = image_view,
                 .imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                .resolveMode = c.VK_RESOLVE_MODE_NONE,
+                .resolveMode = resolve_mode,
+                .resolveImageView = resolve_image_view,
                 .loadOp = gfxLoadOpToVulkanLoadOp(color_attachment.load_op),
                 .storeOp = gfxStoreOpToVulkanStoreOp(color_attachment.store_op),
                 .clearValue = c.VkClearValue{

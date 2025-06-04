@@ -33,6 +33,9 @@ pub fn getMaxFramesInFlight() u32 {
 pub fn getCurrentFrameInFlight() u32 {
     return 0;
 }
+pub fn getSupportedSampleCounts() []gfx.SampleCount {
+    return &[_]gfx.SampleCount{};
+}
 pub fn createFramebuffer(_: platform.WindowHandle) !gfx.FramebufferHandle {
     return .{ .handle = undefined };
 }

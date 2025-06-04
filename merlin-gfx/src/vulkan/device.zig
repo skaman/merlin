@@ -103,6 +103,7 @@ pub var dispatch: Dispatch = undefined;
 pub var queue_family_indices: QueueFamilyIndices = undefined;
 pub var features: c.VkPhysicalDeviceFeatures2 = undefined;
 pub var properties: c.VkPhysicalDeviceProperties = undefined;
+pub var supported_sample_counts: std.ArrayList(gfx.SampleCount) = undefined;
 
 // *********************************************************************************************
 // SwapChainSupportDetails
@@ -493,6 +494,32 @@ pub fn init(
     );
     errdefer dispatch.DestroyDevice(handle, vk.instance.allocation_callbacks);
 
+    supported_sample_counts = .init(vk.gpa);
+    const sample_counts = selected_physical_device_properties.limits.framebufferColorSampleCounts &
+        selected_physical_device_properties.limits.framebufferDepthSampleCounts;
+
+    if (sample_counts & c.VK_SAMPLE_COUNT_1_BIT != 0) {
+        try supported_sample_counts.append(gfx.SampleCount.one);
+    }
+    if (sample_counts & c.VK_SAMPLE_COUNT_2_BIT != 0) {
+        try supported_sample_counts.append(gfx.SampleCount.two);
+    }
+    if (sample_counts & c.VK_SAMPLE_COUNT_4_BIT != 0) {
+        try supported_sample_counts.append(gfx.SampleCount.four);
+    }
+    if (sample_counts & c.VK_SAMPLE_COUNT_8_BIT != 0) {
+        try supported_sample_counts.append(gfx.SampleCount.eight);
+    }
+    if (sample_counts & c.VK_SAMPLE_COUNT_16_BIT != 0) {
+        try supported_sample_counts.append(gfx.SampleCount.sixteen);
+    }
+    if (sample_counts & c.VK_SAMPLE_COUNT_32_BIT != 0) {
+        try supported_sample_counts.append(gfx.SampleCount.thirty_two);
+    }
+    if (sample_counts & c.VK_SAMPLE_COUNT_64_BIT != 0) {
+        try supported_sample_counts.append(gfx.SampleCount.sixty_four);
+    }
+
     physical_device = selected_physical_device;
     features = physical_device_features;
     properties = selected_physical_device_properties;
@@ -503,6 +530,7 @@ pub fn deinit() void {
         handle,
         vk.instance.allocation_callbacks,
     );
+    supported_sample_counts.deinit();
 }
 
 pub fn acquireNextImageKHR(

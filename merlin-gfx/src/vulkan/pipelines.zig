@@ -247,12 +247,23 @@ pub fn create(options: gfx.PipelineOptions) !gfx.PipelineHandle {
         },
     );
 
+    const sample_count: c.VkSampleCountFlagBits = switch (render_options.multisample.sample_count) {
+        .one => c.VK_SAMPLE_COUNT_1_BIT,
+        .two => c.VK_SAMPLE_COUNT_2_BIT,
+        .four => c.VK_SAMPLE_COUNT_4_BIT,
+        .eight => c.VK_SAMPLE_COUNT_8_BIT,
+        .sixteen => c.VK_SAMPLE_COUNT_16_BIT,
+        .thirty_two => c.VK_SAMPLE_COUNT_32_BIT,
+        .sixty_four => c.VK_SAMPLE_COUNT_64_BIT,
+    };
+
     const multisampling = std.mem.zeroInit(
         c.VkPipelineMultisampleStateCreateInfo,
         .{
             .sType = c.VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO,
-            .sampleShadingEnable = c.VK_FALSE,
-            .rasterizationSamples = c.VK_SAMPLE_COUNT_1_BIT,
+            .sampleShadingEnable = if (render_options.multisample.sample_shading_enabled) c.VK_TRUE else c.VK_FALSE,
+            .rasterizationSamples = sample_count,
+            .minSampleShading = render_options.multisample.min_sample_shading,
         },
     );
 

@@ -592,6 +592,7 @@ pub fn create(
             @intCast(params.usage_flags),
             c.VK_IMAGE_LAYOUT_UNDEFINED,
             c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            c.VK_SAMPLE_COUNT_1_BIT,
         );
         errdefer vk.images.destroyInternal(image);
 
@@ -695,6 +696,7 @@ pub fn create(
             @intCast(params.usage_flags),
             c.VK_IMAGE_LAYOUT_UNDEFINED,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            c.VK_SAMPLE_COUNT_1_BIT,
         );
         errdefer vk.images.destroyInternal(image);
 
@@ -876,6 +878,7 @@ pub fn createFromKTX(
             @intCast(params.usage_flags),
             c.VK_IMAGE_LAYOUT_UNDEFINED,
             c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            c.VK_SAMPLE_COUNT_1_BIT,
         );
         errdefer vk.images.destroyInternal(image);
 
@@ -966,6 +969,7 @@ pub fn createFromKTX(
             @intCast(params.usage_flags),
             c.VK_IMAGE_LAYOUT_UNDEFINED,
             c.VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | c.VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+            c.VK_SAMPLE_COUNT_1_BIT,
         );
         errdefer vk.images.destroyInternal(image);
 

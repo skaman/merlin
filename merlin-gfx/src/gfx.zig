@@ -40,6 +40,28 @@ pub const RendererType = enum {
     vulkan,
 };
 
+pub const SampleCount = enum(u8) {
+    one,
+    two,
+    four,
+    eight,
+    sixteen,
+    thirty_two,
+    sixty_four,
+
+    pub fn name(self: SampleCount) []const u8 {
+        return switch (self) {
+            .one => "1",
+            .two => "2",
+            .four => "4",
+            .eight => "8",
+            .sixteen => "16",
+            .thirty_two => "32",
+            .sixty_four => "64",
+        };
+    }
+};
+
 pub const BufferUsage = packed struct(u8) {
     index: bool = false,
     vertex: bool = false,
@@ -114,10 +136,30 @@ pub const AttachmentStoreOp = enum(u8) {
     }
 };
 
-pub const Attachment = packed struct {
+pub const ResolveMode = enum(u8) {
+    none,
+    sample_zero,
+    average,
+    min,
+    max,
+
+    pub fn name(self: ResolveMode) []const u8 {
+        return switch (self) {
+            .none => "none",
+            .sample_zero => "sample_zero",
+            .average => "average",
+            .min => "min",
+            .max => "max",
+        };
+    }
+};
+
+pub const Attachment = struct {
     image: ImageHandle,
     image_view: ImageViewHandle,
     format: ImageFormat,
+    resolve_mode: ResolveMode = .none,
+    resolve_image_view: ?ImageViewHandle = null,
     load_op: AttachmentLoadOp,
     store_op: AttachmentStoreOp,
 };
@@ -201,6 +243,7 @@ pub const ImageOptions = struct {
     tiling: TextureTiling = .optimal,
     usage: ImageUsage = .{},
     location: ImageLocation = .device,
+    samples: SampleCount = .one,
 };
 
 pub const ImageViewOptions = struct {
@@ -346,12 +389,18 @@ pub const DepthOptions = packed struct {
     stencil_test_enabled: bool = false,
 };
 
+pub const MultiSampleOptions = packed struct {
+    sample_shading_enabled: bool = false,
+    sample_count: SampleCount = .one,
+    min_sample_shading: f32 = 1.0,
+};
+
 pub const RenderOptions = packed struct {
     cull_mode: CullMode = .back,
     front_face: FrontFace = .counter_clockwise,
-    //msaa: bool = false,
     blend: BlendOptions = .{},
     depth: DepthOptions = .{},
+    multisample: MultiSampleOptions = .{},
 };
 
 pub const PipelineOptions = struct {
@@ -435,6 +484,7 @@ const VTab = struct {
     getUniformAlignment: *const fn () u32,
     getMaxFramesInFlight: *const fn () u32,
     getCurrentFrameInFlight: *const fn () u32,
+    getSupportedSampleCounts: *const fn () []SampleCount,
     createFramebuffer: *const fn (window_handle: platform.WindowHandle) anyerror!FramebufferHandle,
     destroyFramebuffer: *const fn (framebuffer_handle: FramebufferHandle) void,
     createImage: *const fn (image_options: ImageOptions) anyerror!ImageHandle,
@@ -504,6 +554,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .getUniformAlignment = noop.getUniformAlignment,
                 .getMaxFramesInFlight = noop.getMaxFramesInFlight,
                 .getCurrentFrameInFlight = noop.getCurrentFrameInFlight,
+                .getSupportedSampleCounts = noop.getSupportedSampleCounts,
                 .createFramebuffer = noop.createFramebuffer,
                 .destroyFramebuffer = noop.destroyFramebuffer,
                 .createImage = noop.createImage,
@@ -555,6 +606,7 @@ fn getVTab(renderer_type: RendererType) !VTab {
                 .getUniformAlignment = vulkan.getUniformAlignment,
                 .getMaxFramesInFlight = vulkan.getMaxFramesInFlight,
                 .getCurrentFrameInFlight = vulkan.getCurrentFrameInFlight,
+                .getSupportedSampleCounts = vulkan.getSupportedSampleCounts,
                 .createFramebuffer = vulkan.createFramebuffer,
                 .destroyFramebuffer = vulkan.destroyFramebuffer,
                 .createImage = vulkan.createImage,

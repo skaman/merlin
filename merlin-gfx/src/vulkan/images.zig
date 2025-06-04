@@ -52,6 +52,7 @@ pub fn createInternal(
     usage: c.VkImageUsageFlags,
     initial_layout: c.VkImageLayout,
     properties: c.VkMemoryPropertyFlags,
+    samples: c.VkSampleCountFlagBits,
 ) !Image {
     std.debug.assert(width > 0);
     std.debug.assert(height > 0);
@@ -77,7 +78,7 @@ pub fn createInternal(
             .tiling = tiling,
             .initialLayout = initial_layout,
             .usage = usage,
-            .samples = c.VK_SAMPLE_COUNT_1_BIT,
+            .samples = samples,
             .sharingMode = c.VK_SHARING_MODE_EXCLUSIVE,
         },
     );
@@ -309,6 +310,17 @@ pub fn create(image_options: gfx.ImageOptions) !gfx.ImageHandle {
         .device => c.VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
     };
 
+    const samples: c.VkSampleCountFlagBits =
+        switch (image_options.samples) {
+            .one => c.VK_SAMPLE_COUNT_1_BIT,
+            .two => c.VK_SAMPLE_COUNT_2_BIT,
+            .four => c.VK_SAMPLE_COUNT_4_BIT,
+            .eight => c.VK_SAMPLE_COUNT_8_BIT,
+            .sixteen => c.VK_SAMPLE_COUNT_16_BIT,
+            .thirty_two => c.VK_SAMPLE_COUNT_32_BIT,
+            .sixty_four => c.VK_SAMPLE_COUNT_64_BIT,
+        };
+
     const img = try vk.gpa.create(Image);
     img.* = try createInternal(
         image_options.width,
@@ -322,6 +334,7 @@ pub fn create(image_options: gfx.ImageOptions) !gfx.ImageHandle {
         usage,
         c.VK_IMAGE_LAYOUT_UNDEFINED,
         properties,
+        samples,
     );
     return gfx.ImageHandle{ .handle = @ptrCast(img) };
 }

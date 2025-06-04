@@ -348,6 +348,10 @@ pub fn getCurrentFrameInFlight() u32 {
     return _current_frame_in_flight;
 }
 
+pub fn getSupportedSampleCounts() []gfx.SampleCount {
+    return device.supported_sample_counts.items;
+}
+
 pub fn createFramebuffer(window_handle: platform.WindowHandle) !gfx.FramebufferHandle {
     return try framebuffers.create(
         window_handle,
