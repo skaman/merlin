@@ -32,66 +32,60 @@ pub fn deinit(context: *mini_engine.Context(ContextData)) void {
 }
 
 pub fn update(context: *mini_engine.Context(ContextData)) !void {
-    const ui_render_pass_options = gfx.RenderPassOptions{
-        .color_attachments = &[_]gfx.Attachment{
-            .{
-                .image = gfx.getSurfaceImage(context.framebuffer_handle),
-                .image_view = gfx.getSurfaceImageView(context.framebuffer_handle),
-                .format = gfx.getSurfaceColorFormat(),
-                .load_op = .clear,
-                .store_op = .store,
+    // We run this only for clear the screen.
+    if (try gfx.beginRenderPass(
+        context.framebuffer_handle,
+        .{
+            .color_attachments = &[_]gfx.Attachment{
+                .{
+                    .image = gfx.getSurfaceImage(context.framebuffer_handle),
+                    .image_view = gfx.getSurfaceImageView(context.framebuffer_handle),
+                    .format = gfx.getSurfaceColorFormat(),
+                    .load_op = .clear,
+                    .store_op = .store,
+                },
             },
+            .depth_attachment = null,
         },
-        .depth_attachment = null,
-    };
-    // if (try gfx.beginRenderPass(
-    //     context.framebuffer_handle,
-    //     ui_render_pass_options,
-    // )) {
-    //     defer gfx.endRenderPass();
-    {
-        imgui.beginFrame(
-            context.delta_time,
-            ui_render_pass_options,
-        );
-
-        defer imgui.endFrame();
-
-        _ = imgui.c.igBegin("Statistics", null, imgui.c.ImGuiWindowFlags_None);
-
-        const io = imgui.c.igGetIO_Nil();
-        try context.data.framerate_plot_data.append(io.*.Framerate);
-        if (context.data.framerate_plot_data.items.len > 2000) {
-            _ = context.data.framerate_plot_data.orderedRemove(0);
-        }
-
-        const text = try std.fmt.allocPrintZ(
-            context.arena_allocator,
-            "{d:.3} ms/frame ({d:.1} FPS)",
-            .{
-                1000.0 / io.*.Framerate,
-                io.*.Framerate,
-            },
-        );
-
-        imgui.c.igPlotLines_FloatPtr(
-            text.ptr,
-            context.data.framerate_plot_data.items.ptr,
-            @intCast(context.data.framerate_plot_data.items.len),
-            0,
-            null,
-            0.0,
-            std.math.floatMax(f32),
-            .{ .x = 0, .y = 0 },
-            0,
-        );
-
-        imgui.c.igEnd();
-
-        var show_demo_window: bool = true;
-        imgui.c.igShowDemoWindow(&show_demo_window);
+    )) {
+        defer gfx.endRenderPass();
     }
-    // }
+}
+
+pub fn update_ui(context: *mini_engine.Context(ContextData)) !void {
+    _ = imgui.c.igBegin("Statistics", null, imgui.c.ImGuiWindowFlags_None);
+
+    const io = imgui.c.igGetIO_Nil();
+    try context.data.framerate_plot_data.append(io.*.Framerate);
+    if (context.data.framerate_plot_data.items.len > 2000) {
+        _ = context.data.framerate_plot_data.orderedRemove(0);
+    }
+
+    const text = try std.fmt.allocPrintZ(
+        context.arena_allocator,
+        "{d:.3} ms/frame ({d:.1} FPS)",
+        .{
+            1000.0 / io.*.Framerate,
+            io.*.Framerate,
+        },
+    );
+
+    imgui.c.igPlotLines_FloatPtr(
+        text.ptr,
+        context.data.framerate_plot_data.items.ptr,
+        @intCast(context.data.framerate_plot_data.items.len),
+        0,
+        null,
+        0.0,
+        std.math.floatMax(f32),
+        .{ .x = 0, .y = 0 },
+        0,
+    );
+
+    imgui.c.igEnd();
+
+    var show_demo_window: bool = true;
+    imgui.c.igShowDemoWindow(&show_demo_window);
 }
 
 // *********************************************************************************************
@@ -110,5 +104,6 @@ pub fn main() !void {
         init,
         deinit,
         update,
+        update_ui,
     );
 }

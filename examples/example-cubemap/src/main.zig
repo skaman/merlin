@@ -10,43 +10,13 @@ const zm = mini_engine.zmath;
 // Structs
 // *********************************************************************************************
 
-const ModelViewProj = struct {
-    model: zm.Mat align(16),
-    view: zm.Mat align(16),
-    proj: zm.Mat align(16),
-};
-
-// const MeshInstance = struct {
-//     name: []const u8,
-//     mesh: assets.MeshHandle,
-//     material: assets.MaterialHandle,
-// };
-
-// const DepthImage = struct {
-//     handle: gfx.ImageHandle,
-//     view_handle: gfx.ImageViewHandle,
-//     size: [2]u32,
-//     format: gfx.ImageFormat,
-// };
-
 const ContextData = struct {
     cubemap_texture: gfx.TextureHandle,
     cubemap_mesh: assets.MeshHandle,
     skybox_vert_shader_handle: gfx.ShaderHandle,
     skybox_frag_shader_handle: gfx.ShaderHandle,
     skybox_program_handle: gfx.ProgramHandle,
-    mvp_uniform_buffer_handle: gfx.BufferHandle,
     cubemap_pipeline_handle: gfx.PipelineHandle,
-    // depth_image: ?DepthImage,
-    // vertex_shader_handle: gfx.ShaderHandle,
-    // fragment_shader_handle: gfx.ShaderHandle,
-    // program_handle: gfx.ProgramHandle,
-    mvp_uniform_handle: gfx.NameHandle,
-    tex_sampler_uniform_handle: gfx.NameHandle,
-    // mvp_uniform_buffer_handle: gfx.BufferHandle,
-    // texture_handle: gfx.TextureHandle,
-    // meshes: std.ArrayList(MeshInstance),
-    // pipelines: std.AutoHashMap(gfx.PipelineLayoutHandle, gfx.PipelineHandle),
 };
 
 // *********************************************************************************************
@@ -82,21 +52,6 @@ pub fn init(context: mini_engine.InitContext) !ContextData {
     );
     errdefer gfx.destroyProgram(skybox_program_handle);
 
-    // Uniforms
-    const mvp_uniform_handle = gfx.nameHandle("u_mvp");
-    const tex_sampler_uniform_handle = gfx.nameHandle("u_tex_sampler");
-
-    const max_frames_in_flight = gfx.getMaxFramesInFlight();
-    const mvp_uniform_buffer_handle = try gfx.createBuffer(
-        @sizeOf(ModelViewProj) * max_frames_in_flight,
-        .{ .uniform = true },
-        .host,
-        .{
-            .debug_name = "MVP Uniform Buffer",
-        },
-    );
-    errdefer gfx.destroyBuffer(mvp_uniform_buffer_handle);
-
     const mesh = assets.mesh(mesh_handle);
 
     const pipeline = try gfx.createPipeline(.{
@@ -123,16 +78,12 @@ pub fn init(context: mini_engine.InitContext) !ContextData {
         .skybox_vert_shader_handle = skybox_vert_shader_handle,
         .skybox_frag_shader_handle = skybox_frag_shader_handle,
         .skybox_program_handle = skybox_program_handle,
-        .mvp_uniform_buffer_handle = mvp_uniform_buffer_handle,
-        .mvp_uniform_handle = mvp_uniform_handle,
-        .tex_sampler_uniform_handle = tex_sampler_uniform_handle,
         .cubemap_pipeline_handle = pipeline,
     };
 }
 
 pub fn deinit(context: *mini_engine.Context(ContextData)) void {
     gfx.destroyPipeline(context.data.cubemap_pipeline_handle);
-    gfx.destroyBuffer(context.data.mvp_uniform_buffer_handle);
     gfx.destroyTexture(context.data.cubemap_texture);
     gfx.destroyProgram(context.data.skybox_program_handle);
     gfx.destroyShader(context.data.skybox_vert_shader_handle);
@@ -144,27 +95,19 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
     const swapchain_size = gfx.getSwapchainSize(context.framebuffer_handle);
     const aspect_ratio = @as(f32, @floatFromInt(swapchain_size[0])) / @as(f32, @floatFromInt(swapchain_size[1]));
 
-    const mvp = ModelViewProj{
-        .model = zm.rotationY(std.math.rad_per_deg * 90.0 * context.total_time * 0.1),
-        .view = zm.lookAtLh(
+    try context.setMVP(
+        zm.rotationY(std.math.rad_per_deg * 90.0 * context.total_time * 0.5),
+        zm.lookAtLh(
             zm.f32x4(1.0, 1.0, 1.0, 1.0),
             zm.f32x4(0.0, 0.3, 0.0, 1.0),
             zm.f32x4(0.0, -1.0, 0.0, 0.0),
         ),
-        .proj = zm.perspectiveFovLh(
+        zm.perspectiveFovLh(
             std.math.rad_per_deg * 45.0,
             aspect_ratio,
             0.1,
             20.0,
         ),
-    };
-    const mvp_ptr: [*]const u8 = @ptrCast(&mvp);
-    const current_frame_in_flight = gfx.getCurrentFrameInFlight();
-    const mvp_offset = current_frame_in_flight * @sizeOf(ModelViewProj);
-    try gfx.updateBufferFromMemory(
-        context.data.mvp_uniform_buffer_handle,
-        mvp_ptr[0..@sizeOf(ModelViewProj)],
-        mvp_offset,
     );
 
     const main_render_pass_options = gfx.RenderPassOptions{
@@ -187,16 +130,12 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
         gfx.setViewport(.{ 0, 0 }, swapchain_size);
         gfx.setScissor(.{ 0, 0 }, swapchain_size);
 
-        gfx.bindUniformBuffer(
-            context.data.mvp_uniform_handle,
-            context.data.mvp_uniform_buffer_handle,
-            mvp_offset,
-        );
+        context.bindMVP();
 
         gfx.bindPipeline(context.data.cubemap_pipeline_handle);
 
         gfx.bindCombinedSampler(
-            context.data.tex_sampler_uniform_handle,
+            context.tex_sampler_uniform_handle,
             context.data.cubemap_texture,
         );
 
@@ -215,28 +154,11 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
             0,
         );
     }
+}
 
-    {
-        imgui.beginFrame(
-            context.delta_time,
-            .{
-                .color_attachments = &[_]gfx.Attachment{
-                    .{
-                        .image = gfx.getSurfaceImage(context.framebuffer_handle),
-                        .image_view = gfx.getSurfaceImageView(context.framebuffer_handle),
-                        .format = gfx.getSurfaceColorFormat(),
-                        .load_op = .dont_care,
-                        .store_op = .store,
-                    },
-                },
-                .depth_attachment = null,
-            },
-        );
-        defer imgui.endFrame();
-
-        var show_demo_window: bool = true;
-        imgui.c.igShowDemoWindow(&show_demo_window);
-    }
+fn update_ui(_: *mini_engine.Context(ContextData)) !void {
+    var show_demo_window: bool = true;
+    imgui.c.igShowDemoWindow(&show_demo_window);
 }
 
 // *********************************************************************************************
@@ -255,5 +177,6 @@ pub fn main() !void {
         init,
         deinit,
         update,
+        update_ui,
     );
 }

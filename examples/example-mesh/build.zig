@@ -5,7 +5,6 @@ const geometryc = @import("merlin_geometryc");
 const materialc = @import("merlin_materialc");
 const mini_engine = @import("mini_engine");
 const shaderc = @import("merlin_shaderc");
-const texturec = @import("merlin_texturec");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -35,15 +34,6 @@ pub fn build(b: *std.Build) !void {
         .{
             .input_file = "assets/shader.frag",
             .output_file = "assets/shader.frag.bin",
-        },
-    });
-
-    try texturec.compile(b, &[_]texturec.Texture{
-        .{
-            .input_files = &[_][]const u8{"assets/uv_texture.png"},
-            .output_file = "assets/uv_texture.ktx",
-            .compression = true,
-            .mipmaps = true,
         },
     });
 
