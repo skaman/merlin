@@ -419,6 +419,8 @@ fn createSwapchainImages(
             .memory = null,
             .size = 0,
             .format = format,
+            .current_layout = c.VK_IMAGE_LAYOUT_UNDEFINED,
+            .is_swapchain_image = true,
         };
     }
 

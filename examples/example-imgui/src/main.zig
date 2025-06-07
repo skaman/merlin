@@ -44,13 +44,17 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
         },
         .depth_attachment = null,
     };
-    if (try gfx.beginRenderPass(
-        context.framebuffer_handle,
-        ui_render_pass_options,
-    )) {
-        defer gfx.endRenderPass();
+    // if (try gfx.beginRenderPass(
+    //     context.framebuffer_handle,
+    //     ui_render_pass_options,
+    // )) {
+    //     defer gfx.endRenderPass();
+    {
+        imgui.beginFrame(
+            context.delta_time,
+            ui_render_pass_options,
+        );
 
-        imgui.beginFrame(context.delta_time);
         defer imgui.endFrame();
 
         _ = imgui.c.igBegin("Statistics", null, imgui.c.ImGuiWindowFlags_None);
@@ -87,6 +91,7 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
         var show_demo_window: bool = true;
         imgui.c.igShowDemoWindow(&show_demo_window);
     }
+    // }
 }
 
 // *********************************************************************************************

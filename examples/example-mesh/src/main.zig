@@ -380,29 +380,26 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
         }
     }
 
-    const ui_render_pass_options = gfx.RenderPassOptions{
-        .color_attachments = &[_]gfx.Attachment{
+    {
+        imgui.beginFrame(
+            context.delta_time,
             .{
-                .image = gfx.getSurfaceImage(context.framebuffer_handle),
-                .image_view = gfx.getSurfaceImageView(context.framebuffer_handle),
-                .format = gfx.getSurfaceColorFormat(),
-                .load_op = .dont_care,
-                .store_op = .store,
+                .color_attachments = &[_]gfx.Attachment{
+                    .{
+                        .image = gfx.getSurfaceImage(context.framebuffer_handle),
+                        .image_view = gfx.getSurfaceImageView(context.framebuffer_handle),
+                        .format = gfx.getSurfaceColorFormat(),
+                        .load_op = .dont_care,
+                        .store_op = .store,
+                    },
+                },
+                .depth_attachment = null,
             },
-        },
-        .depth_attachment = null,
-    };
-    if (try gfx.beginRenderPass(
-        context.framebuffer_handle,
-        ui_render_pass_options,
-    )) {
-        defer gfx.endRenderPass();
-        imgui.beginFrame(context.delta_time);
+        );
+        defer imgui.endFrame();
 
         var show_demo_window: bool = true;
         imgui.c.igShowDemoWindow(&show_demo_window);
-
-        imgui.endFrame();
     }
 }
 
@@ -411,7 +408,7 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
 // *********************************************************************************************
 
 pub const std_options: std.Options = .{
-    .log_level = .debug,
+    .log_level = .info,
     .logFn = mini_engine.customLog,
 };
 

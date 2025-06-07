@@ -31,11 +31,9 @@ pub const CommandBuffer = struct {
 
     current_program_handle: gfx.ProgramHandle,
     current_pipeline_layout: c.VkPipelineLayout,
-    current_color_attachment_images: std.ArrayList(c.VkImage) = undefined,
     current_uniform_bindings: std.AutoHashMap(gfx.NameHandle, UniformBinding) = undefined,
 
     pub fn reset(self: *CommandBuffer) void {
-        self.current_color_attachment_images.clearRetainingCapacity();
         self.current_uniform_bindings.clearRetainingCapacity();
     }
 };
@@ -165,7 +163,6 @@ pub fn create(command_pool: c.VkCommandPool) !gfx.CommandBufferHandle {
         .handle = command_buffer,
         .current_pipeline_layout = null,
         .current_program_handle = undefined,
-        .current_color_attachment_images = std.ArrayList(c.VkImage).init(vk.gpa),
         .current_uniform_bindings = .init(vk.gpa),
     };
 
@@ -176,9 +173,7 @@ pub fn create(command_pool: c.VkCommandPool) !gfx.CommandBufferHandle {
 
 pub fn destroy(command_buffer_handle: gfx.CommandBufferHandle) void {
     const command_buffer = get(command_buffer_handle);
-    command_buffer.current_color_attachment_images.deinit();
     command_buffer.current_uniform_bindings.deinit();
-    // command_buffer.current_push_constants.deinit();
     vk.device.freeCommandBuffers(
         command_buffer.command_pool,
         1,
@@ -307,7 +302,6 @@ pub fn beginRenderPass(
     std.debug.assert(options.color_attachments.len > 0);
 
     const command_buffer = get(command_buffer_handle);
-    command_buffer.current_color_attachment_images.clearRetainingCapacity();
 
     const color_attachments = try vk.arena.alloc(
         c.VkRenderingAttachmentInfoKHR,
@@ -318,35 +312,18 @@ pub fn beginRenderPass(
         const image: *const vk.images.Image = @ptrCast(@alignCast(color_attachment.image.handle));
         const image_view: c.VkImageView = @ptrCast(@alignCast(color_attachment.image_view.handle));
 
-        const barrier = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
-            .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .srcAccessMask = 0,
-            .dstAccessMask = c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-            .oldLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
-            .newLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-            .image = image.image,
-            .subresourceRange = c.VkImageSubresourceRange{
+        try vk.images.setImageLayout(
+            command_buffer.handle,
+            image.image,
+            image.current_layout,
+            c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            c.VkImageSubresourceRange{
                 .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
                 .baseMipLevel = 0,
                 .levelCount = 1,
                 .baseArrayLayer = 0,
                 .layerCount = 1,
             },
-        });
-
-        vk.device.cmdPipelineBarrier(
-            command_buffer.handle,
-            c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            0,
-            0,
-            null,
-            0,
-            null,
-            1,
-            &barrier,
         );
 
         const resolve_mode: c.VkResolveModeFlagBits = switch (color_attachment.resolve_mode) {
@@ -379,8 +356,6 @@ pub fn beginRenderPass(
                 },
             },
         );
-
-        try command_buffer.current_color_attachment_images.append(image.image);
     }
 
     var begin_info = std.mem.zeroInit(
@@ -401,38 +376,20 @@ pub fn beginRenderPass(
         const image: *const vk.images.Image = @ptrCast(@alignCast(attachment.image.handle));
         const image_view: c.VkImageView = @ptrCast(@alignCast(attachment.image_view.handle));
 
-        const barrier = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
-            .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .srcAccessMask = 0,
-            .dstAccessMask = c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
-                c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            .oldLayout = c.VK_IMAGE_LAYOUT_UNDEFINED,
-            .newLayout = c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-            .image = image.image,
-            .subresourceRange = c.VkImageSubresourceRange{
+        try vk.images.setImageLayout(
+            command_buffer.handle,
+            image.image,
+            image.current_layout,
+            c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            c.VkImageSubresourceRange{
                 .aspectMask = c.VK_IMAGE_ASPECT_DEPTH_BIT,
                 .baseMipLevel = 0,
                 .levelCount = 1,
                 .baseArrayLayer = 0,
                 .layerCount = 1,
             },
-        });
-
-        vk.device.cmdPipelineBarrier(
-            command_buffer.handle,
-            c.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-            c.VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT |
-                c.VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-            0,
-            0,
-            null,
-            0,
-            null,
-            1,
-            &barrier,
         );
+
         const depth_attachment = std.mem.zeroInit(
             c.VkRenderingAttachmentInfoKHR,
             .{
@@ -463,39 +420,6 @@ pub fn beginRenderPass(
 pub fn endRenderPass(command_buffer_handle: gfx.CommandBufferHandle) void {
     const command_buffer = get(command_buffer_handle);
     vk.device.cmdEndRenderingKHR(command_buffer.handle);
-
-    for (command_buffer.current_color_attachment_images.items) |image| {
-        const barrier = std.mem.zeroInit(c.VkImageMemoryBarrier, .{
-            .sType = c.VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
-            .srcAccessMask = c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-            .dstAccessMask = c.VK_ACCESS_MEMORY_READ_BIT,
-            .oldLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            .newLayout = c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            .srcQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = c.VK_QUEUE_FAMILY_IGNORED,
-            .image = image,
-            .subresourceRange = c.VkImageSubresourceRange{
-                .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
-                .baseMipLevel = 0,
-                .levelCount = 1,
-                .baseArrayLayer = 0,
-                .layerCount = 1,
-            },
-        });
-
-        vk.device.cmdPipelineBarrier(
-            command_buffer.handle,
-            c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            c.VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-            0,
-            0,
-            null,
-            0,
-            null,
-            1,
-            &barrier,
-        );
-    }
 }
 
 pub fn setViewport(

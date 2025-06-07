@@ -14,9 +14,6 @@ void main()
 {
     fragTexCoord = a_position;
 
-    // Convert cubemap coordinates into Vulkan coordinate space
-    //fragTexCoord.xy *= -1.0;
-
     // Remove translation from view matrix
     mat4 viewMat = mat4(mat3(u_mvp.model));
     gl_Position = u_mvp.proj * viewMat * vec4(a_position.xyz, 1.0);

@@ -67,6 +67,8 @@ var _tex_uniform_handle: gfx.NameHandle = undefined;
 var _pipeline_layout_handle: gfx.PipelineLayoutHandle = undefined;
 var _pipeline_handle: gfx.PipelineHandle = undefined;
 
+var _render_pass_options: gfx.RenderPassOptions = undefined;
+
 // *********************************************************************************************
 // Private API
 // *********************************************************************************************
@@ -507,6 +509,8 @@ fn draw(
     draw_data: [*c]c.ImDrawData,
     viewport_data: *ViewportData,
     window_handle: platform.WindowHandle,
+    framebuffer_handle: gfx.FramebufferHandle,
+    render_pass_options: gfx.RenderPassOptions,
     // render_pass_handle: gfx.RenderPassHandle,
 ) !void {
     // const framebuffer_handle = viewport_data.framebuffer_handle orelse _main_framebuffer_handle;
@@ -522,11 +526,11 @@ fn draw(
     //     },
     //     .depth_attachment = null,
     // };
-    // if (!try gfx.beginRenderPass(
-    //     framebuffer_handle,
-    //     render_pass_options,
-    // )) return;
-    // defer gfx.endRenderPass();
+    if (!try gfx.beginRenderPass(
+        framebuffer_handle,
+        render_pass_options,
+    )) return;
+    defer gfx.endRenderPass();
 
     if (draw_data.*.TotalVtxCount > 0) {
         const framebuffer_size = platform.windowFramebufferSize(window_handle); // TODO: this should be the swapchain size? (from gfx)
@@ -861,24 +865,25 @@ fn renderWindow(viewport: ?*c.ImGuiViewport, _: ?*anyopaque) callconv(.c) void {
                 },
                 .depth_attachment = null,
             };
-            if (gfx.beginRenderPass(
+            // if (gfx.beginRenderPass(
+            //     framebuffer_handle.?,
+            //     render_pass_options,
+            // ) catch |err| {
+            //     log.err("Failed to begin render pass: {}", .{err});
+            //     return;
+            // }) {
+            //     defer gfx.endRenderPass();
+
+            draw(
+                viewport.?.DrawData,
+                viewport_data.?,
+                window_handle,
                 framebuffer_handle.?,
                 render_pass_options,
             ) catch |err| {
-                log.err("Failed to begin render pass: {}", .{err});
-                return;
-            }) {
-                defer gfx.endRenderPass();
-
-                draw(
-                    viewport.?.DrawData,
-                    viewport_data.?,
-                    window_handle,
-                    // _render_pass_handle,
-                ) catch |err| {
-                    log.err("Failed to render ImGui: {}", .{err});
-                };
-            }
+                log.err("Failed to render ImGui: {}", .{err});
+            };
+            // }
         }
     }
 }
@@ -1060,9 +1065,11 @@ pub fn deinit() void {
     _arena_impl.deinit();
 }
 
-pub fn beginFrame(delta_time: f32) void {
+pub fn beginFrame(delta_time: f32, render_pass_options: gfx.RenderPassOptions) void {
     const window_size = platform.windowSize(_main_window_handle);
     const framebuffer_size = platform.windowFramebufferSize(_main_window_handle);
+
+    _render_pass_options = render_pass_options;
 
     const io = c.igGetIO_Nil();
     io.*.DisplaySize = c.ImVec2{
@@ -1107,7 +1114,8 @@ pub fn endFrame() void {
         draw_data,
         viewport_data,
         _main_window_handle,
-        // _render_pass_handle,
+        _main_framebuffer_handle,
+        _render_pass_options,
     ) catch |err| {
         log.err("Failed to render ImGui: {}", .{err});
     };

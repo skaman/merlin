@@ -14,6 +14,8 @@ pub const Image = struct {
     memory: c.VkDeviceMemory,
     size: u64,
     format: c.VkFormat,
+    current_layout: c.VkImageLayout,
+    is_swapchain_image: bool,
 };
 
 // *********************************************************************************************
@@ -120,6 +122,8 @@ pub fn createInternal(
         .memory = memory,
         .size = memory_requirements.size,
         .format = format,
+        .current_layout = initial_layout,
+        .is_swapchain_image = false,
     };
 }
 
@@ -257,6 +261,12 @@ pub fn setImageLayout(
             // Make sure any writes to the color buffer have finished.
             barrier.srcAccessMask |= c.VK_ACCESS_TRANSFER_READ_BIT;
             barrier.dstAccessMask = c.VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+        },
+        c.VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL => {
+            // Image will be used as a depth attachment.
+            // Make sure any writes to the depth buffer have finished.
+            barrier.srcAccessMask |= c.VK_ACCESS_TRANSFER_READ_BIT;
+            barrier.dstAccessMask = c.VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         },
         c.VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL => {
             // Image layout will be used as a depth/stencil attachment.

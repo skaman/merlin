@@ -547,6 +547,23 @@ pub fn endFrame() !void {
     for (framebuffers.getAll()) |framebuffer| {
         if (!framebuffer.is_image_acquired) continue;
 
+        const swapchain_image = framebuffer.images[framebuffer.current_image_index];
+        const command_buffer =
+            command_buffers.get(framebuffer.command_buffer_handles[_current_frame_in_flight]);
+        try images.setImageLayout(
+            command_buffer.handle,
+            swapchain_image.image,
+            swapchain_image.current_layout,
+            c.VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            c.VkImageSubresourceRange{
+                .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                .baseMipLevel = 0,
+                .levelCount = 1,
+                .baseArrayLayer = 0,
+                .layerCount = 1,
+            },
+        );
+
         if (framebuffer.is_buffer_recording) {
             try command_buffers.end(framebuffer.command_buffer_handles[_current_frame_in_flight]);
             framebuffer.is_buffer_recording = false;
@@ -558,8 +575,6 @@ pub fn endFrame() !void {
             [_]c.VkSemaphore{framebuffer.image_available_semaphores[_current_frame_in_flight]};
         const signal_semaphores =
             [_]c.VkSemaphore{framebuffer.render_finished_semaphores[framebuffer.current_image_index]};
-        const command_buffer =
-            command_buffers.get(framebuffer.command_buffer_handles[_current_frame_in_flight]);
         const submit_info = std.mem.zeroInit(
             c.VkSubmitInfo,
             .{
