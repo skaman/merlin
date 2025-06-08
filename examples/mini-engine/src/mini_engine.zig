@@ -12,6 +12,7 @@ pub const InitContext = struct {
     arena_allocator: std.mem.Allocator,
     window_handle: platform.WindowHandle,
     framebuffer_handle: gfx.FramebufferHandle,
+    msaa_samples: gfx.SampleCount,
 };
 
 const ModelViewProj = struct {
@@ -25,6 +26,16 @@ const DepthImage = struct {
     view_handle: gfx.ImageViewHandle,
 
     pub fn deinit(self: *const DepthImage) void {
+        gfx.destroyImageView(self.view_handle);
+        gfx.destroyImage(self.handle);
+    }
+};
+
+const ColorImage = struct {
+    handle: gfx.ImageHandle,
+    view_handle: gfx.ImageViewHandle,
+
+    pub fn deinit(self: *const ColorImage) void {
         gfx.destroyImageView(self.view_handle);
         gfx.destroyImage(self.handle);
     }
@@ -44,9 +55,13 @@ pub fn Context(comptime T: type) type {
         mvp_uniform_handle: gfx.NameHandle,
         mvp_uniform_buffer_handle: gfx.BufferHandle,
         tex_sampler_uniform_handle: gfx.NameHandle,
+        color_images: std.ArrayList(ColorImage),
+        color_image_size: [2]u32,
+        color_image_format: gfx.ImageFormat,
         depth_images: std.ArrayList(DepthImage),
         depth_image_size: [2]u32,
         depth_image_format: gfx.ImageFormat,
+        msaa_samples: gfx.SampleCount,
         pipelines: std.AutoHashMap(PipelineKey, gfx.PipelineHandle),
         delta_time: f32,
         total_time: f32,
@@ -83,6 +98,50 @@ pub fn Context(comptime T: type) type {
             );
         }
 
+        pub fn getColorImage(self: *Context(T)) !ColorImage {
+            const swapchain_size = gfx.getSwapchainSize(self.framebuffer_handle);
+            if (self.color_images.items.len == 0 or
+                self.color_image_size[0] != swapchain_size[0] or
+                self.color_image_size[1] != swapchain_size[1])
+            {
+                for (self.color_images.items) |color_image| {
+                    color_image.deinit();
+                }
+                self.color_images.clearRetainingCapacity();
+
+                const max_frames_in_flight = gfx.getMaxFramesInFlight();
+                for (0..max_frames_in_flight) |_| {
+                    const color_image_handle = try gfx.createImage(.{
+                        .format = self.color_image_format,
+                        .width = swapchain_size[0],
+                        .height = swapchain_size[1],
+                        .usage = .{ .color_attachment = true },
+                        .samples = self.msaa_samples,
+                    });
+                    errdefer gfx.destroyImage(color_image_handle);
+
+                    const color_image_view_handle = try gfx.createImageView(
+                        color_image_handle,
+                        .{
+                            .format = self.color_image_format,
+                            .aspect = .{ .color = true },
+                        },
+                    );
+                    errdefer gfx.destroyImageView(color_image_view_handle);
+
+                    try self.color_images.append(.{
+                        .handle = color_image_handle,
+                        .view_handle = color_image_view_handle,
+                    });
+                }
+
+                self.color_image_size = swapchain_size;
+            }
+
+            const current_frame_in_flight = gfx.getCurrentFrameInFlight();
+            return self.color_images.items[current_frame_in_flight];
+        }
+
         pub fn getDepthImage(self: *Context(T)) !DepthImage {
             const swapchain_size = gfx.getSwapchainSize(self.framebuffer_handle);
             if (self.depth_images.items.len == 0 or
@@ -95,25 +154,21 @@ pub fn Context(comptime T: type) type {
                 self.depth_images.clearRetainingCapacity();
 
                 const max_frames_in_flight = gfx.getMaxFramesInFlight();
-                const depth_format = gfx.getSurfaceDepthFormat();
                 for (0..max_frames_in_flight) |_| {
                     const depth_image_handle = try gfx.createImage(.{
-                        .format = depth_format,
+                        .format = self.depth_image_format,
                         .width = swapchain_size[0],
                         .height = swapchain_size[1],
-                        .usage = .{
-                            .depth_stencil_attachment = true,
-                        },
+                        .usage = .{ .depth_stencil_attachment = true },
+                        .samples = self.msaa_samples,
                     });
                     errdefer gfx.destroyImage(depth_image_handle);
 
                     const depth_image_view_handle = try gfx.createImageView(
                         depth_image_handle,
                         .{
-                            .format = depth_format,
-                            .aspect = .{
-                                .depth = true,
-                            },
+                            .format = self.depth_image_format,
+                            .aspect = .{ .depth = true },
                         },
                     );
                     errdefer gfx.destroyImageView(depth_image_view_handle);
@@ -124,12 +179,54 @@ pub fn Context(comptime T: type) type {
                     });
                 }
 
-                self.depth_image_format = depth_format;
                 self.depth_image_size = swapchain_size;
             }
 
             const current_frame_in_flight = gfx.getCurrentFrameInFlight();
             return self.depth_images.items[current_frame_in_flight];
+        }
+
+        pub fn getColorAttachment(
+            self: *Context(T),
+            with_mssa: bool,
+            load_op: gfx.AttachmentLoadOp,
+            store_op: gfx.AttachmentStoreOp,
+        ) !gfx.Attachment {
+            var color_attachment: gfx.Attachment = undefined;
+            if (with_mssa and @intFromEnum(self.msaa_samples) > @intFromEnum(gfx.SampleCount.one)) {
+                const color_image = try self.getColorImage();
+                color_attachment = .{
+                    .image = color_image.handle,
+                    .image_view = color_image.view_handle,
+                    .resolve_mode = .average,
+                    .resolve_image = gfx.getSurfaceImage(self.framebuffer_handle),
+                    .resolve_image_view = gfx.getSurfaceImageView(self.framebuffer_handle),
+                    .format = gfx.getSurfaceColorFormat(),
+                    .load_op = load_op,
+                    .store_op = store_op,
+                };
+            } else {
+                color_attachment = .{
+                    .image = gfx.getSurfaceImage(self.framebuffer_handle),
+                    .image_view = gfx.getSurfaceImageView(self.framebuffer_handle),
+                    .format = gfx.getSurfaceColorFormat(),
+                    .load_op = load_op,
+                    .store_op = store_op,
+                };
+            }
+
+            return color_attachment;
+        }
+
+        pub fn getDepthAttachment(self: *Context(T)) !gfx.Attachment {
+            const depth_image = try self.getDepthImage();
+            return .{
+                .image = depth_image.handle,
+                .image_view = depth_image.view_handle,
+                .format = self.depth_image_format,
+                .load_op = .clear,
+                .store_op = .dont_care,
+            };
         }
 
         fn getPipeline(
@@ -151,6 +248,9 @@ pub fn Context(comptime T: type) type {
                     .cull_mode = .back,
                     .front_face = .counter_clockwise,
                     .depth = .{ .enabled = true },
+                    .multisample = .{
+                        .sample_count = self.msaa_samples,
+                    },
                 },
                 .color_attachment_formats = &[_]gfx.ImageFormat{
                     gfx.getSurfaceColorFormat(),
@@ -379,11 +479,17 @@ pub fn run_engine(
     );
     defer imgui.deinit();
 
+    const supported_sample_counts = gfx.getSupportedSampleCounts();
+    const msaa_samples = supported_sample_counts[
+        supported_sample_counts.len - 1
+    ];
+
     const data = try init_callback(.{
         .gpa_allocator = gpa_allocator,
         .arena_allocator = arena_allocator,
         .window_handle = window_handle,
         .framebuffer_handle = framebuffer_handle,
+        .msaa_samples = msaa_samples,
     });
 
     // Uniforms
@@ -409,15 +515,24 @@ pub fn run_engine(
         .mvp_uniform_handle = mvp_uniform_handle,
         .mvp_uniform_buffer_handle = mvp_uniform_buffer_handle,
         .tex_sampler_uniform_handle = tex_sampler_uniform_handle,
+        .color_images = .init(gpa_allocator),
+        .color_image_size = [_]u32{ 0, 0 },
+        .color_image_format = gfx.getSurfaceColorFormat(),
         .depth_images = .init(gpa_allocator),
         .depth_image_size = [_]u32{ 0, 0 },
-        .depth_image_format = undefined,
+        .depth_image_format = gfx.getSurfaceDepthFormat(),
+        .msaa_samples = msaa_samples,
         .pipelines = .init(gpa_allocator),
         .delta_time = 0.0,
         .total_time = 0.0,
         .data = data,
     };
     defer {
+        for (context.color_images.items) |color_image| {
+            color_image.deinit();
+        }
+        context.color_images.deinit();
+
         for (context.depth_images.items) |depth_image| {
             depth_image.deinit();
         }

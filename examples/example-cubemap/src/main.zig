@@ -60,7 +60,10 @@ pub fn init(context: mini_engine.InitContext) !ContextData {
         .render_options = .{
             .cull_mode = .front,
             .front_face = .counter_clockwise,
-            .depth = .{ .enabled = true },
+            // .depth = .{ .enabled = true },
+            .multisample = .{
+                .sample_count = context.msaa_samples,
+            },
         },
         .color_attachment_formats = &[_]gfx.ImageFormat{
             gfx.getSurfaceColorFormat(),
@@ -112,13 +115,7 @@ pub fn update(context: *mini_engine.Context(ContextData)) !void {
 
     const main_render_pass_options = gfx.RenderPassOptions{
         .color_attachments = &[_]gfx.Attachment{
-            .{
-                .image = gfx.getSurfaceImage(context.framebuffer_handle),
-                .image_view = gfx.getSurfaceImageView(context.framebuffer_handle),
-                .format = gfx.getSurfaceColorFormat(),
-                .load_op = .clear,
-                .store_op = .store,
-            },
+            try context.getColorAttachment(true, .clear, .store),
         },
     };
     if (try gfx.beginRenderPass(

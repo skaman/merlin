@@ -334,6 +334,23 @@ pub fn beginRenderPass(
             .max => c.VK_RESOLVE_MODE_MAX_BIT,
         };
 
+        if (color_attachment.resolve_image) |resolve_image_handle| {
+            const resolve_image: *const vk.images.Image = @ptrCast(@alignCast(resolve_image_handle.handle));
+            try vk.images.setImageLayout(
+                command_buffer.handle,
+                resolve_image.image,
+                resolve_image.current_layout,
+                c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                c.VkImageSubresourceRange{
+                    .aspectMask = c.VK_IMAGE_ASPECT_COLOR_BIT,
+                    .baseMipLevel = 0,
+                    .levelCount = 1,
+                    .baseArrayLayer = 0,
+                    .layerCount = 1,
+                },
+            );
+        }
+
         var resolve_image_view: c.VkImageView = @ptrCast(c.VK_NULL_HANDLE);
         if (color_attachment.resolve_image_view) |resolve_image| {
             resolve_image_view = @ptrCast(@alignCast(resolve_image.handle));
@@ -347,6 +364,7 @@ pub fn beginRenderPass(
                 .imageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 .resolveMode = resolve_mode,
                 .resolveImageView = resolve_image_view,
+                .resolveImageLayout = c.VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 .loadOp = gfxLoadOpToVulkanLoadOp(color_attachment.load_op),
                 .storeOp = gfxStoreOpToVulkanStoreOp(color_attachment.store_op),
                 .clearValue = c.VkClearValue{

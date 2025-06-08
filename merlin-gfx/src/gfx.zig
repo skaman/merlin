@@ -159,6 +159,7 @@ pub const Attachment = struct {
     image_view: ImageViewHandle,
     format: ImageFormat,
     resolve_mode: ResolveMode = .none,
+    resolve_image: ?ImageHandle = null,
     resolve_image_view: ?ImageViewHandle = null,
     load_op: AttachmentLoadOp,
     store_op: AttachmentStoreOp,
@@ -723,6 +724,11 @@ pub inline fn getMaxFramesInFlight() u32 {
 /// This value is in the range [0, maxFramesInFlight).
 pub inline fn getCurrentFrameInFlight() u32 {
     return v_tab.getCurrentFrameInFlight();
+}
+
+/// Returns the supported sample counts for multisampling.
+pub inline fn getSupportedSampleCounts() []SampleCount {
+    return v_tab.getSupportedSampleCounts();
 }
 
 /// Creates a framebuffer.
