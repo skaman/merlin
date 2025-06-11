@@ -16,6 +16,9 @@
         .merlin_materialc = .{
             .path = "../../merlin-materialc",
         },
+        .merlin_texturec = .{
+            .path = "../../merlin-texturec",
+        },
     },
 
     .paths = .{

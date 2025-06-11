@@ -15,10 +15,68 @@ pub const InitContext = struct {
     msaa_samples: gfx.SampleCount,
 };
 
-const ModelViewProj = struct {
+pub const ModelViewProj = struct {
     model: zmath.Mat align(16),
     view: zmath.Mat align(16),
     proj: zmath.Mat align(16),
+};
+
+pub const OrbitCamera = struct {
+    position: zmath.Vec,
+    target: zmath.Vec,
+    up: zmath.Vec,
+
+    fov_y: f32,
+    aspect_ratio: f32,
+    near_plane: f32,
+    far_plane: f32,
+
+    view: zmath.Mat align(16),
+    proj: zmath.Mat align(16),
+
+    pub fn init(position: zmath.Vec, target: zmath.Vec) OrbitCamera {
+        return .{
+            .position = position,
+            .target = target,
+            .up = zmath.f32x4(0.0, -1.0, 0.0, 0.0),
+            .fov_y = std.math.rad_per_deg * 45.0,
+            .aspect_ratio = 16.0 / 9.0,
+            .near_plane = 0.1,
+            .far_plane = 1000.0,
+            .view = zmath.identity(),
+            .proj = zmath.identity(),
+        };
+    }
+
+    pub fn setPosition(self: *OrbitCamera, position: zmath.Vec) void {
+        self.position = position;
+    }
+
+    pub fn setTarget(self: *OrbitCamera, target: zmath.Vec) void {
+        self.target = target;
+    }
+
+    pub fn setAspectRatio(self: *OrbitCamera, aspect_ratio: f32) void {
+        self.aspect_ratio = aspect_ratio;
+    }
+
+    pub fn update(self: *OrbitCamera) void {
+        self.view = zmath.lookAtLh(self.position, self.target, self.up);
+        self.proj = zmath.perspectiveFovLh(
+            self.fov_y,
+            self.aspect_ratio,
+            self.near_plane,
+            self.far_plane,
+        );
+    }
+
+    pub fn getViewMatrix(self: *const OrbitCamera) zmath.Mat {
+        return self.view;
+    }
+
+    pub fn getProjectionMatrix(self: *const OrbitCamera) zmath.Mat {
+        return self.proj;
+    }
 };
 
 const DepthImage = struct {
@@ -52,8 +110,6 @@ pub fn Context(comptime T: type) type {
         arena_allocator: std.mem.Allocator,
         window_handle: platform.WindowHandle,
         framebuffer_handle: gfx.FramebufferHandle,
-        mvp_uniform_handle: gfx.NameHandle,
-        mvp_uniform_buffer_handle: gfx.BufferHandle,
         tex_sampler_uniform_handle: gfx.NameHandle,
         color_images: std.ArrayList(ColorImage),
         color_image_size: [2]u32,
@@ -66,37 +122,6 @@ pub fn Context(comptime T: type) type {
         delta_time: f32,
         total_time: f32,
         data: T,
-
-        pub fn setMVP(
-            self: *Context(T),
-            model: zmath.Mat,
-            view: zmath.Mat,
-            proj: zmath.Mat,
-        ) !void {
-            const mvp = ModelViewProj{
-                .model = model,
-                .view = view,
-                .proj = proj,
-            };
-            const mvp_ptr: [*]const u8 = @ptrCast(&mvp);
-            const current_frame_in_flight = gfx.getCurrentFrameInFlight();
-            const mvp_offset = current_frame_in_flight * @sizeOf(ModelViewProj);
-            try gfx.updateBufferFromMemory(
-                self.mvp_uniform_buffer_handle,
-                mvp_ptr[0..@sizeOf(ModelViewProj)],
-                mvp_offset,
-            );
-        }
-
-        pub fn bindMVP(self: *Context(T)) void {
-            const current_frame_in_flight = gfx.getCurrentFrameInFlight();
-            const mvp_offset = current_frame_in_flight * @sizeOf(ModelViewProj);
-            gfx.bindUniformBuffer(
-                self.mvp_uniform_handle,
-                self.mvp_uniform_buffer_handle,
-                mvp_offset,
-            );
-        }
 
         pub fn getColorImage(self: *Context(T)) !ColorImage {
             const swapchain_size = gfx.getSwapchainSize(self.framebuffer_handle);
@@ -275,6 +300,9 @@ pub fn Context(comptime T: type) type {
 
         pub fn drawMesh(
             self: *Context(T),
+            model: zmath.Mat,
+            view: zmath.Mat,
+            proj: zmath.Mat,
             mesh_handle: assets.MeshHandle,
             material_handle: assets.MaterialHandle,
             program: gfx.ProgramHandle,
@@ -293,6 +321,14 @@ pub fn Context(comptime T: type) type {
             gfx.insertDebugLabel(
                 debug_label,
                 utils.gfx_types.Colors.LightGray,
+            );
+
+            pushConstantsMvp(
+                model,
+                view,
+                proj,
+                .vertex,
+                0,
             );
 
             gfx.bindUniformBuffer(
@@ -412,6 +448,26 @@ pub fn loadTexture(allocator: std.mem.Allocator, filename: []const u8) !gfx.Text
     );
 }
 
+pub fn pushConstantsMvp(
+    model: zmath.Mat,
+    view: zmath.Mat,
+    proj: zmath.Mat,
+    shader_stage: utils.gfx_types.ShaderType,
+    offset: u32,
+) void {
+    const mvp = ModelViewProj{
+        .model = model,
+        .view = view,
+        .proj = proj,
+    };
+    const mvp_ptr: [*]const u8 = @ptrCast(&mvp);
+    gfx.pushConstants(
+        shader_stage,
+        offset,
+        mvp_ptr[0..@sizeOf(ModelViewProj)],
+    );
+}
+
 pub fn run_engine(
     comptime T: type,
     name: []const u8,
@@ -493,27 +549,13 @@ pub fn run_engine(
     });
 
     // Uniforms
-    const mvp_uniform_handle = gfx.nameHandle("u_mvp");
     const tex_sampler_uniform_handle = gfx.nameHandle("u_tex_sampler");
-
-    const max_frames_in_flight = gfx.getMaxFramesInFlight();
-    const mvp_uniform_buffer_handle = try gfx.createBuffer(
-        @sizeOf(ModelViewProj) * max_frames_in_flight,
-        .{ .uniform = true },
-        .host,
-        .{
-            .debug_name = "MVP Uniform Buffer",
-        },
-    );
-    defer gfx.destroyBuffer(mvp_uniform_buffer_handle);
 
     var context = Context(T){
         .gpa_allocator = gpa_allocator,
         .arena_allocator = arena_allocator,
         .window_handle = window_handle,
         .framebuffer_handle = framebuffer_handle,
-        .mvp_uniform_handle = mvp_uniform_handle,
-        .mvp_uniform_buffer_handle = mvp_uniform_buffer_handle,
         .tex_sampler_uniform_handle = tex_sampler_uniform_handle,
         .color_images = .init(gpa_allocator),
         .color_image_size = [_]u32{ 0, 0 },
