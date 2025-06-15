@@ -86,9 +86,9 @@ const QueueFamilyIndices = struct {
     present_family: ?u32 = null,
     transfer_family: ?u32 = null,
 
-    fn isComplete(self: QueueFamilyIndices) bool {
+    fn isComplete(self: QueueFamilyIndices, headless: bool) bool {
         return self.graphics_family != null and
-            self.present_family != null and
+            (headless or self.present_family != null) and
             self.transfer_family != null;
     }
 };
@@ -215,18 +215,21 @@ fn rateDeviceSuitability(
         required_extensions,
     );
 
-    var swap_chain_support = try SwapChainSupportDetails.init(
-        allocator,
-        device,
-        surface,
-    );
-    defer swap_chain_support.deinit();
+    var swap_chain_adequate = true;
+    if (surface != null) {
+        var swap_chain_support = try SwapChainSupportDetails.init(
+            allocator,
+            device,
+            surface,
+        );
+        defer swap_chain_support.deinit();
 
-    const swap_chain_adequate = (swap_chain_support.formats.len > 0 and
-        swap_chain_support.present_modes.len > 0);
+        swap_chain_adequate = (swap_chain_support.formats.len > 0 and
+            swap_chain_support.present_modes.len > 0);
+    }
 
     if (physical_device_features.features.geometryShader == 0 or
-        !device_queue_family_indices.isComplete() or
+        !device_queue_family_indices.isComplete(surface == null) or
         !device_extension_support or
         !swap_chain_adequate)
     {
@@ -267,7 +270,7 @@ fn findQueueFamilies(
             }
         }
 
-        if (device_queue_family_indices.present_family == null) {
+        if (surface != null and device_queue_family_indices.present_family == null) {
             var present_support: c.VkBool32 = 0;
             try vk.instance.getPhysicalDeviceSurfaceSupportKHR(
                 device,
@@ -280,7 +283,7 @@ fn findQueueFamilies(
             }
         }
 
-        if (device_queue_family_indices.isComplete()) {
+        if (device_queue_family_indices.isComplete(surface == null)) {
             break;
         }
     }
@@ -346,11 +349,14 @@ pub fn init(
         return error.NoPhysicalDevicesFound;
     }
 
-    const device_required_extensions = [_][*:0]const u8{
-        c.VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        c.VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
-        c.VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
-    };
+    var device_required_extensions = std.ArrayList([*:0]const u8).init(vk.arena);
+    errdefer device_required_extensions.deinit();
+
+    if (surface != null) {
+        try device_required_extensions.append(c.VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    }
+    try device_required_extensions.append(c.VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
+    try device_required_extensions.append(c.VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME);
 
     var selected_physical_device: c.VkPhysicalDevice = null;
     var selected_physical_device_score: u32 = 0;
@@ -361,7 +367,7 @@ pub fn init(
             vk.arena,
             surface,
             current_physical_device,
-            &device_required_extensions,
+            device_required_extensions.items,
         );
 
         var current_properties = std.mem.zeroes(c.VkPhysicalDeviceProperties);
@@ -428,7 +434,9 @@ pub fn init(
 
     var unique_queue_families = std.AutoHashMap(u32, void).init(vk.arena);
     try unique_queue_families.put(queue_family_indices.graphics_family.?, void{});
-    try unique_queue_families.put(queue_family_indices.present_family.?, void{});
+    if (queue_family_indices.present_family) |present_family| {
+        try unique_queue_families.put(present_family, void{});
+    }
     try unique_queue_families.put(queue_family_indices.transfer_family.?, void{});
 
     vk.log.debug("Using physical device {s} ({d}):", .{
@@ -436,7 +444,11 @@ pub fn init(
         selected_physical_device_index,
     });
     vk.log.debug("  - Graphics queue family: {d}", .{queue_family_indices.graphics_family.?});
-    vk.log.debug("  - Present queue family: {d}", .{queue_family_indices.present_family.?});
+    if (queue_family_indices.present_family) |present_family| {
+        vk.log.debug("  - Present queue family: {d}", .{present_family});
+    } else {
+        vk.log.debug("  - No dedicated present queue family", .{});
+    }
     vk.log.debug("  - Transer queue family: {d}", .{queue_family_indices.transfer_family.?});
 
     var device_queue_create_infos = std.ArrayList(c.VkDeviceQueueCreateInfo).init(vk.arena);
@@ -481,8 +493,8 @@ pub fn init(
             .pQueueCreateInfos = device_queue_create_infos.items.ptr,
             .enabledLayerCount = @as(u32, @intCast(validation_layers.items.len)),
             .ppEnabledLayerNames = validation_layers.items.ptr,
-            .enabledExtensionCount = @as(u32, @intCast(device_required_extensions.len)),
-            .ppEnabledExtensionNames = &device_required_extensions,
+            .enabledExtensionCount = @as(u32, @intCast(device_required_extensions.items.len)),
+            .ppEnabledExtensionNames = device_required_extensions.items.ptr,
             .pEnabledFeatures = &physical_device_features.features,
         },
     );

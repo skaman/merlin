@@ -199,10 +199,12 @@ pub fn init(
     try debug.init(options);
     errdefer debug.deinit();
 
-    const surface = try framebuffers.createSurface(
-        options.window_handle,
-    );
-    defer framebuffers.destroySurface(surface);
+    const surface =
+        if (options.window_handle) |window_handle|
+            try framebuffers.createSurface(window_handle)
+        else
+            null;
+    defer if (surface != null) framebuffers.destroySurface(surface);
 
     try device.init(options, surface);
     errdefer device.deinit();
@@ -213,11 +215,15 @@ pub fn init(
         &_graphics_queue,
     );
 
-    device.getDeviceQueue(
-        device.queue_family_indices.present_family.?,
-        0,
-        &_present_queue,
-    );
+    if (device.queue_family_indices.present_family) |present_family| {
+        device.getDeviceQueue(
+            present_family,
+            0,
+            &_present_queue,
+        );
+    } else {
+        _present_queue = null;
+    }
 
     device.getDeviceQueue(
         device.queue_family_indices.transfer_family.?,
@@ -225,7 +231,13 @@ pub fn init(
         &_transfer_queue,
     );
 
-    _surface_format = try framebuffers.getSurfaceFormat(surface);
+    _surface_format = if (surface != null)
+        try framebuffers.getSurfaceFormat(surface)
+    else
+        c.VkSurfaceFormatKHR{
+            .format = c.VK_FORMAT_UNDEFINED,
+            .colorSpace = c.VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+        };
 
     _graphics_command_pool = try command_pool.create(device.queue_family_indices.graphics_family.?);
     errdefer command_pool.destroy(_graphics_command_pool);
@@ -542,6 +554,8 @@ pub fn beginFrame() !bool {
 }
 
 pub fn endFrame() !void {
+    std.debug.assert(_present_queue != null);
+
     defer _ = _arena_impl.reset(.retain_capacity);
 
     for (framebuffers.getAll()) |framebuffer| {

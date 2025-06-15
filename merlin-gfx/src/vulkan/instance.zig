@@ -18,6 +18,8 @@ const Dispatch = struct {
     GetPhysicalDeviceMemoryProperties: std.meta.Child(c.PFN_vkGetPhysicalDeviceMemoryProperties) = undefined,
     GetPhysicalDeviceProperties: std.meta.Child(c.PFN_vkGetPhysicalDeviceProperties) = undefined,
     GetPhysicalDeviceQueueFamilyProperties: std.meta.Child(c.PFN_vkGetPhysicalDeviceQueueFamilyProperties) = undefined,
+};
+const SurfaceDispatch = struct {
     GetPhysicalDeviceSurfaceCapabilitiesKHR: std.meta.Child(c.PFN_vkGetPhysicalDeviceSurfaceCapabilitiesKHR) = undefined,
     GetPhysicalDeviceSurfaceFormatsKHR: std.meta.Child(c.PFN_vkGetPhysicalDeviceSurfaceFormatsKHR) = undefined,
     GetPhysicalDeviceSurfacePresentModesKHR: std.meta.Child(c.PFN_vkGetPhysicalDeviceSurfacePresentModesKHR) = undefined,
@@ -39,6 +41,7 @@ const DebugExtDispatch = struct {
 pub var handle: c.VkInstance = undefined;
 pub var allocation_callbacks: ?*c.VkAllocationCallbacks = null;
 pub var dispatch: Dispatch = undefined;
+pub var surface_dispatch: ?SurfaceDispatch = null;
 pub var debug_dispatch: ?DebugExtDispatch = null;
 
 // *********************************************************************************************
@@ -114,25 +117,28 @@ fn validateLayers(
 
 pub fn init(options: *const gfx.Options) !void {
     var extensions = std.ArrayList([*:0]const u8).init(vk.arena);
-    try extensions.append(c.VK_KHR_SURFACE_EXTENSION_NAME);
-    switch (builtin.target.os.tag) {
-        .windows => {
-            try extensions.append(c.VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
-        },
-        .linux => {
-            if (platform.nativeWindowHandleType() == .wayland) {
-                try extensions.append(c.VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
-            } else {
-                try extensions.append(c.VK_KHR_XCB_SURFACE_EXTENSION_NAME);
-            }
-        },
-        .macos => {
-            try extensions.append(c.VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-            try extensions.append(c.VK_MVK_MACOS_SURFACE_EXTENSION_NAME);
-        },
-        else => {
-            @compileError("Unsupported OS");
-        },
+
+    if (options.window_handle != null) {
+        try extensions.append(c.VK_KHR_SURFACE_EXTENSION_NAME);
+        switch (builtin.target.os.tag) {
+            .windows => {
+                try extensions.append(c.VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+            },
+            .linux => {
+                if (platform.nativeWindowHandleType() == .wayland) {
+                    try extensions.append(c.VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME);
+                } else {
+                    try extensions.append(c.VK_KHR_XCB_SURFACE_EXTENSION_NAME);
+                }
+            },
+            .macos => {
+                try extensions.append(c.VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+                try extensions.append(c.VK_MVK_MACOS_SURFACE_EXTENSION_NAME);
+            },
+            else => {
+                @compileError("Unsupported OS");
+            },
+        }
     }
 
     if (options.enable_vulkan_debug) {
@@ -213,6 +219,12 @@ pub fn init(options: *const gfx.Options) !void {
 
     dispatch = try vk.library.load(Dispatch, handle);
     errdefer dispatch.DestroyInstance(handle, allocation_callbacks);
+
+    if (options.window_handle != null) {
+        surface_dispatch = try vk.library.load(SurfaceDispatch, handle);
+    } else {
+        surface_dispatch = null;
+    }
 
     debug_dispatch = null;
     if (options.enable_vulkan_debug) {
@@ -428,12 +440,13 @@ pub inline fn getPhysicalDeviceSurfaceCapabilitiesKHR(
     surface: c.VkSurfaceKHR,
     capabilities: *c.VkSurfaceCapabilitiesKHR,
 ) !void {
+    std.debug.assert(surface_dispatch != null);
     std.debug.assert(physical_device != null);
     std.debug.assert(surface != null);
 
     try vk.checkVulkanError(
         "Failed to get physical device surface capabilities",
-        dispatch.GetPhysicalDeviceSurfaceCapabilitiesKHR(
+        surface_dispatch.?.GetPhysicalDeviceSurfaceCapabilitiesKHR(
             physical_device,
             surface,
             capabilities,
@@ -447,12 +460,13 @@ pub inline fn getPhysicalDeviceSurfaceFormatsKHR(
     count: *u32,
     formats: [*c]c.VkSurfaceFormatKHR,
 ) !void {
+    std.debug.assert(surface_dispatch != null);
     std.debug.assert(physical_device != null);
     std.debug.assert(surface != null);
 
     try vk.checkVulkanError(
         "Failed to get physical device surface formats",
-        dispatch.GetPhysicalDeviceSurfaceFormatsKHR(
+        surface_dispatch.?.GetPhysicalDeviceSurfaceFormatsKHR(
             physical_device,
             surface,
             count,
@@ -467,12 +481,13 @@ pub inline fn getPhysicalDeviceSurfacePresentModesKHR(
     count: *u32,
     present_modes: [*c]c.VkPresentModeKHR,
 ) !void {
+    std.debug.assert(surface_dispatch != null);
     std.debug.assert(physical_device != null);
     std.debug.assert(surface != null);
 
     try vk.checkVulkanError(
         "Failed to get physical device surface present modes",
-        dispatch.GetPhysicalDeviceSurfacePresentModesKHR(
+        surface_dispatch.?.GetPhysicalDeviceSurfacePresentModesKHR(
             physical_device,
             surface,
             count,
@@ -521,12 +536,13 @@ pub inline fn getPhysicalDeviceSurfaceSupportKHR(
     surface: c.VkSurfaceKHR,
     supported: *c.VkBool32,
 ) !void {
+    std.debug.assert(surface_dispatch != null);
     std.debug.assert(physical_device != null);
     std.debug.assert(surface != null);
 
     try vk.checkVulkanError(
         "Failed to get physical device surface support",
-        dispatch.GetPhysicalDeviceSurfaceSupportKHR(
+        surface_dispatch.?.GetPhysicalDeviceSurfaceSupportKHR(
             physical_device,
             queue_family_index,
             surface,

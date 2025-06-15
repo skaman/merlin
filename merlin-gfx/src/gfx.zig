@@ -31,7 +31,7 @@ pub const NameHandle = packed struct { handle: u64 };
 
 pub const Options = struct {
     renderer_type: RendererType,
-    window_handle: platform.WindowHandle,
+    window_handle: ?platform.WindowHandle,
     enable_vulkan_debug: bool = false,
 };
 
