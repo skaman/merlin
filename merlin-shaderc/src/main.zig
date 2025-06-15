@@ -11,9 +11,10 @@ fn readFile(allocator: std.mem.Allocator, path: []const u8) ![]const u8 {
 }
 
 const Params = clap.parseParamsComptime(
-    \\-h, --help             Display this help and exit.
-    \\<IN_FILE>              Source file.
-    \\<OUT_FILE>             Source file.
+    \\-h, --help                      Display this help and exit.
+    \\-I, --include-paths <PATHS>...  Add directories to the include search path.
+    \\<IN_FILE>                       Source file.
+    \\<OUT_FILE>                      Output file.
 );
 
 pub fn printHelp() !void {
@@ -33,6 +34,7 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     const parsers = comptime .{
+        .PATHS = clap.parsers.string,
         .IN_FILE = clap.parsers.string,
         .OUT_FILE = clap.parsers.string,
     };
@@ -61,6 +63,8 @@ pub fn main() !void {
         return printHelp();
     }
 
+    const include_paths = res.args.@"include-paths";
+
     const std_out = std.io.getStdOut().writer();
     const shader_type = try shaderc.detectShaderType(input_file.?);
 
@@ -79,6 +83,7 @@ pub fn main() !void {
         allocator,
         input_file.?,
         file_content,
+        include_paths,
     );
     defer data.deinit();
 
